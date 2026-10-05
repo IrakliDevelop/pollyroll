@@ -1,10 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { getPolyhedron } from '../geometry/polyhedra';
 import type { ShapeType } from '../geometry/polyhedra';
 import { quatRotate } from '../geometry/vec';
 import type { Quat, Vec3 } from '../geometry/vec';
+import { getBodyShape } from './body';
+import type * as BodyModule from './body';
+import type { BodyShape } from './body';
 import { DT, createWorld } from './world';
 import type { TrayBounds, World } from './world';
+
+// getBodyShape passes through to the real implementation unless a test overrides one call.
+vi.mock('./body', async (importOriginal) => {
+  const actual = await importOriginal<typeof BodyModule>();
+  return { ...actual, getBodyShape: vi.fn(actual.getBodyShape) };
+});
 
 const BOUNDS: TrayBounds = { minX: -6, maxX: 6, minZ: -4, maxZ: 4 };
 const ZERO: Vec3 = [0, 0, 0];
@@ -78,6 +87,30 @@ describe('world: basic correctness', () => {
     expect(DT).toBe(1 / 120);
   });
 
+  it('a die resting on a face stays below the settle thresholds on every step', () => {
+    // Placed face-down 0.002 above the floor. Every step after landing must stay below the settle
+    // thresholds (0.05 units/s, 0.1 rad/s); unconverged resting impulses used to lift one vertex
+    // until its contact dropped and the die fell back with a 0.06 units/s spike.
+    const shapes: ShapeType[] = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20'];
+    for (const shape of shapes) {
+      const poly = getPolyhedron(shape);
+      const face = poly.faces[0] ?? [];
+      const n = poly.normals[0] ?? [0, 1, 0];
+      const corner = poly.vertices[face[0] ?? 0] ?? [0, 0, 0];
+      const inradius = n[0] * corner[0] + n[1] * corner[1] + n[2] * corner[2];
+      // Shortest arc from n to −Y: (n × −Y, 1 + n·−Y), normalized by add().
+      const q: Quat = [n[2], 0, -n[0], 1 - n[1]];
+      const world = createWorld(BOUNDS);
+      world.add(shape, [0, inradius + 0.002, 0], q, ZERO, ZERO);
+      for (let s = 0; s < 1200; s++) {
+        world.step();
+        if (s < 60) continue;
+        expect(Math.sqrt(world.linearSpeedSq(0)), `${shape} v @${s}`).toBeLessThan(0.05);
+        expect(Math.sqrt(world.angularSpeedSq(0)), `${shape} w @${s}`).toBeLessThan(0.1);
+      }
+    }
+  });
+
   it('a d6 resting flat stays put and reads its +Y face', () => {
     const world = createWorld(BOUNDS);
     world.add('d6', [0, 0.5, 0], ID, ZERO, ZERO);
@@ -126,6 +159,25 @@ describe('world: edge cases', () => {
       world.step();
       expect(allFinite(world, 1e6)).toBe(true);
     }
+  });
+
+  it('every die hull fits the 20-vertex contact buffer', () => {
+    const shapes: ShapeType[] = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20'];
+    for (const shape of shapes) {
+      expect(getBodyShape(shape).vertices.length / 3, shape).toBeLessThanOrEqual(20);
+    }
+  });
+
+  it('add() throws RangeError for a hull with more than 20 vertices and adds nothing', () => {
+    const real = getBodyShape('d6');
+    const hull = (n: number): BodyShape => ({ ...real, vertices: new Float64Array(n * 3) });
+    const world = createWorld(BOUNDS);
+    vi.mocked(getBodyShape).mockReturnValueOnce(hull(21));
+    expect(() => world.add('d6', [0, 1, 0], ID, ZERO, ZERO)).toThrow(RangeError);
+    expect(world.count).toBe(0);
+    vi.mocked(getBodyShape).mockReturnValueOnce(hull(20));
+    expect(world.add('d6', [0, 1, 0], ID, ZERO, ZERO)).toBe(0);
+    expect(world.count).toBe(1);
   });
 
   it('a zero-velocity body sitting on the floor stays finite', () => {

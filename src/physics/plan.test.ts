@@ -77,7 +77,8 @@ describe('planRoll remap', () => {
 
   it('d100: every value 1–100 shows tens and ones on top', () => {
     expect.hasAssertions();
-    const ups = new Set<string>();
+    const tensUps = new Set<number>();
+    const onesUps = new Set<number>();
     const spot: Record<number, [string, string]> = {
       100: ['00', '0'],
       7: ['00', '7'],
@@ -101,9 +102,11 @@ describe('planRoll remap', () => {
       expect(text).toEqual([t === 0 ? '00' : `${t}0`, String(o)]);
       const want = spot[v];
       if (want !== undefined) expect(text).toEqual(want);
-      ups.add(`${tens.upReadout}/${ones.upReadout}`);
+      tensUps.add(tens.upReadout);
+      onesUps.add(ones.upReadout);
     }
-    expect(ups.size).toBeGreaterThanOrEqual(2);
+    expect(tensUps.size).toBeGreaterThanOrEqual(2);
+    expect(onesUps.size).toBeGreaterThanOrEqual(2);
   });
 
   it('remap is an element of the rotation group', () => {

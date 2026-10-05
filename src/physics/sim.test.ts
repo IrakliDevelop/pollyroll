@@ -63,38 +63,58 @@ describe('constants', () => {
 
 describe('throwWave', () => {
   it('draws heading, speed, then per body jitter x/z, y, orientation, speed factor, lateral, vy, spin', () => {
-    // heading (0.5, 0.5) → |h|² = 0, rejected; (0.9, 0.5) → h = (1, 0), p = (0, 1); speed 9 + 5·0.5.
-    // body: jitter 0, 0; y = 2.5; orientation (0, 0, 0, 1); speed factor 1; lateral 0; vy −1; spin z.
+    // Every draw is distinct, so swapping any two draws changes an asserted component.
+    // heading: (0.47, 0.53) → (−0.06, 0.06), |h|² = 0.0072 ≤ 0.04, rejected;
+    //          (0.74, 0.18) → (0.48, −0.64), |h| = 0.8 → h = (0.6, −0.8), p = (−hz, hx) = (0.8, 0.6).
+    // speed: 0.62 → 9 + 5·0.62 = 12.1.
+    // one body (cols 1, across 0, back 1.4): x = −0.6·1.4 + (2·0.95 − 1)·0.15 = −0.84 + 0.135
+    //   = −0.705; z = 0.8·1.4 + (2·0.15 − 1)·0.15 = 1.12 − 0.105 = 1.015; y = 2.2 + 0.6·0.35 = 2.41.
+    // orientation: (0.99, 0.01, 0.98, 0.02) → (0.98, −0.98, 0.96, −0.96), |u|² > 1, rejected;
+    //   (0.6, 0.45, 0.7, 0.4) → (0.2, −0.1, 0.4, −0.2), |u| = 0.5 → (0.4, −0.2, 0.8, −0.4).
+    // speed factor 0.8 → along = 12.1·(0.85 + 0.24) = 13.189; lateral 0.3 → −0.4·1.5 = −0.6;
+    //   v = h·13.189 + p·(−0.6) = (7.9134 − 0.48, ·, −10.5512 − 0.36) = (7.4334, ·, −10.9112).
+    // vy 0.25 → −0.5. spin (0.9, 0.12, 0.66) → (0.8, −0.76, 0.32)·25 = (20, −19, 8).
     const rng = scripted([
-      0.5, 0.5, 0.9, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 1, 0.5, 0.5, 0.5, 0.5, 0.5, 1,
+      0.47, 0.53, 0.74, 0.18, 0.62, 0.95, 0.15, 0.35, 0.99, 0.01, 0.98, 0.02, 0.6, 0.45, 0.7, 0.4,
+      0.8, 0.3, 0.25, 0.9, 0.12, 0.66,
     ]);
     const [state, ...rest] = throwWave(rng, [0.8], BOUNDS);
     expect(rest).toHaveLength(0);
-    expect(rng.used()).toBe(18);
-    expect(near(state?.position, [-1.4, 2.5, 0])).toBe(true);
-    expect(near(state?.orientation, [0, 0, 0, 1])).toBe(true);
-    expect(near(state?.velocity, [11.5, -1, 0])).toBe(true);
-    expect(near(state?.angularVelocity, [0, 0, 25])).toBe(true);
+    expect(rng.used()).toBe(22);
+    expect(state?.position).toSatisfy((p: number[]) => near(p, [-0.705, 2.41, 1.015]));
+    expect(state?.orientation).toSatisfy((q: number[]) => near(q, [0.4, -0.2, 0.8, -0.4]));
+    expect(state?.velocity).toSatisfy((v: number[]) => near(v, [7.4334, -0.5, -10.9112]));
+    expect(state?.angularVelocity).toSatisfy((w: number[]) => near(w, [20, -19, 8]));
   });
 
-  it('rejects zero-length orientation draws and lays out a grid across the heading', () => {
-    // heading (0.5, 0.9) → h = (0, 1), p = (−1, 0); speed 0.0 → 9
-    // per body: jitter x/z 0; y 2.2; orientation (0,0,0,0) rejected, then (0,0,0,1); speed factor
-    // 0.85; lateral 0; vy −0; spin 0.
-    const body = (): number[] => [
-      0.5, 0.5, 0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 1, 0, 0.5, 0, 0.5, 0.5, 0.5,
-    ];
-    const rng = scripted([0.5, 0.9, 0, ...body(), ...body()]);
-    const states = throwWave(rng, [0.5, 0.5], BOUNDS);
-    expect(states).toHaveLength(2);
-    expect(rng.used()).toBe(37);
-    // cols = 2: col offsets ∓0.65 along p = (−1, 0); row 0; back 1.4 along −h
-    expect(states[0]?.position[0]).toBeCloseTo(0.65, 12);
-    expect(states[1]?.position[0]).toBeCloseTo(-0.65, 12);
-    expect(states[0]?.position[2]).toBeCloseTo(-1.4, 12);
-    expect(states[0]?.orientation).toEqual([0, 0, 0, 1]);
-    expect(states[0]?.velocity[1]).toBe(-0);
-    expect(states[0]?.velocity[2]).toBeCloseTo(9 * 0.85, 12);
+  it('rejects near-zero orientation draws and lays out a grid across the heading', () => {
+    // heading (0.5, 0.9) → (0, 0.8) → h = (0, 1), p = (−1, 0); speed 0.04 → 9.2. cols = 2,
+    // back 1.4: body 0 at across −0.65 → base (0.65, −1.4); body 1 at +0.65 → (−0.65, −1.4).
+    // body 0: jitter (0.6, 0.3) → (+0.03, −0.06) → x 0.68, z −1.46; y 0.85 → 2.71;
+    //   orientation (0.5001, 0.4999, 0.5003, 0.4997) → |u|² = 8e-7 ≤ 1e-6, rejected;
+    //   (0.54, 0.48, 0.58, 0.46) → (0.08, −0.04, 0.16, −0.08), |u| = 0.2 → (0.4, −0.2, 0.8, −0.4);
+    //   factor 0.2 → along 9.2·0.91 = 8.372; lateral 0.7 → 0.6; v = (−0.6, ·, 8.372);
+    //   vy 0.15 → −0.3; spin (0.96, 0.08, 0.66) → (23, −21, 8).
+    // body 1: jitter (0.1, 0.75) → (−0.12, +0.075) → x −0.77, z −1.325; y 0.05 → 2.23;
+    //   orientation (0.55, 0.4, 0.625, 0.35) → (0.1, −0.2, 0.25, −0.3), |u| = 0.45
+    //   → (2/9, −4/9, 5/9, −2/3); factor 0.8 → along 9.2·1.09 = 10.028; lateral 0.22 → −0.84;
+    //   v = (0.84, ·, 10.028); vy 0.65 → −1.3; spin (0.24, 0.88, 0.32) → (−13, 19, −9).
+    const rng = scripted([
+      0.5, 0.9, 0.04, 0.6, 0.3, 0.85, 0.5001, 0.4999, 0.5003, 0.4997, 0.54, 0.48, 0.58, 0.46, 0.2,
+      0.7, 0.15, 0.96, 0.08, 0.66, 0.1, 0.75, 0.05, 0.55, 0.4, 0.625, 0.35, 0.8, 0.22, 0.65, 0.24,
+      0.88, 0.32,
+    ]);
+    const [a, b, ...rest] = throwWave(rng, [0.5, 0.5], BOUNDS);
+    expect(rest).toHaveLength(0);
+    expect(rng.used()).toBe(33);
+    expect(a?.position).toSatisfy((p: number[]) => near(p, [0.68, 2.71, -1.46]));
+    expect(a?.orientation).toSatisfy((q: number[]) => near(q, [0.4, -0.2, 0.8, -0.4]));
+    expect(a?.velocity).toSatisfy((v: number[]) => near(v, [-0.6, -0.3, 8.372]));
+    expect(a?.angularVelocity).toSatisfy((w: number[]) => near(w, [23, -21, 8]));
+    expect(b?.position).toSatisfy((p: number[]) => near(p, [-0.77, 2.23, -1.325]));
+    expect(b?.orientation).toSatisfy((q: number[]) => near(q, [2 / 9, -4 / 9, 5 / 9, -2 / 3]));
+    expect(b?.velocity).toSatisfy((v: number[]) => near(v, [0.84, -1.3, 10.028]));
+    expect(b?.angularVelocity).toSatisfy((w: number[]) => near(w, [-13, 19, -9]));
   });
 
   it('clamps spawn points inside the walls', () => {
@@ -257,7 +277,7 @@ describe('determinism', () => {
 });
 
 describe('settle acceptance', () => {
-  it('settles at least 48 of 50 ten-dice throws with median <= 400 steps', () => {
+  it('settles all 50 ten-dice throws with median <= 400 steps', () => {
     const steps: number[] = [];
     let settled = 0;
     for (let i = 0; i < 50; i++) {
@@ -267,7 +287,7 @@ describe('settle acceptance', () => {
     }
     steps.sort((x, y) => x - y);
     const median = ((steps[24] ?? 0) + (steps[25] ?? 0)) / 2;
-    expect(settled).toBeGreaterThanOrEqual(48);
+    expect(settled).toBe(50);
     expect(median).toBeLessThanOrEqual(400);
   });
 });

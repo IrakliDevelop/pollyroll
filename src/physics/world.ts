@@ -34,7 +34,7 @@ export const DEFAULT_CONFIG: WorldConfig = {
 
 export interface World {
   readonly count: number;
-  /** Adds a body; returns its index. Max 30 bodies (throw RangeError beyond). */
+  /** Adds a body; returns its index. Max 30 bodies and 20 hull vertices (RangeError beyond). */
   add(
     shape: ShapeType,
     position: Vec3,
@@ -68,6 +68,9 @@ const C_MASS = 13; // effective masses: normal, tangent 1, tangent 2
 const C_ROWS = 16; // per row (normal, t1, t2): rA×d, IA⁻¹(rA×d), rB×d, IB⁻¹(rB×d)
 const ROW = 12;
 const STRIDE = C_ROWS + 3 * ROW;
+// Warm-start slots: one per (body, plane, vertex), then one per body pair (i, j).
+const PLANE_SLOTS = MAX_BODIES * PLANES * MAX_VERTICES;
+const SLOTS = PLANE_SLOTS + MAX_BODIES * MAX_BODIES;
 
 /** Element i of a preallocated buffer (indexes are in range by construction). */
 function at(a: Float64Array, i: number): number {
@@ -89,7 +92,7 @@ function clampNumber(value: number, min: number, max: number): number {
 /**
  * Fixed-step rigid-body world for convex dice of mass 1 in a box tray (floor y = 0 and four walls).
  * Each step is semi-implicit Euler (velocities first, then positions) with contacts solved by
- * sequential impulses (Catto, "Iterative Dynamics with Temporal Coherence", GDC 2005).
+ * warm-started sequential impulses (Catto, "Iterative Dynamics with Temporal Coherence", GDC 2005).
  * All state lives in preallocated Float64Arrays; `step()` allocates nothing.
  */
 export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): World {
@@ -120,6 +123,10 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
   const contacts = new Float64Array(MAX_CONTACTS * STRIDE);
   const contactA = new Int32Array(MAX_CONTACTS); // -1 for a static plane
   const contactB = new Int32Array(MAX_CONTACTS);
+  const contactSlot = new Int32Array(MAX_CONTACTS);
+  const slotLambda = new Float64Array(SLOTS * 3); // accumulated impulses of each slot's last contact
+  const slotStep = new Int32Array(SLOTS); // stepNumber + 1 of the step that wrote slotLambda
+  let stepNumber = 1;
   let contactCount = 0;
   let count = 0;
 
@@ -225,8 +232,11 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
    * Records a contact between A (body index, or -1 for a static plane) and body B with unit normal
    * n from A to B, offsets rA/rB from each centroid to the contact point, and penetration depth.
    * Tangents come from a deterministic orthonormal basis of n (Catto, "Computing a Basis", 2009):
-   * t1 ⟂ n built from the two largest-magnitude components, t2 = n × t1. Precomputes effective
-   * masses and the velocity target max(Baumgarte bias, restitution target).
+   * t1 = (ny, −nx, 0)/|(nx, ny)| when |nx| ≥ 0.57735 (≈ 1/√3, so nx² + ny² ≥ 1/3), otherwise
+   * t1 = (0, nz, −ny)/|(ny, nz)| (then ny² + nz² > 2/3); t2 = n × t1. Precomputes effective
+   * masses and the velocity target max(Baumgarte bias, restitution target). The accumulated
+   * impulses start from `slot`'s values when the same slot (body, plane, vertex or body pair) had a
+   * contact in the previous step (warm starting), else from 0.
    */
   function addContact(
     a: number,
@@ -241,11 +251,14 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
     rby: number,
     rbz: number,
     depth: number,
+    slot: number,
   ): void {
     if (contactCount >= MAX_CONTACTS) return;
     const c = contactCount++;
     contactA[c] = a;
     contactB[c] = b;
+    contactSlot[c] = slot;
+    const warm = atInt(slotStep, slot) === stepNumber; // the slot was in contact last step
     const base = c * STRIDE;
     let t1x: number;
     let t1y: number;
@@ -284,7 +297,7 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
         angularRow(a, rax, ray, raz, dx, dy, dz, rowAt) +
         angularRow(b, rbx, rby, rbz, dx, dy, dz, rowAt + 6);
       contacts[base + C_MASS + row] = k > EPSILON ? 1 / k : 0;
-      contacts[base + C_LAMBDA + row] = 0;
+      contacts[base + C_LAMBDA + row] = warm ? at(slotLambda, slot * 3 + row) : 0;
     }
     const approach = rowVelocity(c, 0);
     const bias = depth > SLOP ? biasRate * (depth - SLOP) : 0;
@@ -323,7 +336,10 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
           const ry = at(worldVerts, k * 3 + 1);
           const rz = at(worldVerts, k * 3 + 2);
           const separation = nx * (px + rx) + ny * (py + ry) + nz * (pz + rz) - offset;
-          if (separation < 0) addContact(-1, i, nx, ny, nz, 0, 0, 0, rx, ry, rz, -separation);
+          if (separation < 0) {
+            const slot = (i * PLANES + p) * MAX_VERTICES + k;
+            addContact(-1, i, nx, ny, nz, 0, 0, 0, rx, ry, rz, -separation, slot);
+          }
         }
       }
     }
@@ -359,18 +375,44 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
           -ny * rj,
           -nz * rj,
           reach - dist,
+          PLANE_SLOTS + i * MAX_BODIES + j,
         );
       }
     }
   }
 
   /**
-   * Sequential impulses: per contact, the normal row (accumulated impulse clamped >= 0), then two
-   * friction rows (accumulated impulse clamped to ±friction·λn, box friction). Each row solves
-   * dλ = m·(target − d·vrel) with vrel = vB + ωB × rB − vA − ωA × rA and applies +dλ·d to B and
-   * −dλ·d to A (mass 1); body velocities are held in locals for the three rows of a contact.
+   * Sequential impulses with warm starting (Catto 2005): first applies each contact's accumulated
+   * impulses carried over from the previous step, then iterates per contact the normal row
+   * (accumulated impulse clamped >= 0) and two friction rows (accumulated impulse clamped to
+   * ±friction·λn, box friction). Each row solves dλ = m·(target − d·vrel) with
+   * vrel = vB + ωB × rB − vA − ωA × rA and applies +dλ·d to B and −dλ·d to A (mass 1); body
+   * velocities are held in locals for the three rows of a contact. Finally stores the accumulated
+   * impulses in the contact's slot for the next step.
    */
   function solve(): void {
+    for (let c = 0; c < contactCount; c++) {
+      const base = c * STRIDE;
+      const b = atInt(contactB, c) * 3;
+      const ai = atInt(contactA, c);
+      for (let row = 0; row < 3; row++) {
+        const lambda = at(contacts, base + C_LAMBDA + row);
+        if (lambda === 0) continue;
+        const dir = base + row * 3;
+        const r = base + C_ROWS + row * ROW;
+        for (let k = 0; k < 3; k++) {
+          vel[b + k] = at(vel, b + k) + at(contacts, dir + k) * lambda;
+          omega[b + k] = at(omega, b + k) + at(contacts, r + 9 + k) * lambda;
+        }
+        if (ai >= 0) {
+          const a = ai * 3;
+          for (let k = 0; k < 3; k++) {
+            vel[a + k] = at(vel, a + k) - at(contacts, dir + k) * lambda;
+            omega[a + k] = at(omega, a + k) - at(contacts, r + 3 + k) * lambda;
+          }
+        }
+      }
+    }
     for (let it = 0; it < iterations; it++) {
       for (let c = 0; c < contactCount; c++) {
         const base = c * STRIDE;
@@ -465,6 +507,14 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
         }
       }
     }
+    for (let c = 0; c < contactCount; c++) {
+      const slot = atInt(contactSlot, c);
+      const base = c * STRIDE + C_LAMBDA;
+      slotLambda[slot * 3] = at(contacts, base);
+      slotLambda[slot * 3 + 1] = at(contacts, base + 1);
+      slotLambda[slot * 3 + 2] = at(contacts, base + 2);
+      slotStep[slot] = stepNumber + 1;
+    }
   }
 
   return {
@@ -476,6 +526,9 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
       if (count >= MAX_BODIES) throw new RangeError(`at most ${MAX_BODIES} bodies per world`);
       const i = count;
       const body = getBodyShape(shape);
+      if (body.vertices.length > MAX_VERTICES * 3) {
+        throw new RangeError(`at most ${MAX_VERTICES} hull vertices per body`);
+      }
       shapes.push(body);
       bodyInvInertia.set(body.invInertia, i * 3);
       bodyRadius[i] = body.radius;
@@ -506,6 +559,7 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
       }
       collide();
       solve();
+      stepNumber++;
       const half = 0.5 * DT;
       for (let i = 0; i < count; i++) {
         const v = i * 3;
