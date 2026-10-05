@@ -21,7 +21,7 @@ test.describe('skins', () => {
   test('setSkin throws PollyrollShaderError for invalid custom GLSL', async ({ page }) => {
     await page.goto('/smoke.html?reduced');
     await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 10_000 });
-    const result = await page.evaluate(() => {
+    const result = await page.evaluate(async () => {
       const tray = window.__pollyrollTray;
       const base = { material: 'plastic', color: '#fff', labelColor: '#000' } as const;
       let invalid: { name: string; log: string } | null = null;
@@ -31,6 +31,16 @@ test.describe('skins', () => {
         const e = error as { name?: unknown; log?: unknown };
         invalid = { name: String(e.name), log: String(e.log) };
       }
+      // The tray keeps its skin and still plays rolls after the failed setSkin.
+      const after = await tray.playRoll({
+        v: 1,
+        id: 'after-invalid-skin',
+        notation: '1d6',
+        dice: [{ type: 'd6', value: 3, group: 0, wave: 0 }],
+        modifier: 0,
+        seed: '0123456789abcdef0123456789abcdef',
+        createdAt: 0,
+      });
       let valid: string | null = null;
       try {
         tray.setSkin({
@@ -42,9 +52,10 @@ test.describe('skins', () => {
       } catch (error) {
         valid = String(error);
       }
-      return { invalid, valid };
+      return { invalid, total: after.total, valid };
     });
     expect(result.invalid?.name).toBe('PollyrollShaderError');
+    expect(result.total).toBe(3);
     expect(result.invalid?.log.length).toBeGreaterThan(0);
     expect(result.valid).toBeNull();
   });

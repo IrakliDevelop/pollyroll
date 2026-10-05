@@ -17,13 +17,13 @@ export const obsidian: Skin = {
   labelStyle: 'engraved',
 };
 
-/** Graded brass with embossed dark labels. */
+/** Graded brass with engraved dark labels. */
 export const brass: Skin = {
   material: 'metal',
   color: ['#b8893a', '#8a6526'],
-  labelColor: '#2a1c0a',
+  labelColor: '#1b1209',
   pattern: 'gradient',
-  labelStyle: 'embossed',
+  labelStyle: 'engraved',
 };
 
 /** Ringed oak with engraved cream labels. */
@@ -46,7 +46,7 @@ export const sapphire: Skin = {
 /** Swirled red gem with printed pale-gold labels. */
 export const ruby: Skin = {
   material: 'gem',
-  color: ['#a3102b', '#e8334f'],
+  color: ['#8c0a22', '#b5142f'],
   labelColor: '#ffe7a3',
   pattern: 'swirl',
   labelStyle: 'printed',

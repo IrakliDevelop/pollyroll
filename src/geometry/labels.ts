@@ -79,6 +79,16 @@ export function labelText(set: LabelSet, readout: number): string {
   return String(n);
 }
 
+/**
+ * Index of readout i in the set's natural label sequence (the index custom labels use):
+ * d4..d20 number − 1; d10, d100tens, d100ones the digit; dF 0 = −, 1 = blank, 2 = +.
+ */
+export function labelIndex(set: LabelSet, readout: number): number {
+  const n = numberAt(set, readout);
+  if (set === 'dF') return (n - 1) >> 1;
+  return shapeOf(set) === 'd10' ? n : n - 1;
+}
+
 /** True when the label needs the 6/9 underline. */
 export function labelUnderline(set: LabelSet, readout: number): boolean {
   const text = labelText(set, readout);

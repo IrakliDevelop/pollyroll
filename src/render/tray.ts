@@ -11,7 +11,7 @@ import { DT } from '../physics/world';
 import { PATTERNS } from '../skins/patterns';
 import { resolveSkin } from '../skins/presets';
 import type { MaterialPreset, Skin, SkinRef } from '../skins/types';
-import { buildAtlas, LABEL_SETS } from './atlas';
+import { ATLAS_MAX_LEVEL, buildAtlas, LABEL_SETS } from './atlas';
 import { cameraPosition, trayBounds, viewProjection } from './camera';
 import { attrib, createBuffer, createProgram } from './gl';
 import { DIE_VERTEX, dieFragment, SHADOW_FRAGMENT, SHADOW_VERTEX } from './shaders';
@@ -25,7 +25,12 @@ export interface TrayOptions {
   maxDpr?: number; // default 2
   reducedMotion?: 'auto' | 'always' | 'never'; // default 'auto' (media query)
   fadeAfterMs?: number | null; // default null: dice stay until the next roll
-  /** Custom labels per label set; index = readout index; missing entries use the default text. */
+  /**
+   * Custom labels per label set; labels[set][i] replaces the i-th label of the set's natural
+   * sequence: d4 '1'..'4', d6 '1'..'6', d8 '1'..'8', d12 '1'..'12', d20 '1'..'20' (i = value − 1);
+   * d10 and d100ones '0'..'9' and d100tens '00'..'90' (i = digit); dF 0 = the −1 faces, 1 = the
+   * blank faces, 2 = the +1 faces. Missing entries use the default text.
+   */
   labels?: Partial<Record<LabelSet, readonly string[]>>;
 }
 
@@ -62,9 +67,6 @@ const DIE_UNIFORMS = [
   'uAlpha',
   'uAtlas',
 ];
-/** Deepest atlas mip: level-3 texels are 8 px, the atlas cell padding, so no mip or bilinear tap
- *  reaches a neighbouring cell's glyph. */
-const ATLAS_MAX_LEVEL = 3;
 const MAX_ANISOTROPY = 4;
 
 interface Group {
@@ -214,6 +216,8 @@ export function createDiceTray(
   const atlas = gl === null ? null : buildAtlas(opts.labelFont ?? 'system-ui', opts.labels);
 
   let traySkin = opts.skin;
+  /** Skin requested by setSkin while the context was lost; compiled and applied on restore. */
+  let lostSkin: { ref: SkinRef } | null = null;
   let roll: Roll | null = null;
   let pending: { resolve: (s: RollSummary) => void; summary: RollSummary } | null = null;
   let disposed = false;
@@ -323,6 +327,16 @@ export function createDiceTray(
       g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_T, g.CLAMP_TO_EDGE);
     }
     return atlasTex;
+  }
+
+  /** True when the skin's program compiles (or is cached); a failing skin is not cached. */
+  function compiles(g: WebGL2RenderingContext, s: SkinGpu): boolean {
+    try {
+      program(g, s.key, s.fragment);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /** Forgets every GPU handle; deletes them first when `remove` is set and the context is alive. */
@@ -545,7 +559,24 @@ export function createDiceTray(
   };
   const onRestored = (): void => {
     lost = false;
+    const g = gl;
     const r = roll;
+    if (g !== null) {
+      // Skins chosen while lost compile now; a failing one is dropped for the previous valid skin.
+      const want = lostSkin;
+      lostSkin = null;
+      if (want !== null) {
+        const s = skinGpu(resolveSkin(want.ref));
+        if (compiles(g, s)) {
+          traySkin = want.ref;
+          if (r !== null && r.eventSkin === undefined) r.skin = s;
+        }
+      }
+      if (r !== null && !compiles(g, r.skin)) {
+        r.skin = skinGpu(resolveSkin(traySkin));
+        if (!compiles(g, r.skin)) r.skin = skinGpu(resolveSkin(undefined));
+      }
+    }
     if (r !== null && (!r.done || fadeStart >= 0)) loop();
     else render();
   };
@@ -558,6 +589,7 @@ export function createDiceTray(
       const summary = evaluate(event);
       if (disposed || gl === null) return summary;
       // Compile first: a skin whose shader fails rejects here and leaves the current roll alone.
+      // While lost the skin compiles on restore, falling back to the tray skin if it fails.
       const skin = skinGpu(resolveSkin(event.skin ?? traySkin));
       if (!lost) program(gl, skin.key, skin.fragment);
       stop();
@@ -589,16 +621,21 @@ export function createDiceTray(
       const done = new Promise<RollSummary>((resolve) => {
         pending = { resolve, summary };
       });
-      if (reduced()) settle(r);
+      // While lost the outcome resolves now; the dice draw on restore if this roll is still current.
+      if (reduced() || lost) settle(r);
       else loop();
       return done;
     },
 
     setSkin(skin: SkinRef): void {
       if (gl !== null && !disposed) {
+        if (lost) {
+          lostSkin = { ref: skin };
+          return;
+        }
         const s = skinGpu(resolveSkin(skin));
         // Throws PollyrollShaderError before anything changes, so the tray keeps its skin.
-        if (!lost) program(gl, s.key, s.fragment);
+        program(gl, s.key, s.fragment);
         const r = roll;
         if (r !== null && r.eventSkin === undefined) {
           r.skin = s;

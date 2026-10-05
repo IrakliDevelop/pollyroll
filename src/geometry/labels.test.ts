@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { labelText, labelUnderline, readoutForValue, readoutNumbers, shapeOf } from './labels';
+import {
+  labelIndex,
+  labelText,
+  labelUnderline,
+  readoutForValue,
+  readoutNumbers,
+  shapeOf,
+} from './labels';
 import type { LabelSet } from './labels';
 import { getPolyhedron } from './polyhedra';
 import type { ShapeType } from './polyhedra';
@@ -126,6 +133,31 @@ describe('labels', () => {
     });
   }
 
+  /** Natural label index of each value: d4..d20 value − 1; d10/d100 digit; dF −1/0/+1 → 0/1/2. */
+  const NATURAL: Record<LabelSet, (value: number) => number> = {
+    d4: (v) => v - 1,
+    d6: (v) => v - 1,
+    d8: (v) => v - 1,
+    d10: (v) => v % 10,
+    d12: (v) => v - 1,
+    d20: (v) => v - 1,
+    d100tens: (v) => v,
+    d100ones: (v) => v,
+    dF: (v) => v + 1,
+  };
+  for (const set of SETS) {
+    it(`gives every ${set} readout its natural label index`, () => {
+      for (const [value] of VALUES[set]) {
+        expect(labelIndex(set, readoutForValue(set, value)), `${set} ${value}`).toBe(
+          NATURAL[set](value),
+        );
+      }
+      const indexes = readoutNumbers(shapeOf(set)).map((_, i) => labelIndex(set, i));
+      const count = set === 'dF' ? 3 : indexes.length;
+      expect([...new Set(indexes)].sort((a, b) => a - b)).toEqual(range(0, count - 1));
+    });
+  }
+
   it('labels dF faces minus, minus, blank, blank, plus, plus with opposite signs', () => {
     const texts = readoutNumbers('d6').map((_, i) => labelText('dF', i));
     expect([...texts].sort()).toEqual(['', '', '+', '+', MINUS, MINUS].sort());
@@ -191,5 +223,6 @@ describe('labels', () => {
     expect(() => labelText('d6', 6)).toThrow(RangeError);
     expect(() => labelText('d20', -1)).toThrow(RangeError);
     expect(() => labelUnderline('d4', 4)).toThrow(RangeError);
+    expect(() => labelIndex('dF', 6)).toThrow(RangeError);
   });
 });

@@ -49,18 +49,31 @@ const LABEL: Record<LabelStyle, string> = {
   embossed: bump('0.02', '+'),
 };
 
+/** Gem glints: object-space cells whose jittered facet normal reflects the key light at the eye. */
+const SPARKLE = `vec3 h = hash3(floor(vObj * 10.0));
+    vec3 Rj = reflect(-V, normalize(N + (h - 0.5) * 0.8));
+    hl += step(0.8, h.x) * pow(max(dot(Rj, LIGHT_DIR), 0.0), 12.0) * 6.0;`;
+
 /**
- * Glass: back faces are the tinted body seen through the volume (fixed body opacity, no labels);
- * front faces add reflections with Fresnel-weighted alpha. Labels on front faces stay opaque.
+ * Glass: absorption-like tint base^(k·path), with the view path growing toward the silhouette
+ * (path = 1 − N·V), so the body deepens and darkens at its edges. Back faces are the body seen
+ * through the volume (no labels); front faces are thin over it and add a white specular highlight,
+ * Fresnel reflection, and rim, which raise alpha where they are bright. Labels stay opaque.
+ * Gem: deeper tint, denser body, sharper highlight, and glints from jittered facet normals.
  */
 const glass = (gem: boolean): string => `float fr = 0.04 + 0.96 * pow(1.0 - nv, 5.0);
-  vec3 g = env(refract(-V, N, 1.0 / 1.5), 0.0) * base * ${gem ? '3.0' : '4.0'};
+  float path = 1.0 - nv;
+  vec3 tint = pow(max(base, vec3(1e-4)), vec3(${gem ? '0.9' : '0.6'} + ${gem ? '1.6' : '1.4'} * path));
+  vec3 g = env(refract(-V, N, 1.0 / 1.5), 0.0) * tint * ${gem ? '3.0' : '4.0'};
   if (gl_FrontFacing) {
-    g = mix(g, env(R, r), fr) + spec(N, V, LIGHT_DIR, vec3(0.04), r) * LIGHT * nl;
-    ${gem ? 'g += step(0.97, hash3(floor(vObj * 28.0)).x) * pow(max(dot(R, LIGHT_DIR), 0.0), 16.0) * 4.0;' : ''}
-    al = mix(0.15, 1.0, fr);
+    vec3 hl = (spec(N, V, LIGHT_DIR, vec3(0.04), ${gem ? '0.12' : '0.18'}) * 2.0
+      + spec(N, V, LIGHT_DIR, vec3(0.04), 0.4)) * LIGHT * nl
+      + fr * env(R, 0.0) * 2.0 + vec3(pow(path, 3.0) * ${gem ? '0.8' : '1.6'});
+    ${gem ? SPARKLE : ''}
+    g += hl;
+    al = max(mix(${gem ? '0.35' : '0.12'}, ${gem ? '0.9' : '0.85'}, path), clamp(dot(hl, vec3(0.5)), 0.0, 1.0));
   } else {
-    al = ${gem ? '0.7' : '0.5'};
+    al = mix(${gem ? '0.8' : '0.6'}, ${gem ? '0.95' : '0.85'}, path);
   }
   c = mix(g, c, lab);
   al = mix(al, 1.0, lab);`;
@@ -134,7 +147,8 @@ void main() {
     lab = a;
     ${LABEL[label]}
   }
-  float m = uMat.x;
+  // Label fill is dielectric paint: on metal it stays dark instead of mirroring the environment.
+  float m = uMat.x * (1.0 - min(2.0 * lab, 1.0));
   float r = uMat.y;
   float cc = uMat.z;
   vec3 V = normalize(uCam - vW);
@@ -150,6 +164,7 @@ void main() {
     float fc = 0.04 + 0.96 * pow(1.0 - nv, 5.0);
     c = c * (1.0 - cc * fc) + cc * (spec(N, V, LIGHT_DIR, vec3(0.04), 0.15) * LIGHT * nl + fc * env(R, 0.15));
   }
+  c *= 1.0 - 0.7 * lab * uMat.x;
   float al = 1.0;
   ${kind === 'opaque' ? '' : glass(kind === 'gem')}
   c *= EXPOSURE;

@@ -61,9 +61,9 @@ describe('presets', () => {
         {
           material: 'metal',
           color: ['#b8893a', '#8a6526'],
-          labelColor: '#2a1c0a',
+          labelColor: '#1b1209',
           pattern: 'gradient',
-          labelStyle: 'embossed',
+          labelStyle: 'engraved',
         },
       ],
       oak: [
@@ -84,7 +84,7 @@ describe('presets', () => {
         ruby,
         {
           material: 'gem',
-          color: ['#a3102b', '#e8334f'],
+          color: ['#8c0a22', '#b5142f'],
           labelColor: '#ffe7a3',
           pattern: 'swirl',
           labelStyle: 'printed',

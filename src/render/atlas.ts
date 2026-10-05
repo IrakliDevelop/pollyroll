@@ -1,11 +1,14 @@
 import { getPolyhedron } from '../geometry/polyhedra';
-import { labelText, labelUnderline, shapeOf } from '../geometry/labels';
+import { labelIndex, labelText, labelUnderline, shapeOf } from '../geometry/labels';
 import type { LabelSet } from '../geometry/labels';
 import { ATLAS_COLUMNS, ATLAS_ROWS } from './shaders';
 
 export const CELL = 128;
 /** Minimum empty border around every glyph, px; the tray's deepest atlas mip level relies on it. */
 const PAD = 8;
+/** Deepest atlas mip: its texels are PAD px, so no mip or bilinear tap reaches a neighbouring
+ *  cell's glyph. */
+export const ATLAS_MAX_LEVEL = Math.log2(PAD);
 /** Glyph block (ink plus any underline) fits this height and the padded cell width. */
 const INK_HEIGHT = 0.8 * CELL;
 const INK_WIDTH = CELL - 2 * PAD;
@@ -29,8 +32,9 @@ export type CustomLabels = Partial<Record<LabelSet, readonly string[]>>;
 
 /**
  * Canvas2D glyph atlas: ATLAS_COLUMNS × ATLAS_ROWS cells of CELL px, row = label set, column =
- * readout index; bold glyphs white on transparent, ink centered and scaled to 0.8 of the cell height
- * or the padded cell width, 6/9 underlined where the set requires it.
+ * readout index; custom labels are looked up by natural label index (`labelIndex`); bold glyphs
+ * white on transparent, ink centered and scaled to 0.8 of the cell height or the padded cell width,
+ * 6/9 underlined where the set requires it (default labels only).
  * Returns null when no 2D context is available.
  */
 export function buildAtlas(font: string, labels: CustomLabels = {}): HTMLCanvasElement | null {
@@ -43,12 +47,12 @@ export function buildAtlas(font: string, labels: CustomLabels = {}): HTMLCanvasE
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
   LABEL_SETS.forEach((set, row) => {
-    const custom = labels[set];
     const count = getPolyhedron(shapeOf(set)).readouts.length;
     for (let i = 0; i < count; i++) {
-      const text = custom?.[i] ?? labelText(set, i);
+      const custom = labels[set]?.[labelIndex(set, i)];
+      const text = custom ?? labelText(set, i);
       if (text === '') continue;
-      const underline = custom?.[i] === undefined && labelUnderline(set, i);
+      const underline = custom === undefined && labelUnderline(set, i);
       ctx.font = `bold ${PROBE}px ${font}`;
       const probe = ctx.measureText(text);
       // Underline: a gap and a bar of 0.08 × font size each below the ink.

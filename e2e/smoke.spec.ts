@@ -56,4 +56,27 @@ test.describe('render smoke', () => {
     // The static frame is the settled frame of the animated roll.
     await expect(page.locator('#tray')).toHaveScreenshot('smoke.png');
   });
+
+  test('custom labels play a d6 without page errors', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto('/smoke.html?reduced&labels=custom');
+    await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 10_000 });
+    const total = await page.evaluate(
+      async () =>
+        (
+          await window.__pollyrollTray.playRoll({
+            v: 1,
+            id: 'custom-labels',
+            notation: '1d6',
+            dice: [{ type: 'd6', value: 3, group: 0, wave: 0 }],
+            modifier: 0,
+            seed: '0123456789abcdef0123456789abcdef',
+            createdAt: 0,
+          })
+        ).total,
+    );
+    expect(total).toBe(3);
+    expect(errors).toEqual([]);
+  });
 });
