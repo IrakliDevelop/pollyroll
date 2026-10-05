@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Pollyroll Development'
+  short_description: 'Build and review Pollyroll changes safely'
+  default_prompt: 'Use $pollyroll-development to implement and verify a change in Pollyroll.'

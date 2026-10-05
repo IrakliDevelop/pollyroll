@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.DS_Store
+*.local
+.worktrees/
+.work/
+.claude/settings.local.json
+.superpowers/
+docs/superpowers/
+
+# Playwright
+test-results/
+playwright-report/
