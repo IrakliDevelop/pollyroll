@@ -4,10 +4,50 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pollyroll playground</title>
+    <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
-    <h1>Pollyroll playground</h1>
-    <p id="status">Loading…</p>
+    <header>
+      <h1>Pollyroll playground</h1>
+      <form id="controls">
+        <label>
+          Notation
+          <input id="notation" type="text" value="2d20kh1+1d6+3" spellcheck="false" />
+        </label>
+        <button id="roll" type="submit">Roll</button>
+        <label>
+          Skin
+          <select id="skin">
+            <option value="classic">classic</option>
+            <option value="obsidian">obsidian</option>
+            <option value="brass">brass</option>
+            <option value="oak">oak</option>
+            <option value="sapphire">sapphire</option>
+            <option value="ruby">ruby</option>
+          </select>
+        </label>
+        <label class="inline">
+          <input id="hidden" type="checkbox" />
+          Hidden roll
+        </label>
+      </form>
+      <pre id="error" class="error" hidden></pre>
+      <p id="notice" class="notice" hidden>
+        WebGL2 is not available: rolls resolve immediately without animation.
+      </p>
+    </header>
+    <main>
+      <section class="player">
+        <h2>You</h2>
+        <div id="tray-a" class="tray"></div>
+        <p id="result-a" class="result">No roll yet.</p>
+      </section>
+      <section class="player">
+        <h2>Other player</h2>
+        <div id="tray-b" class="tray"></div>
+        <p id="result-b" class="result">No roll yet.</p>
+      </section>
+    </main>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

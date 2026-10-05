@@ -1,0 +1,83 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #1d2330;
+  background: #f4f5f7;
+}
+
+body {
+  margin: 0;
+  padding: 16px 24px;
+}
+
+h1 {
+  font-size: 1.4rem;
+  margin: 0 0 12px;
+}
+
+h2 {
+  font-size: 1rem;
+  margin: 0 0 8px;
+}
+
+#controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+#controls label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#notation {
+  font-family: ui-monospace, monospace;
+  width: 16ch;
+  padding: 4px 6px;
+}
+
+button,
+select {
+  padding: 4px 10px;
+}
+
+.error {
+  margin: 12px 0 0;
+  padding: 8px;
+  color: #a1161c;
+  background: #fdecec;
+  font-family: ui-monospace, monospace;
+  white-space: pre;
+}
+
+.notice {
+  margin: 12px 0 0;
+  color: #7a5200;
+}
+
+main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.player {
+  flex: 1 1 360px;
+  min-width: 0;
+}
+
+.tray {
+  position: relative;
+  height: 360px;
+  border-radius: 8px;
+  background: #e3e6eb;
+  overflow: hidden;
+}
+
+.result {
+  margin: 8px 0 0;
+  font-family: ui-monospace, monospace;
+}
