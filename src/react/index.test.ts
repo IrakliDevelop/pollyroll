@@ -49,10 +49,10 @@ describe('DiceTray', () => {
 
   it('disposes every tray exactly once under StrictMode', () => {
     const view = render(createElement(StrictMode, null, createElement(DiceTray)));
-    expect(created.length).toBeGreaterThan(0);
+    expect(created).toHaveLength(2);
     view.unmount();
+    expect(created).toHaveLength(2);
     for (const tray of created) expect(tray.dispose).toHaveBeenCalledTimes(1);
-    expect(created.filter((t) => t.dispose.mock.calls.length === 0)).toHaveLength(0);
   });
 
   it('passes the created tray to trayRef', () => {
@@ -60,6 +60,14 @@ describe('DiceTray', () => {
     render(createElement(DiceTray, { trayRef }));
     expect(created).toHaveLength(1);
     expect(trayRef.current).toBe(created[0]);
+  });
+
+  it('sets trayRef to null after unmount', () => {
+    const trayRef = createRef<Tray | null>();
+    const view = render(createElement(DiceTray, { trayRef }));
+    expect(trayRef.current).toBe(created[0]);
+    view.unmount();
+    expect(trayRef.current).toBeNull();
   });
 
   it('applies a new skin once and ignores the same skin', () => {
@@ -72,6 +80,30 @@ describe('DiceTray', () => {
     view.rerender(createElement(DiceTray, { skin: ruby }));
     expect(tray?.setSkin).toHaveBeenCalledTimes(1);
     expect(created).toHaveLength(1);
+  });
+
+  it('compares inline skin objects by value', () => {
+    const view = render(createElement(DiceTray, { skin: { ...oak } }));
+    const tray = created[0];
+    view.rerender(createElement(DiceTray, { skin: { ...oak } }));
+    expect(tray?.setSkin).not.toHaveBeenCalled();
+    view.rerender(createElement(DiceTray, { skin: { ...oak, color: '#000' } }));
+    expect(tray?.setSkin).toHaveBeenCalledTimes(1);
+    expect(tray?.setSkin).toHaveBeenCalledWith({ ...oak, color: '#000' });
+    view.rerender(createElement(DiceTray, { skin: { ...oak, color: '#000' } }));
+    expect(tray?.setSkin).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the tray skin and the remembered skin when skin becomes undefined', () => {
+    const view = render(createElement(DiceTray, { skin: oak }));
+    const tray = created[0];
+    view.rerender(createElement(DiceTray));
+    expect(tray?.setSkin).not.toHaveBeenCalled();
+    view.rerender(createElement(DiceTray, { skin: oak }));
+    expect(tray?.setSkin).not.toHaveBeenCalled();
+    view.rerender(createElement(DiceTray, { skin: 'classic' }));
+    expect(tray?.setSkin).toHaveBeenCalledTimes(1);
+    expect(tray?.setSkin).toHaveBeenCalledWith('classic');
   });
 
   it('renders an absolute, pointer-events-none overlay with className and style', () => {

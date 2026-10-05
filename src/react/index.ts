@@ -6,7 +6,8 @@ import type { DiceTray as Tray, TrayOptions } from 'pollyroll/render';
 /**
  * Creates a tray on ref.current after mount, disposes it on unmount. Returns the tray once created.
  * Options are read once when the tray is created; only `skin` is reactive and is applied with
- * `setSkin` when it changes by identity.
+ * `setSkin` when it changes by value (strings by ===, objects by JSON.stringify). A `skin` that
+ * becomes undefined keeps the tray's current skin and the last applied skin is still remembered.
  */
 export function useDiceTray(ref: RefObject<HTMLElement | null>, opts?: TrayOptions): Tray | null {
   const [tray, setTray] = useState<Tray | null>(null);
@@ -28,9 +29,13 @@ export function useDiceTray(ref: RefObject<HTMLElement | null>, opts?: TrayOptio
 
   const skin = opts?.skin;
   useEffect(() => {
-    if (!tray || skin === skinRef.current) return;
+    const last = skinRef.current;
+    if (!tray || skin === undefined || skin === last) return;
+    if (typeof skin === 'object' && typeof last === 'object') {
+      if (JSON.stringify(skin) === JSON.stringify(last)) return;
+    }
     skinRef.current = skin;
-    if (skin !== undefined) tray.setSkin(skin);
+    tray.setSkin(skin);
   }, [tray, skin]);
 
   return tray;
@@ -46,7 +51,7 @@ export interface DiceTrayProps extends TrayOptions {
 
 /**
  * Overlay: a div styled position:absolute; inset:0; pointer-events:none, hosting the tray canvas.
- * Tray options are read once on mount; only `skin` is reactive (applied when it changes by identity).
+ * Tray options are read once on mount; only `skin` is reactive (applied when it changes by value).
  */
 export function DiceTray(props: DiceTrayProps): ReactElement {
   const { trayRef, className, style, ...opts } = props;
