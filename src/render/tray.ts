@@ -8,12 +8,14 @@ import type { ShapeType } from '../geometry/polyhedra';
 import { MAX_BODIES, planRoll } from '../physics/plan';
 import type { PlannedBody, RollPlan } from '../physics/plan';
 import { DT } from '../physics/world';
+import { PATTERNS } from '../skins/patterns';
 import { resolveSkin } from '../skins/presets';
-import type { Skin, SkinRef } from '../skins/types';
+import type { MaterialPreset, Skin, SkinRef } from '../skins/types';
 import { buildAtlas, LABEL_SETS } from './atlas';
 import { cameraPosition, trayBounds, viewProjection } from './camera';
 import { attrib, createBuffer, createProgram } from './gl';
 import { DIE_VERTEX, dieFragment, SHADOW_FRAGMENT, SHADOW_VERTEX } from './shaders';
+import type { DieKind } from './shaders';
 
 export interface TrayOptions {
   skin?: SkinRef;
@@ -40,8 +42,26 @@ export interface DiceTray {
 const FADE_MS = 300;
 const INST = 8; // floats per die instance: x, y, z, atlas row (−1 = blank), qx, qy, qz, qw
 const FRAME = 7; // floats per keyframe: x, y, z, qx, qy, qz, qw
-const PLASTIC: readonly number[] = [0, 0.35, 0.3]; // metalness, roughness, clearcoat
-const DIE_UNIFORMS = ['uVP', 'uScale', 'uCam', 'uBase', 'uLabel', 'uMat', 'uAlpha', 'uAtlas'];
+/** Material preset → metalness, roughness, clearcoat. */
+const MATERIALS: Record<MaterialPreset, readonly number[]> = {
+  plastic: [0, 0.35, 0.3],
+  metal: [1, 0.3, 0],
+  wood: [0, 0.7, 0.1],
+  stone: [0, 0.45, 0.6],
+  glass: [0, 0.05, 1],
+  gem: [0, 0.08, 1],
+};
+const DIE_UNIFORMS = [
+  'uVP',
+  'uScale',
+  'uCam',
+  'uBase',
+  'uBase2',
+  'uLabel',
+  'uMat',
+  'uAlpha',
+  'uAtlas',
+];
 /** Deepest atlas mip: level-3 texels are 8 px, the atlas cell padding, so no mip or bilinear tap
  *  reaches a neighbouring cell's glyph. */
 const ATLAS_MAX_LEVEL = 3;
@@ -60,10 +80,18 @@ interface Roll {
   plan: RollPlan;
   groups: Group[];
   eventSkin: SkinRef | undefined;
-  skin: Float32Array; // base rgb, label rgb (linear), metalness, roughness, clearcoat
+  skin: SkinGpu;
   t0: number;
   step: number;
   done: boolean;
+}
+
+/** A resolved skin: program key and fragment source for its feature set, plus uniform values. */
+interface SkinGpu {
+  key: string;
+  fragment: string;
+  transparent: boolean;
+  u: Float32Array; // color a rgb, color b rgb, label rgb (linear), metalness, roughness, clearcoat
 }
 
 interface Program {
@@ -94,12 +122,26 @@ function linearColor(css: string): readonly number[] {
   return c;
 }
 
-/** Uniform block for a skin; features not implemented yet fall back to classic's values. */
-function skinUniforms(skin: Skin): Float32Array {
+/** Program feature set and uniform values of a skin; a single color is used for both a and b. */
+function skinGpu(skin: Skin): SkinGpu {
   const m = skin.material;
-  const mat = typeof m === 'object' ? [m.metalness, m.roughness, m.clearcoat ?? 0] : PLASTIC;
-  const base = typeof skin.color === 'string' ? skin.color : skin.color[0];
-  return new Float32Array([...linearColor(base), ...linearColor(skin.labelColor), ...mat]);
+  const mat = typeof m === 'object' ? [m.metalness, m.roughness, m.clearcoat ?? 0] : MATERIALS[m];
+  const kind: DieKind = m === 'glass' || m === 'gem' ? m : 'opaque';
+  const [a, b] = typeof skin.color === 'string' ? [skin.color, skin.color] : skin.color;
+  const p = skin.pattern ?? 'none';
+  const pattern = typeof p === 'object' ? p.glsl : PATTERNS[p];
+  const label = skin.labelStyle ?? 'engraved';
+  return {
+    key: `${label}|${kind}|${pattern}`,
+    fragment: dieFragment(label, kind, pattern),
+    transparent: kind !== 'opaque',
+    u: new Float32Array([
+      ...linearColor(a),
+      ...linearColor(b),
+      ...linearColor(skin.labelColor),
+      ...mat,
+    ]),
+  };
 }
 
 function at(f: Float32Array, i: number): number {
@@ -192,13 +234,14 @@ export function createDiceTray(
   let shadowGpu: { vao: WebGLVertexArrayObject; quad: WebGLBuffer; buf: WebGLBuffer } | null = null;
   let atlasTex: WebGLTexture | null = null;
 
-  function program(g: WebGL2RenderingContext, key: string): Program {
+  /** Cached program for `key`; `fragment` is compiled with the die vertex shader on first use. */
+  function program(g: WebGL2RenderingContext, key: string, fragment: string): Program {
     let p = programs.get(key);
     if (p === undefined) {
       const shadow = key === 'shadow';
       const prog = shadow
         ? createProgram(g, SHADOW_VERTEX, SHADOW_FRAGMENT)
-        : createProgram(g, DIE_VERTEX, dieFragment(key));
+        : createProgram(g, DIE_VERTEX, fragment);
       const u = new Map<string, WebGLUniformLocation | null>();
       for (const name of shadow ? ['uVP', 'uAlpha'] : DIE_UNIFORMS) {
         u.set(name, g.getUniformLocation(prog, name));
@@ -344,7 +387,7 @@ export function createDiceTray(
     g.blendFunc(g.ONE, g.ONE_MINUS_SRC_ALPHA);
 
     if (shadows && ns > 0) {
-      const p = program(g, 'shadow');
+      const p = program(g, 'shadow', SHADOW_FRAGMENT);
       const res = shadowRes(g);
       g.disable(g.DEPTH_TEST);
       g.disable(g.CULL_FACE);
@@ -357,9 +400,10 @@ export function createDiceTray(
       g.drawArraysInstanced(g.TRIANGLE_STRIP, 0, 4, ns);
     }
 
-    const p = program(g, 'printed');
-    const u = p.u;
     const k = r.skin;
+    const p = program(g, k.key, k.fragment);
+    const u = p.u;
+    const f = k.u;
     const cam = cameraPosition();
     g.enable(g.DEPTH_TEST);
     g.enable(g.CULL_FACE);
@@ -371,21 +415,39 @@ export function createDiceTray(
     g.uniformMatrix4fv(u.get('uVP') ?? null, false, vp);
     g.uniform1f(u.get('uScale') ?? null, dieScale);
     g.uniform3f(u.get('uCam') ?? null, cam[0], cam[1], cam[2]);
-    g.uniform3f(u.get('uBase') ?? null, at(k, 0), at(k, 1), at(k, 2));
-    g.uniform3f(u.get('uLabel') ?? null, at(k, 3), at(k, 4), at(k, 5));
-    g.uniform3f(u.get('uMat') ?? null, at(k, 6), at(k, 7), at(k, 8));
+    g.uniform3f(u.get('uBase') ?? null, at(f, 0), at(f, 1), at(f, 2));
+    g.uniform3f(u.get('uBase2') ?? null, at(f, 3), at(f, 4), at(f, 5));
+    g.uniform3f(u.get('uLabel') ?? null, at(f, 6), at(f, 7), at(f, 8));
+    g.uniform3f(u.get('uMat') ?? null, at(f, 9), at(f, 10), at(f, 11));
     g.uniform1f(u.get('uAlpha') ?? null, alpha);
+    if (k.transparent) {
+      // Glass: back faces without depth writes, then front faces over them.
+      g.depthMask(false);
+      g.cullFace(g.FRONT);
+      drawDice(g, r, true);
+      g.depthMask(true);
+      g.cullFace(g.BACK);
+      drawDice(g, r, false);
+    } else {
+      drawDice(g, r, true);
+    }
+    g.bindVertexArray(null);
+  }
+
+  /** One instanced draw per label set; `upload` refreshes the instance buffers first. */
+  function drawDice(g: WebGL2RenderingContext, r: Roll, upload: boolean): void {
     // eslint-disable-next-line @typescript-eslint/prefer-for-of -- no iterator allocation per frame
     for (let i = 0; i < r.groups.length; i++) {
       const grp = r.groups[i];
       if (grp === undefined || grp.count === 0) continue;
       const res = setGpu(g, grp.set);
-      g.bindBuffer(g.ARRAY_BUFFER, res.buf);
-      g.bufferSubData(g.ARRAY_BUFFER, 0, grp.data, 0, grp.count * INST);
+      if (upload) {
+        g.bindBuffer(g.ARRAY_BUFFER, res.buf);
+        g.bufferSubData(g.ARRAY_BUFFER, 0, grp.data, 0, grp.count * INST);
+      }
       g.bindVertexArray(res.vao);
       g.drawArraysInstanced(g.TRIANGLES, 0, getDieMesh(shapeOf(grp.set)).vertexCount, grp.count);
     }
-    g.bindVertexArray(null);
   }
 
   function resolvePending(): void {
@@ -495,11 +557,13 @@ export function createDiceTray(
     async playRoll(event: RollEvent): Promise<RollSummary> {
       const summary = evaluate(event);
       if (disposed || gl === null) return summary;
+      // Compile first: a skin whose shader fails rejects here and leaves the current roll alone.
+      const skin = skinGpu(resolveSkin(event.skin ?? traySkin));
+      if (!lost) program(gl, skin.key, skin.fragment);
       stop();
       resolvePending();
       fit();
       const plan = planRoll(event, trayBounds(aspect, dieScale));
-      if (!lost) program(gl, 'printed');
       const groups: Group[] = [];
       LABEL_SETS.forEach((set, row) => {
         const bodies = plan.bodies.filter((b) => b.labelSet === set);
@@ -516,7 +580,7 @@ export function createDiceTray(
         plan,
         groups,
         eventSkin: event.skin,
-        skin: skinUniforms(resolveSkin(event.skin ?? traySkin)),
+        skin,
         t0: performance.now(),
         step: 0,
         done: false,
@@ -531,12 +595,17 @@ export function createDiceTray(
     },
 
     setSkin(skin: SkinRef): void {
-      traySkin = skin;
-      const r = roll;
-      if (r !== null && r.eventSkin === undefined) {
-        r.skin = skinUniforms(resolveSkin(skin));
-        if (frame === 0) render();
+      if (gl !== null && !disposed) {
+        const s = skinGpu(resolveSkin(skin));
+        // Throws PollyrollShaderError before anything changes, so the tray keeps its skin.
+        if (!lost) program(gl, s.key, s.fragment);
+        const r = roll;
+        if (r !== null && r.eventSkin === undefined) {
+          r.skin = s;
+          if (frame === 0) render();
+        }
       }
+      traySkin = skin;
     },
 
     clear(): void {

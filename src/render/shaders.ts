@@ -1,4 +1,6 @@
 /** GLSL ES 3.00 sources. Attribute locations are fixed by layout qualifiers. */
+import { NOISE } from '../skins/patterns';
+import type { LabelStyle } from '../skins/types';
 
 export const ATLAS_COLUMNS = 20;
 export const ATLAS_ROWS = 9;
@@ -13,6 +15,7 @@ layout(location=4) in vec4 aQuat;
 uniform mat4 uVP;
 uniform float uScale;
 out vec3 vObj;
+out vec3 vObjN;
 out vec3 vN;
 out vec3 vW;
 out vec2 vUV;
@@ -23,6 +26,7 @@ vec3 rot(vec4 q, vec3 v) {
 }
 void main() {
   vObj = aPos;
+  vObjN = aNormal;
   vN = rot(aQuat, aNormal);
   vW = (rot(aQuat, aPos) + aInst.xyz) * uScale;
   vUV = aLabel.xy;
@@ -31,21 +35,56 @@ void main() {
 }
 `;
 
-/** Label blending per label style; only `printed` exists so far. */
-const PRINTED = 'base = mix(base, uLabel, a);';
-const LABEL: Record<string, string> = { printed: PRINTED };
+/** Bump from atlas coverage: height h = H·a, N' = N − ∇h (surface gradient from screen derivatives). */
+const bump = (h: string, shade: string): string => `vec3 r1 = cross(dpy, N);
+    vec3 r2 = cross(N, dpx);
+    float det = dot(dpx, r1);
+    N = normalize(abs(det) * N - sign(det) * ${h} * (da.x * r1 + da.y * r2));
+    base = mix(base, uLabel, a) * (1.0 ${shade} 0.15 * a);`;
 
-/** Die fragment for a feature key (label style). Unknown keys use the printed style. */
-export function dieFragment(key: string): string {
+/** Label blending per label style: engraved sinks the glyph and darkens it, embossed raises it. */
+const LABEL: Record<LabelStyle, string> = {
+  printed: 'base = mix(base, uLabel, a);',
+  engraved: bump('-0.02', '-'),
+  embossed: bump('0.02', '+'),
+};
+
+/**
+ * Glass: back faces are the tinted body seen through the volume (fixed body opacity, no labels);
+ * front faces add reflections with Fresnel-weighted alpha. Labels on front faces stay opaque.
+ */
+const glass = (gem: boolean): string => `float fr = 0.04 + 0.96 * pow(1.0 - nv, 5.0);
+  vec3 g = env(refract(-V, N, 1.0 / 1.5), 0.0) * base * ${gem ? '3.0' : '4.0'};
+  if (gl_FrontFacing) {
+    g = mix(g, env(R, r), fr) + spec(N, V, LIGHT_DIR, vec3(0.04), r) * LIGHT * nl;
+    ${gem ? 'g += step(0.97, hash3(floor(vObj * 28.0)).x) * pow(max(dot(R, LIGHT_DIR), 0.0), 16.0) * 4.0;' : ''}
+    al = mix(0.15, 1.0, fr);
+  } else {
+    al = ${gem ? '0.7' : '0.5'};
+  }
+  c = mix(g, c, lab);
+  al = mix(al, 1.0, lab);`;
+
+/** Material kind of a die program: opaque, glass, or gem (glass with deeper tint and sparkle). */
+export type DieKind = 'opaque' | 'glass' | 'gem';
+
+/**
+ * Die fragment for a feature set: label style, material kind, and the `pattern` GLSL function.
+ * Glass and gem output Fresnel-weighted alpha with a refraction tint; labels stay opaque.
+ */
+export function dieFragment(label: LabelStyle, kind: DieKind, pattern: string): string {
+  const flat = label === 'printed';
   return `#version 300 es
 precision highp float;
 in vec3 vObj;
+in vec3 vObjN;
 in vec3 vN;
 in vec3 vW;
 in vec2 vUV;
 flat in vec2 vCell;
 uniform vec3 uCam;
 uniform vec3 uBase;
+uniform vec3 uBase2;
 uniform vec3 uLabel;
 uniform vec3 uMat;
 uniform float uAlpha;
@@ -57,6 +96,8 @@ const vec3 LIGHT = vec3(3.2);
 const vec3 SKY = vec3(0.42, 0.44, 0.48);
 const vec3 GROUND = vec3(0.26, 0.24, 0.22);
 const float EXPOSURE = 0.55;
+${NOISE}
+${pattern}
 vec3 hemi(vec3 d) {
   return mix(GROUND, SKY, d.y * 0.5 + 0.5);
 }
@@ -80,18 +121,22 @@ vec3 spec(vec3 N, vec3 V, vec3 L, vec3 f0, float r) {
   return D * G * fresnel(f0, max(dot(V, H), 0.0)) / (4.0 * nv * nl);
 }
 void main() {
-  vec3 base = uBase;
-  // Sample in uniform control flow (mip selection needs derivatives); apply inside the branch.
+  vec3 base = pattern(vObj, normalize(vObjN), uBase, uBase2);
+  vec3 N = normalize(vN);
+  if (!gl_FrontFacing) N = -N;
+  // Sample and differentiate in uniform control flow; apply inside the branch.
   vec2 uv = clamp(vUV, 0.0, 1.0);
   vec2 cell = max(vCell, 0.0);
   float a = texture(uAtlas, vec2((cell.x + uv.x) / ${ATLAS_COLUMNS}.0, (cell.y + 1.0 - uv.y) / ${ATLAS_ROWS}.0)).r;
-  if (vCell.x >= 0.0 && uv == vUV) {
-    ${LABEL[key] ?? PRINTED}
+  ${flat ? '' : 'vec3 dpx = dFdx(vW);\n  vec3 dpy = dFdy(vW);\n  vec2 da = vec2(dFdx(a), dFdy(a));'}
+  float lab = 0.0;
+  if (vCell.x >= 0.0 && uv == vUV && gl_FrontFacing) {
+    lab = a;
+    ${LABEL[label]}
   }
   float m = uMat.x;
   float r = uMat.y;
   float cc = uMat.z;
-  vec3 N = normalize(vN);
   vec3 V = normalize(uCam - vW);
   vec3 R = reflect(-V, N);
   float nl = max(dot(N, LIGHT_DIR), 0.0);
@@ -105,10 +150,13 @@ void main() {
     float fc = 0.04 + 0.96 * pow(1.0 - nv, 5.0);
     c = c * (1.0 - cc * fc) + cc * (spec(N, V, LIGHT_DIR, vec3(0.04), 0.15) * LIGHT * nl + fc * env(R, 0.15));
   }
+  float al = 1.0;
+  ${kind === 'opaque' ? '' : glass(kind === 'gem')}
   c *= EXPOSURE;
   c = clamp(c * (2.51 * c + 0.03) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0);
   c = pow(c, vec3(1.0 / 2.2));
-  oColor = vec4(c * uAlpha, uAlpha);
+  al *= uAlpha;
+  oColor = vec4(c * al, al);
 }
 `;
 }

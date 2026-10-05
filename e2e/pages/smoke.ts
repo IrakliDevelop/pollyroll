@@ -1,5 +1,6 @@
 import type { RollEvent, RollSummary } from 'pollyroll';
 import { createDiceTray } from 'pollyroll/render';
+import type { DiceTray } from 'pollyroll/render';
 
 interface SmokeState {
   ready: boolean;
@@ -12,6 +13,7 @@ interface SmokeState {
 declare global {
   interface Window {
     __pollyroll: SmokeState;
+    __pollyrollTray: DiceTray;
   }
 }
 
@@ -46,11 +48,14 @@ window.__pollyroll = state;
 
 const canvas = document.getElementById('tray');
 if (!(canvas instanceof HTMLCanvasElement)) throw new Error('missing #tray canvas');
-const reduced = new URLSearchParams(location.search).has('reduced');
+const params = new URLSearchParams(location.search);
+const reduced = params.has('reduced');
 const tray = createDiceTray(canvas, {
   labelFont: 'sans-serif',
   reducedMotion: reduced ? 'always' : 'never',
+  skin: params.get('skin') ?? 'classic',
 });
+window.__pollyrollTray = tray;
 state.supported = tray.supported;
 const start = performance.now();
 const done = tray.playRoll(event);
