@@ -7,7 +7,7 @@ deterministic physics engine, and rolls are result-first, so it works for multip
   and a symmetry remap turns each settled die so its top face shows the value already chosen.
 - **Shared rolls.** A roll is a plain JSON `RollEvent`. Every client that plays the same event shows
   the same values. Clients whose trays have the same shape also see the same motion.
-- **Small.** About 3 kB for the DOM-free core, about 16 kB for the renderer, physics, geometry, and
+- **Small.** About 3 kB for the DOM-free core, about 18 kB for the renderer, physics, geometry, and
   shaders, and under 1 kB for the React binding (min+gzip). It ships no asset files: geometry,
   labels, patterns, and lighting are all generated in code.
 
@@ -86,6 +86,11 @@ interface RollEvent {
 }
 ```
 
+In each summary group, `dice` lists the group's values in event order, and `kept` and `dropped` are
+**indexes** into that `dice` array. For example, `2d20kh1` with `[7, 15]` gives
+`{ dice: [7, 15], kept: [1], dropped: [0], subtotal: 15 }`. Keep/drop ranks every die of the group,
+explosion dice included, and ties go to the lower index.
+
 The event never carries totals or kept/dropped dice; `evaluate(event)` derives them. `group` is the
 index of the dice term (constants are not counted). `wave` is 0 for the initial throw and 1 or more
 for explosions.
@@ -101,6 +106,7 @@ const tray = createDiceTray(target, {
   maxDpr: 2,
   reducedMotion: 'auto', // 'auto' follows prefers-reduced-motion; 'always' | 'never'
   fadeAfterMs: null, // number: fade the dice out after they settle
+  labels: { d6: ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'] }, // optional custom labels per die
 });
 
 tray.playRoll(event); // Promise<RollSummary>; a new roll replaces the previous dice
@@ -110,6 +116,16 @@ tray.resize(); // also called automatically through ResizeObserver
 tray.dispose(); // releases every GPU resource and listener
 tray.supported; // false when WebGL2 is unavailable
 ```
+
+Custom labels (`labels`) replace the stock text but keep the value mapping. Each array follows the
+die's natural order:
+
+- `d4` to `d20`: `'1'…'N'`.
+- `d10`, `d100ones`: digits `'0'…'9'`.
+- `d100tens`: `'00'…'90'`.
+- `dF`: three entries for −1, blank, and +1.
+
+The label font is the skin's `font` if it has one, otherwise `labelFont`.
 
 - **No WebGL2:** `playRoll` resolves immediately with the summary and draws nothing.
 - **Reduced motion:** the tray draws the settled dice without animating them and resolves
@@ -183,6 +199,7 @@ The library never touches the network. Send the event over whatever channel you 
 ```ts
 // roller
 const event = createRoll('1d20+4', { rollerId: me.id });
+// redact() nulls every value and drops explosion dice, so a hidden roll reveals nothing
 tray.playRoll(event);
 channel.send({ kind: 'dice', event: hidden ? redact(event) : event });
 
@@ -190,7 +207,7 @@ channel.send({ kind: 'dice', event: hidden ? redact(event) : event });
 channel.on('dice', ({ event }) => {
   if (!isRollEvent(event) || seen.has(event.id)) return;
   seen.add(event.id);
-  tray.playRoll(event); // redacted events animate with blank labels; total is null
+  tray.playRoll(event); // redacted: blank labels, total null, explosion dice removed
 });
 ```
 
