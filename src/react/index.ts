@@ -28,7 +28,7 @@ export function useDiceTray(ref: RefObject<HTMLElement | null>, opts?: TrayOptio
 
   const skin = opts?.skin;
   useEffect(() => {
-    if (!tray || !skinChanged(skin, skinRef.current)) return;
+    if (!tray || skin === undefined || !skinChanged(skin, skinRef.current)) return;
     skinRef.current = skin;
     tray.setSkin(skin);
   }, [tray, skin]);

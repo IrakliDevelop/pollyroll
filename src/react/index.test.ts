@@ -24,19 +24,27 @@ function overlay(container: HTMLElement): HTMLDivElement {
 }
 
 describe('DiceTray', () => {
-  it('appends one tray canvas on mount and removes it on unmount', () => {
-    const view = render(createElement(DiceTray));
+  it('appends one tray canvas on mount and disposes the tray exactly once on unmount', () => {
+    const trayRef = createRef<Tray | null>();
+    const view = render(createElement(DiceTray, { trayRef }));
     const div = overlay(view.container);
     expect(div.querySelectorAll('canvas')).toHaveLength(1);
+    assert.isNotNull(trayRef.current);
+    const dispose = vi.spyOn(trayRef.current, 'dispose');
     view.unmount();
+    expect(dispose).toHaveBeenCalledTimes(1);
     expect(div.querySelectorAll('canvas')).toHaveLength(0);
   });
 
-  it('keeps exactly one tray canvas under StrictMode and removes it on unmount', () => {
-    const view = render(createElement(StrictMode, null, createElement(DiceTray)));
+  it('keeps exactly one tray canvas under StrictMode and disposes it exactly once', () => {
+    const trayRef = createRef<Tray | null>();
+    const view = render(createElement(StrictMode, null, createElement(DiceTray, { trayRef })));
     const div = overlay(view.container);
     expect(div.querySelectorAll('canvas')).toHaveLength(1);
+    assert.isNotNull(trayRef.current);
+    const dispose = vi.spyOn(trayRef.current, 'dispose');
     view.unmount();
+    expect(dispose).toHaveBeenCalledTimes(1);
     expect(div.querySelectorAll('canvas')).toHaveLength(0);
   });
 
@@ -81,12 +89,29 @@ describe('useDiceTray', () => {
     expect(result.current).toBeNull();
     expect(document.querySelectorAll('canvas')).toHaveLength(0);
   });
+
+  it('applies a changed skin once and ignores equal or undefined skins', () => {
+    const ref = { current: document.createElement('div') };
+    const { result, rerender } = renderHook<Tray | null, { skin?: SkinRef }>(
+      ({ skin }) => useDiceTray(ref, { skin }),
+      { initialProps: { skin: 'classic' } },
+    );
+    assert.isNotNull(result.current);
+    const setSkin = vi.spyOn(result.current, 'setSkin');
+    rerender({ skin: 'ruby' });
+    expect(setSkin).toHaveBeenCalledTimes(1);
+    expect(setSkin).toHaveBeenCalledWith('ruby');
+    rerender({ skin: { ...oak } });
+    rerender({ skin: { ...oak } });
+    expect(setSkin).toHaveBeenCalledTimes(2);
+    expect(setSkin).toHaveBeenLastCalledWith(oak);
+    rerender({ skin: undefined });
+    expect(setSkin).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('skinChanged', () => {
-  it.each<[string, boolean, SkinRef | undefined, SkinRef | undefined]>([
-    ['an undefined skin', false, undefined, oak],
-    ['an undefined skin with nothing applied', false, undefined, undefined],
+  it.each<[string, boolean, SkinRef, SkinRef | undefined]>([
     ['the same preset name', false, 'classic', 'classic'],
     ['another preset name', true, 'ruby', 'classic'],
     ['the same skin object', false, oak, oak],
