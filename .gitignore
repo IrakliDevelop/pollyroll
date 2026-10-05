@@ -13,3 +13,4 @@ docs/superpowers/
 # Playwright
 test-results/
 playwright-report/
+.claude/worktrees/
