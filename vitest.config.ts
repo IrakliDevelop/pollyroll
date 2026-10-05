@@ -32,6 +32,7 @@ export default defineConfig({
         lines: 90,
         branches: 85,
         functions: 90,
+        'src/core/notation.ts': { lines: 100, branches: 100, functions: 100, statements: 100 },
       },
     },
   },
