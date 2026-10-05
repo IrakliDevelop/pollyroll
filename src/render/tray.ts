@@ -42,6 +42,10 @@ const INST = 8; // floats per die instance: x, y, z, atlas row (−1 = blank), q
 const FRAME = 7; // floats per keyframe: x, y, z, qx, qy, qz, qw
 const PLASTIC: readonly number[] = [0, 0.35, 0.3]; // metalness, roughness, clearcoat
 const DIE_UNIFORMS = ['uVP', 'uScale', 'uCam', 'uBase', 'uLabel', 'uMat', 'uAlpha', 'uAtlas'];
+/** Deepest atlas mip: level-3 texels are 8 px, the atlas cell padding, so no mip or bilinear tap
+ *  reaches a neighbouring cell's glyph. */
+const ATLAS_MAX_LEVEL = 3;
+const MAX_ANISOTROPY = 4;
 
 interface Group {
   set: LabelSet;
@@ -179,6 +183,7 @@ export function createDiceTray(
   let aspect = 1;
   const vp = new Float32Array(16);
   const shadowData = new Float32Array(MAX_BODIES * 4);
+  const instances = new Map<LabelSet, Float32Array>(); // reused across rolls, one per label set
 
   // GPU resources, rebuilt lazily from CPU-side data (meshes, atlas canvas, shader sources).
   const programs = new Map<string, Program>();
@@ -258,8 +263,18 @@ export function createDiceTray(
         g.texImage2D(g.TEXTURE_2D, 0, g.R8, g.RED, g.UNSIGNED_BYTE, atlas);
       }
       g.pixelStorei(g.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MAX_LEVEL, ATLAS_MAX_LEVEL);
       g.generateMipmap(g.TEXTURE_2D);
       g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MIN_FILTER, g.LINEAR_MIPMAP_LINEAR);
+      const aniso = g.getExtension('EXT_texture_filter_anisotropic');
+      if (aniso !== null) {
+        const max = Number(g.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)) || 1;
+        g.texParameterf(
+          g.TEXTURE_2D,
+          aniso.TEXTURE_MAX_ANISOTROPY_EXT,
+          Math.min(max, MAX_ANISOTROPY),
+        );
+      }
       g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MAG_FILTER, g.LINEAR);
       g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_S, g.CLAMP_TO_EDGE);
       g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_T, g.CLAMP_TO_EDGE);
@@ -463,6 +478,8 @@ export function createDiceTray(
     if (frame !== 0) cancelAnimationFrame(frame);
     frame = 0;
     if (gl !== null) dropGpu(gl, false);
+    // The outcome is known; the dice redraw when the context is restored.
+    resolvePending();
   };
   const onRestored = (): void => {
     lost = false;
@@ -488,14 +505,12 @@ export function createDiceTray(
         const bodies = plan.bodies.filter((b) => b.labelSet === set);
         if (bodies.length === 0) return;
         const radius = getPolyhedron(shapeOf(set)).radius;
-        groups.push({
-          set,
-          row,
-          bodies,
-          radius,
-          data: new Float32Array(MAX_BODIES * INST),
-          count: 0,
-        });
+        let data = instances.get(set);
+        if (data === undefined) {
+          data = new Float32Array(MAX_BODIES * INST);
+          instances.set(set, data);
+        }
+        groups.push({ set, row, bodies, radius, data, count: 0 });
       });
       const r: Roll = {
         plan,

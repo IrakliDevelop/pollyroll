@@ -58,3 +58,31 @@ describe('createDiceTray without WebGL2', () => {
     expect((await tray.playRoll(event)).total).toBe(10);
   });
 });
+
+/** WebGL2 stand-in: every member is a no-op function returning a truthy handle; no 2D context. */
+function fakeWebGl(): void {
+  const noop = (): object => ({});
+  const gl: unknown = new Proxy({}, { get: () => noop });
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(((id: string) =>
+    id === 'webgl2' ? gl : null) as typeof HTMLCanvasElement.prototype.getContext);
+}
+
+describe('createDiceTray context loss', () => {
+  it('resolves a pending roll with its summary when the context is lost mid-animation', async () => {
+    fakeWebGl();
+    vi.stubGlobal('requestAnimationFrame', () => 1);
+    vi.stubGlobal('cancelAnimationFrame', () => undefined);
+    const canvas = document.createElement('canvas');
+    const tray = createDiceTray(canvas, { reducedMotion: 'never' });
+    expect(tray.supported).toBe(true);
+    const done = tray.playRoll(event);
+    canvas.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
+    const result = await Promise.race([
+      done,
+      new Promise<'pending'>((resolve) => setTimeout(() => resolve('pending'), 20)),
+    ]);
+    expect(result === 'pending' ? 'pending' : result.total).toBe(10);
+    tray.dispose();
+    vi.unstubAllGlobals();
+  });
+});

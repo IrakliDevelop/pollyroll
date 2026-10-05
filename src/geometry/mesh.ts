@@ -113,8 +113,8 @@ function build(shape: ShapeType): DieMesh {
         const next = midpoint(v, at(pts, k + 1));
         const prev = midpoint(at(pts, k - 1), v);
         const label = labelFrame(
-          add(c, scale(sub(v, c), 0.55)),
-          0.9 * r,
+          add(c, scale(sub(v, c), 0.5)),
+          0.75 * r,
           sub(v, c),
           n,
           at(face, k),
@@ -124,7 +124,7 @@ function build(shape: ShapeType): DieMesh {
       });
       return;
     }
-    const label = labelFrame(c, 1.2 * r, faceUp(c, pts), n, f);
+    const label = labelFrame(c, 1.45 * r, faceUp(c, pts), n, f);
     pts.forEach((v, k) => tri(c, v, at(pts, k + 1), n, label));
   });
 

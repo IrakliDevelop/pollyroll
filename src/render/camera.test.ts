@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { CAMERA_DISTANCE, TRAY_MARGIN, cameraPosition, trayBounds, viewProjection } from './camera';
+import { CAMERA_DISTANCE, cameraPosition, trayBounds, viewProjection } from './camera';
 
-// Hand computation for trayBounds(4/3, 1), D = 14, M = 0.5:
+// Hand computation for trayBounds(4/3, 1), D = 14, margins far 2.5, near 0.75, side 0.5:
 //   H = 14 × 0.766044443118978 ≈ 10.7246;  Z = 14 × 0.6427876096865394 ≈ 8.9990
 //   zFar  = Z − H / 0.5773502691896257 ≈ 8.9990 − 18.5755 ≈ −9.5766
 //   zNear = Z − H / 2.7474774194546216 ≈ 8.9990 − 3.9034 ≈ 5.0956
@@ -9,8 +9,8 @@ import { CAMERA_DISTANCE, TRAY_MARGIN, cameraPosition, trayBounds, viewProjectio
 //     (near-edge view depth is (H / sin70)·cos20, so the visible half width is that × aspect × tan20
 //      = (H / sin70) × aspect × sin20)
 //   minX = −4.7046 → ceil to 0.25 → −4.5;  maxX = 4.7046 → floor → 4.5
-//   minZ = −9.0766 → ceil → −9;            maxZ = 4.5956 → floor → 4.5
-// dieScale 2 halves the raw bounds: ±2.3523 → ±2.25, −4.5383 → −4.5, 2.2978 → 2.25.
+//   minZ = −7.0766 → ceil → −7;            maxZ = 4.3456 → floor → 4.25
+// dieScale 2 halves the raw bounds: ±2.3523 → ±2.25, −3.5383 → −3.5, 2.1728 → 2.
 const ZFAR = -9.576564013118725;
 const ZNEAR = 5.0955832797268314;
 /** Unquantized near-edge half width per unit aspect: (H / sin70) × sin20. */
@@ -26,7 +26,7 @@ function project(m: Float32Array, p: readonly [number, number, number]): [number
 
 describe('trayBounds', () => {
   it('matches the hand-computed bounds for a 4:3 canvas', () => {
-    expect(trayBounds(4 / 3, 1)).toEqual({ minX: -4.5, maxX: 4.5, minZ: -9, maxZ: 4.5 });
+    expect(trayBounds(4 / 3, 1)).toEqual({ minX: -4.5, maxX: 4.5, minZ: -7, maxZ: 4.25 });
   });
 
   it('quantizes every bound to a multiple of 0.25', () => {
@@ -42,7 +42,7 @@ describe('trayBounds', () => {
   });
 
   it('halves the extents for dieScale 2 (before quantization)', () => {
-    expect(trayBounds(4 / 3, 2)).toEqual({ minX: -2.25, maxX: 2.25, minZ: -4.5, maxZ: 2.25 });
+    expect(trayBounds(4 / 3, 2)).toEqual({ minX: -2.25, maxX: 2.25, minZ: -3.5, maxZ: 2 });
   });
 
   it('is identical for repeated calls', () => {
@@ -64,9 +64,29 @@ describe('trayBounds', () => {
     for (const aspect of [4 / 3, 2.5]) {
       const m = viewProjection(aspect, new Float32Array(16));
       const halfW = NEAR_HALF_WIDTH * aspect;
-      expect(trayBounds(aspect, 1).maxX).toBeLessThanOrEqual(halfW - TRAY_MARGIN);
+      expect(trayBounds(aspect, 1).maxX).toBeLessThanOrEqual(halfW - 0.5);
       for (const x of [-halfW, halfW]) {
         expect(Math.abs(project(m, [x, 0, ZNEAR])[0])).toBeLessThanOrEqual(1 + 1e-4);
+      }
+    }
+  });
+
+  it('keeps a radius-0.9 die resting in any tray corner fully on screen', () => {
+    const r = 0.9;
+    for (const aspect of [0.5, 0.75, 1, 4 / 3, 16 / 9, 2.5, 3]) {
+      const m = viewProjection(aspect, new Float32Array(16));
+      const at = (i: number): number => m[i] ?? Number.NaN;
+      const b = trayBounds(aspect, 1);
+      // A die touching a wall at either end of it also touches the adjacent wall: the corners.
+      for (const x of [b.minX + r, b.maxX - r]) {
+        for (const z of [b.minZ + r, b.maxZ - r]) {
+          const [px, py] = project(m, [x, r, z]);
+          const w = at(3) * x + at(7) * r + at(11) * z + at(15);
+          const rx = (r * at(0)) / w;
+          const ry = (r * at(0) * aspect) / w;
+          expect(Math.abs(px) + rx).toBeLessThanOrEqual(1);
+          expect(Math.abs(py) + ry).toBeLessThanOrEqual(1);
+        }
       }
     }
   });
@@ -103,5 +123,9 @@ describe('viewProjection', () => {
     expect(y).toBeGreaterThan(0);
     expect(z).toBeGreaterThan(0);
     expect(Math.abs(Math.sqrt(y * y + z * z) - CAMERA_DISTANCE)).toBeLessThan(1e-9);
+  });
+
+  it('returns a frozen camera position', () => {
+    expect(Object.isFrozen(cameraPosition())).toBe(true);
   });
 });

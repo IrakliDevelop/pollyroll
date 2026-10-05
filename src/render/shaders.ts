@@ -52,10 +52,11 @@ uniform float uAlpha;
 uniform sampler2D uAtlas;
 out vec4 oColor;
 const float PI = 3.14159265;
-const vec3 LIGHT_DIR = vec3(-0.4364, 0.8729, 0.2182);
-const vec3 LIGHT = vec3(2.4);
-const vec3 SKY = vec3(0.95, 0.97, 1.0);
-const vec3 GROUND = vec3(0.32, 0.3, 0.28);
+const vec3 LIGHT_DIR = vec3(-0.33, 0.9428, 0.0471);
+const vec3 LIGHT = vec3(3.2);
+const vec3 SKY = vec3(0.42, 0.44, 0.48);
+const vec3 GROUND = vec3(0.26, 0.24, 0.22);
+const float EXPOSURE = 0.55;
 vec3 hemi(vec3 d) {
   return mix(GROUND, SKY, d.y * 0.5 + 0.5);
 }
@@ -80,8 +81,11 @@ vec3 spec(vec3 N, vec3 V, vec3 L, vec3 f0, float r) {
 }
 void main() {
   vec3 base = uBase;
-  if (vCell.x >= 0.0 && vUV.x >= 0.0 && vUV.x <= 1.0 && vUV.y >= 0.0 && vUV.y <= 1.0) {
-    float a = texture(uAtlas, vec2((vCell.x + vUV.x) / ${ATLAS_COLUMNS}.0, (vCell.y + 1.0 - vUV.y) / ${ATLAS_ROWS}.0)).r;
+  // Sample in uniform control flow (mip selection needs derivatives); apply inside the branch.
+  vec2 uv = clamp(vUV, 0.0, 1.0);
+  vec2 cell = max(vCell, 0.0);
+  float a = texture(uAtlas, vec2((cell.x + uv.x) / ${ATLAS_COLUMNS}.0, (cell.y + 1.0 - uv.y) / ${ATLAS_ROWS}.0)).r;
+  if (vCell.x >= 0.0 && uv == vUV) {
     ${LABEL[key] ?? PRINTED}
   }
   float m = uMat.x;
@@ -101,6 +105,7 @@ void main() {
     float fc = 0.04 + 0.96 * pow(1.0 - nv, 5.0);
     c = c * (1.0 - cc * fc) + cc * (spec(N, V, LIGHT_DIR, vec3(0.04), 0.15) * LIGHT * nl + fc * env(R, 0.15));
   }
+  c *= EXPOSURE;
   c = clamp(c * (2.51 * c + 0.03) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0);
   c = pow(c, vec3(1.0 / 2.2));
   oColor = vec4(c * uAlpha, uAlpha);

@@ -4,6 +4,13 @@ import type { LabelSet } from '../geometry/labels';
 import { ATLAS_COLUMNS, ATLAS_ROWS } from './shaders';
 
 export const CELL = 128;
+/** Minimum empty border around every glyph, px; the tray's deepest atlas mip level relies on it. */
+const PAD = 8;
+/** Glyph block (ink plus any underline) fits this height and the padded cell width. */
+const INK_HEIGHT = 0.8 * CELL;
+const INK_WIDTH = CELL - 2 * PAD;
+/** Font size used to measure a label before scaling it to fit. */
+const PROBE = 100;
 
 /** Atlas row order: one row per label set. */
 export const LABEL_SETS: readonly LabelSet[] = [
@@ -22,7 +29,8 @@ export type CustomLabels = Partial<Record<LabelSet, readonly string[]>>;
 
 /**
  * Canvas2D glyph atlas: ATLAS_COLUMNS × ATLAS_ROWS cells of CELL px, row = label set, column =
- * readout index; glyphs white on transparent, centered, 6/9 underlined where the set requires it.
+ * readout index; bold glyphs white on transparent, ink centered and scaled to 0.8 of the cell height
+ * or the padded cell width, 6/9 underlined where the set requires it.
  * Returns null when no 2D context is available.
  */
 export function buildAtlas(font: string, labels: CustomLabels = {}): HTMLCanvasElement | null {
@@ -34,32 +42,34 @@ export function buildAtlas(font: string, labels: CustomLabels = {}): HTMLCanvasE
   ctx.fillStyle = '#fff';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
-  const base = 0.62 * CELL;
   LABEL_SETS.forEach((set, row) => {
     const custom = labels[set];
     const count = getPolyhedron(shapeOf(set)).readouts.length;
     for (let i = 0; i < count; i++) {
       const text = custom?.[i] ?? labelText(set, i);
       if (text === '') continue;
-      let size = base;
+      const underline = custom?.[i] === undefined && labelUnderline(set, i);
+      ctx.font = `bold ${PROBE}px ${font}`;
+      const probe = ctx.measureText(text);
+      // Underline: a gap and a bar of 0.08 × font size each below the ink.
+      const blockH =
+        probe.actualBoundingBoxAscent +
+        probe.actualBoundingBoxDescent +
+        (underline ? 0.16 * PROBE : 0);
+      const inkW = probe.actualBoundingBoxLeft + probe.actualBoundingBoxRight;
+      if (blockH <= 0 || inkW <= 0) continue;
+      const size = PROBE * Math.min(INK_HEIGHT / blockH, INK_WIDTH / inkW);
       ctx.font = `bold ${size}px ${font}`;
-      const width = ctx.measureText(text).width;
-      if (width > 0.8 * CELL) {
-        size *= (0.8 * CELL) / width;
-        ctx.font = `bold ${size}px ${font}`;
-      }
       const m = ctx.measureText(text);
-      const cx = (i + 0.5) * CELL;
-      const cy = (row + 0.5) * CELL;
-      ctx.fillText(text, cx, cy + (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2);
-      if (custom?.[i] === undefined && labelUnderline(set, i)) {
-        const half = Math.max(m.width, 0.4 * size) / 2;
-        ctx.fillRect(
-          cx - half,
-          cy + m.actualBoundingBoxAscent / 2 + 0.08 * size,
-          2 * half,
-          0.08 * size,
-        );
+      const ascent = m.actualBoundingBoxAscent;
+      const descent = m.actualBoundingBoxDescent;
+      const height = ascent + descent + (underline ? 0.16 * size : 0);
+      const cx = (i + 0.5) * CELL + (m.actualBoundingBoxLeft - m.actualBoundingBoxRight) / 2;
+      const baseline = (row + 0.5) * CELL - height / 2 + ascent;
+      ctx.fillText(text, cx, baseline);
+      if (underline) {
+        const half = Math.max(m.actualBoundingBoxLeft + m.actualBoundingBoxRight, 0.4 * size) / 2;
+        ctx.fillRect(cx - half, baseline + descent + 0.08 * size, 2 * half, 0.08 * size);
       }
     }
   });

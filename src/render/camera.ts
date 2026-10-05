@@ -3,7 +3,14 @@ import type { TrayBounds } from '../physics/world';
 export const FOV_Y_DEG = 40;
 export const PITCH_DEG = 50;
 export const CAMERA_DISTANCE = 14;
-export const TRAY_MARGIN = 0.5;
+/**
+ * Per-wall inset from the visible floor edges, world units. Sized so a radius-0.9 die resting in any
+ * tray corner projects entirely on screen for aspects 0.5–3: the far wall needs the most because the
+ * top screen edge meets the floor at a grazing 30°, so die height reaches past the floor edge.
+ */
+const MARGIN_FAR = 2.5;
+const MARGIN_NEAR = 0.75;
+const MARGIN_SIDE = 0.5;
 
 // Literal trig values so trayBounds is bit-identical in every engine.
 const SIN_50 = 0.766044443118978;
@@ -15,7 +22,11 @@ const SIN_70 = 0.9396926207859083;
 
 const HEIGHT = CAMERA_DISTANCE * SIN_50;
 const OFFSET_Z = CAMERA_DISTANCE * COS_50;
-const POSITION: readonly [number, number, number] = [0, HEIGHT, OFFSET_Z];
+const POSITION: readonly [number, number, number] = Object.freeze<[number, number, number]>([
+  0,
+  HEIGHT,
+  OFFSET_Z,
+]);
 
 const NEAR = 1;
 const FAR = 50;
@@ -73,9 +84,9 @@ export function trayBounds(aspect: number, dieScale: number): TrayBounds {
   const ceil = (v: number): number => Math.ceil((v / dieScale) * 4) / 4 + 0;
   const floor = (v: number): number => Math.floor((v / dieScale) * 4) / 4 + 0;
   return {
-    minX: Math.min(ceil(-halfW + TRAY_MARGIN), -2),
-    maxX: Math.max(floor(halfW - TRAY_MARGIN), 2),
-    minZ: ceil(zFar + TRAY_MARGIN),
-    maxZ: floor(zNear - TRAY_MARGIN),
+    minX: Math.min(ceil(-halfW + MARGIN_SIDE), -2),
+    maxX: Math.max(floor(halfW - MARGIN_SIDE), 2),
+    minZ: ceil(zFar + MARGIN_FAR),
+    maxZ: floor(zNear - MARGIN_NEAR),
   };
 }

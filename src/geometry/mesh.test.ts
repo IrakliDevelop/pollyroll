@@ -38,6 +38,31 @@ function uvArea(t: readonly [MeshVertex, MeshVertex, MeshVertex]): number {
   return (b.uv[0] - a.uv[0]) * (c.uv[1] - a.uv[1]) - (c.uv[0] - a.uv[0]) * (b.uv[1] - a.uv[1]);
 }
 
+/** Label square of a labelled triangle: side length (|∂p/∂u|) and the position of uv (0.5, 0.5). */
+function labelSquare(t: readonly [MeshVertex, MeshVertex, MeshVertex]): {
+  side: number;
+  center: Vec3;
+} {
+  const [a, b, c] = t;
+  const e1 = sub(b.p, a.p);
+  const e2 = sub(c.p, a.p);
+  const du1 = b.uv[0] - a.uv[0];
+  const dv1 = b.uv[1] - a.uv[1];
+  const du2 = c.uv[0] - a.uv[0];
+  const dv2 = c.uv[1] - a.uv[1];
+  const det = du1 * dv2 - du2 * dv1;
+  const pu = scale(sub(scale(e1, dv2), scale(e2, dv1)), 1 / det);
+  const pv = scale(sub(scale(e2, du1), scale(e1, du2)), 1 / det);
+  const center = add(a.p, add(scale(pu, 0.5 - a.uv[0]), scale(pv, 0.5 - a.uv[1])));
+  return { side: length(pu), center };
+}
+
+/** Distance from p to the line through a and b. */
+function lineDistance(p: Vec3, a: Vec3, b: Vec3): number {
+  const e = sub(b, a);
+  return length(cross(sub(p, a), e)) / length(e);
+}
+
 /** Index of the hull face whose normal matches `n` (labels sit on face planes). */
 function faceOf(shape: (typeof SHAPES)[number], n: Vec3): number {
   return getPolyhedron(shape).normals.findIndex((m) => dot(m, n) > 1 - 1e-5);
@@ -136,6 +161,65 @@ describe('getDieMesh', () => {
     poly.faces.forEach((face, f) => {
       expect([...(shown[f] ?? [])].sort()).toEqual([...face].sort());
     });
+  });
+
+  it.each(SHAPES.filter((s) => s !== 'd4'))(
+    '%s: label square side is 1.45 × the inset face inradius; its glyph circle fits the face',
+    (shape) => {
+      const byCell = new Map<number, [MeshVertex, MeshVertex, MeshVertex][]>();
+      for (const t of triangles(getDieMesh(shape))) {
+        if (t[0].cell < 0) continue;
+        byCell.set(t[0].cell, [...(byCell.get(t[0].cell) ?? []), t]);
+      }
+      expect(byCell.size).toBe(getPolyhedron(shape).readouts.length);
+      for (const tris of byCell.values()) {
+        const first = tris[0];
+        if (first === undefined) throw new Error('empty label');
+        const { side, center } = labelSquare(first);
+        // Fan triangles (centroid, v, next): the outer edges bound the inset face.
+        const rIn = Math.min(...tris.map((t) => lineDistance(center, t[1].p, t[2].p)));
+        expect(side / rIn).toBeCloseTo(1.45, 5);
+        expect(0.5 * side * 0.8).toBeLessThanOrEqual(rIn);
+        for (const t of tris) expect(labelSquare(t).side).toBeCloseTo(side, 5);
+      }
+    },
+  );
+
+  it('d4: corner labels are 0.75 × r_in, halfway to the corner, glyph circle inside the kite', () => {
+    const tris = triangles(getDieMesh('d4')).filter((t) => t[0].cell >= 0);
+    const corners = new Map<number, Vec3[]>();
+    for (const t of tris) {
+      const g = cross(sub(t[1].p, t[0].p), sub(t[2].p, t[0].p));
+      const f = faceOf('d4', scale(g, 1 / length(g)));
+      const list = corners.get(f) ?? [];
+      if (!list.some((p) => length(sub(p, t[0].p)) < 1e-9)) list.push(t[0].p);
+      corners.set(f, list);
+    }
+    for (const t of tris) {
+      const g = cross(sub(t[1].p, t[0].p), sub(t[2].p, t[0].p));
+      const pts = corners.get(faceOf('d4', scale(g, 1 / length(g)))) ?? [];
+      expect(pts.length).toBe(3);
+      const [p0, p1, p2] = pts;
+      if (p0 === undefined || p1 === undefined || p2 === undefined) throw new Error('face corners');
+      const c = scale(add(p0, add(p1, p2)), 1 / 3);
+      const rIn = Math.min(
+        lineDistance(c, p0, p1),
+        lineDistance(c, p1, p2),
+        lineDistance(c, p2, p0),
+      );
+      const v = t[0].p;
+      const { side, center } = labelSquare(t);
+      expect(side / rIn).toBeCloseTo(0.75, 5);
+      expect(length(sub(center, add(c, scale(sub(v, c), 0.5))))).toBeLessThan(1e-6);
+      // Kite (v, next midpoint, centroid, prev midpoint): every edge clears the glyph circle.
+      const mids = pts.filter((p) => length(sub(p, v)) > 1e-9).map((p) => scale(add(v, p), 0.5));
+      expect(mids.length).toBe(2);
+      const glyph = 0.5 * side * 0.8;
+      for (const m of mids) {
+        expect(lineDistance(center, v, m)).toBeGreaterThanOrEqual(glyph);
+        expect(lineDistance(center, m, c)).toBeGreaterThanOrEqual(glyph);
+      }
+    }
   });
 
   it.each(SHAPES)('%s: corners are cut (no vertex within 0.02 of a hull vertex)', (shape) => {
