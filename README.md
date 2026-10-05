@@ -7,7 +7,7 @@ deterministic physics engine, and rolls are result-first, so it works for multip
   and a symmetry remap turns each settled die so its top face shows the value already chosen.
 - **Shared rolls.** A roll is a plain JSON `RollEvent`. Every client that plays the same event shows
   the same values. Clients whose trays have the same shape also see the same motion.
-- **Small.** About 3 kB for the DOM-free core, about 18 kB for the renderer, physics, geometry, and
+- **Small.** About 3 kB for the DOM-free core, about 18.4 kB for the renderer, physics, geometry, and
   shaders, and under 1 kB for the React binding (min+gzip). It ships no asset files: geometry,
   labels, patterns, and lighting are all generated in code.
 
@@ -125,7 +125,7 @@ die's natural order:
 - `d100tens`: `'00'…'90'`.
 - `dF`: three entries for −1, blank, and +1.
 
-The label font is the skin's `font` if it has one, otherwise `labelFont`.
+The label font is the skin's `font` if it has one, otherwise `labelFont`. If the browser can't parse that font, the label falls back to `labelFont`, then `system-ui`.
 
 - **No WebGL2:** `playRoll` resolves immediately with the summary and draws nothing.
 - **Reduced motion:** the tray draws the settled dice without animating them and resolves
