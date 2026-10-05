@@ -3,7 +3,7 @@ import { labelIndex, labelText, labelUnderline, shapeOf } from '../geometry/labe
 import type { LabelSet } from '../geometry/labels';
 import { ATLAS_COLUMNS, ATLAS_ROWS } from './shaders';
 
-export const CELL = 128;
+const CELL = 128;
 /** Minimum empty border around every glyph, px; the tray's deepest atlas mip level relies on it. */
 const PAD = 8;
 /** Deepest atlas mip: its texels are PAD px, so no mip or bilinear tap reaches a neighbouring
@@ -48,12 +48,8 @@ function pickFont(ctx: CanvasRenderingContext2D, fonts: readonly string[]): stri
 }
 
 /**
- * Canvas2D glyph atlas: ATLAS_COLUMNS × ATLAS_ROWS cells of CELL px, row = label set, column =
- * readout index; custom labels are looked up by natural label index (`labelIndex`); bold glyphs
- * white on transparent, ink centered and scaled to 0.8 of the cell height or the padded cell width,
- * 6/9 underlined where the set requires it (default labels only).
- * Draws with `font`, or `fallback`, then 'system-ui', when the context cannot parse it.
- * Returns null when no 2D context is available.
+ * Canvas2D glyph atlas (row = label set, column = readout index) drawn with `requested`, else
+ * `fallback`, else 'system-ui'; null without a 2D context.
  */
 export function buildAtlas(
   requested: string,

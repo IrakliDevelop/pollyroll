@@ -54,13 +54,8 @@ const SPARKLE = `vec3 h = hash3(floor(vObj * 10.0));
     vec3 Rj = reflect(-V, normalize(N + (h - 0.5) * 0.8));
     hl += step(0.8, h.x) * pow(max(dot(Rj, LIGHT_DIR), 0.0), 12.0) * 6.0;`;
 
-/**
- * Glass: absorption-like tint base^(k·path), with the view path growing toward the silhouette
- * (path = 1 − N·V), so the body deepens and darkens at its edges. Back faces are the body seen
- * through the volume (no labels); front faces are thin over it and add a white specular highlight,
- * Fresnel reflection, and rim, which raise alpha where they are bright. Labels stay opaque.
- * Gem: deeper tint, denser body, sharper highlight, and glints from jittered facet normals.
- */
+/** Glass: absorption tint base^(k·path) with path = 1 − N·V, so the body darkens toward the
+ *  silhouette; gem uses a deeper tint, sharper highlight, and glints. */
 const glass = (gem: boolean): string => `float fr = 0.04 + 0.96 * pow(1.0 - nv, 5.0);
   float path = 1.0 - nv;
   vec3 tint = pow(max(base, vec3(1e-4)), vec3(${gem ? '0.9' : '0.6'} + ${gem ? '1.6' : '1.4'} * path));

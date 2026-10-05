@@ -14,6 +14,7 @@ declare global {
   interface Window {
     __pollyroll: SmokeState;
     __pollyrollTray: DiceTray;
+    __pollyrollCreate: typeof createDiceTray;
   }
 }
 
@@ -57,6 +58,7 @@ const tray = createDiceTray(canvas, {
   ...(params.get('labels') === 'custom' ? { labels: { d6: ['A', 'B', 'C', 'D', 'E', 'F'] } } : {}),
 });
 window.__pollyrollTray = tray;
+window.__pollyrollCreate = createDiceTray;
 state.supported = tray.supported;
 const start = performance.now();
 const done = tray.playRoll(event);

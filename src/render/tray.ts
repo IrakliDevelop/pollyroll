@@ -501,25 +501,24 @@ export function createDiceTray(
     alpha = 1;
   }
 
-  function startFade(): void {
-    fadeTimer = undefined;
-    fadeStart = performance.now();
-    loop();
-  }
-
   /** Shows the final frame, resolves the roll, and schedules the fade. */
   function settle(r: Roll): void {
     r.step = r.plan.totalSteps;
     r.done = true;
     render();
     resolvePending();
-    if (fadeAfterMs !== null) fadeTimer = setTimeout(startFade, fadeAfterMs);
+    if (fadeAfterMs === null) return;
+    fadeTimer = setTimeout(() => {
+      fadeTimer = undefined;
+      fadeStart = performance.now();
+      loop();
+    }, fadeAfterMs);
   }
 
   function tick(): void {
     frame = 0;
     const r = roll;
-    if (r === null || lost || disposed) return;
+    if (r === null) return;
     const now = performance.now();
     if (!r.done) {
       const s = (now - r.t0) / 1000 / DT;
@@ -545,9 +544,12 @@ export function createDiceTray(
   function fit(): void {
     const cw = canvas.clientWidth;
     const ch = canvas.clientHeight;
-    aspect = cw > 0 && ch > 0 ? cw / ch : 1;
-    if (cw <= 0 || ch <= 0) return;
-    const dpr = Math.min(globalThis.devicePixelRatio || 1, maxDpr);
+    if (cw <= 0 || ch <= 0) {
+      aspect = 1;
+      return;
+    }
+    aspect = cw / ch;
+    const dpr = Math.min(devicePixelRatio, maxDpr);
     const w = Math.max(1, Math.round(cw * dpr));
     const h = Math.max(1, Math.round(ch * dpr));
     if (canvas.width !== w || canvas.height !== h) {
@@ -560,9 +562,7 @@ export function createDiceTray(
     const mode = opts.reducedMotion ?? 'auto';
     return (
       mode === 'always' ||
-      (mode === 'auto' &&
-        typeof matchMedia === 'function' &&
-        matchMedia('(prefers-reduced-motion: reduce)').matches)
+      (mode === 'auto' && matchMedia('(prefers-reduced-motion: reduce)').matches)
     );
   }
 
@@ -691,10 +691,8 @@ export function createDiceTray(
   if (gl !== null) {
     canvas.addEventListener('webglcontextlost', onLost);
     canvas.addEventListener('webglcontextrestored', onRestored);
-    if (typeof ResizeObserver === 'function') {
-      observer = new ResizeObserver(() => tray.resize());
-      observer.observe(canvas);
-    }
+    observer = new ResizeObserver(() => tray.resize());
+    observer.observe(canvas);
     fit();
     render();
   }
