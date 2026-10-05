@@ -13,16 +13,13 @@ function rejectionInt(max: number, draw: () => number): number {
   return u % max;
 }
 
-/** One uint32 from crypto.getRandomValues. */
-function cryptoU32(): number {
-  let u = 0;
-  for (const w of globalThis.crypto.getRandomValues(word)) u = w;
-  return u;
-}
-
 /** Unbiased integer in [0, maxExclusive) from crypto.getRandomValues with rejection sampling. */
 export function cryptoInt(maxExclusive: number): number {
-  return rejectionInt(maxExclusive, cryptoU32);
+  return rejectionInt(maxExclusive, () => {
+    let u = 0;
+    for (const w of globalThis.crypto.getRandomValues(word)) u = w;
+    return u;
+  });
 }
 
 /** 128-bit seed as 32 lowercase hex characters, from crypto.getRandomValues. */

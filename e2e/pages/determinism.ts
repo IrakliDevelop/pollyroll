@@ -10,6 +10,12 @@ interface DeterminismState {
   remaps: number[][];
 }
 
+declare global {
+  interface Window {
+    __determinism?: DeterminismState;
+  }
+}
+
 // Must match the event and bounds in ../determinism.spec.ts.
 const BOUNDS: TrayBounds = { minX: -6, maxX: 6, minZ: -4, maxZ: 4 };
 const EVENT: RollEvent = {
@@ -33,10 +39,9 @@ const EVENT: RollEvent = {
 const round6 = (x: number): number => Math.round(x * 1e6) / 1e6 + 0;
 
 const plan = planRoll(EVENT, BOUNDS);
-const state: DeterminismState = {
+window.__determinism = {
   done: true,
   golden: goldenHash(),
   planHash: plan.hash,
   remaps: plan.bodies.map((b) => b.remap.map(round6)),
 };
-(window as unknown as { __pollyroll: DeterminismState }).__pollyroll = state;

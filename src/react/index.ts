@@ -2,12 +2,11 @@ import { createElement, useEffect, useImperativeHandle, useRef, useState } from 
 import type { CSSProperties, ReactElement, Ref, RefObject } from 'react';
 import { createDiceTray } from 'pollyroll/render';
 import type { DiceTray as Tray, TrayOptions } from 'pollyroll/render';
+import { skinChanged } from './skin';
 
 /**
- * Creates a tray on ref.current after mount, disposes it on unmount. Returns the tray once created.
- * Options are read once when the tray is created; only `skin` is reactive and is applied with
- * `setSkin` when it changes by value (strings by ===, objects by JSON.stringify). A `skin` that
- * becomes undefined keeps the tray's current skin and the last applied skin is still remembered.
+ * Creates a tray on ref.current after mount and disposes it on unmount. Options are read once;
+ * only `skin` is reactive, applied when it changes by value (an undefined skin is ignored).
  */
 export function useDiceTray(ref: RefObject<HTMLElement | null>, opts?: TrayOptions): Tray | null {
   const [tray, setTray] = useState<Tray | null>(null);
@@ -29,11 +28,7 @@ export function useDiceTray(ref: RefObject<HTMLElement | null>, opts?: TrayOptio
 
   const skin = opts?.skin;
   useEffect(() => {
-    const last = skinRef.current;
-    if (!tray || skin === undefined || skin === last) return;
-    if (typeof skin === 'object' && typeof last === 'object') {
-      if (JSON.stringify(skin) === JSON.stringify(last)) return;
-    }
+    if (!tray || !skinChanged(skin, skinRef.current)) return;
     skinRef.current = skin;
     tray.setSkin(skin);
   }, [tray, skin]);

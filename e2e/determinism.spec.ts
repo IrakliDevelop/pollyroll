@@ -4,13 +4,6 @@ import { GOLDEN_HASH } from '../src/physics/golden';
 import { planRoll } from '../src/physics/plan';
 import type { TrayBounds } from '../src/physics/world';
 
-interface DeterminismState {
-  done: boolean;
-  golden: string;
-  planHash: string;
-  remaps: number[][];
-}
-
 // Must match the event and bounds in pages/determinism.ts.
 const BOUNDS: TrayBounds = { minX: -6, maxX: 6, minZ: -4, maxZ: 4 };
 const EVENT: RollEvent = {
@@ -38,16 +31,12 @@ test('browser physics matches the Node golden hash and roll plan', async ({ page
   const remaps = plan.bodies.map((b) => b.remap.map(round6));
 
   await page.goto('/determinism.html');
-  await page.waitForFunction(
-    () => (window as unknown as { __pollyroll?: DeterminismState }).__pollyroll?.done === true,
-    undefined,
-    { timeout: 20_000 },
-  );
-  const state = await page.evaluate(
-    () => (window as unknown as { __pollyroll: DeterminismState }).__pollyroll,
-  );
+  await page.waitForFunction(() => window.__determinism?.done === true, undefined, {
+    timeout: 20_000,
+  });
+  const state = await page.evaluate(() => window.__determinism);
 
-  expect(state.golden).toBe(GOLDEN_HASH);
-  expect(state.planHash).toBe(plan.hash);
-  expect(state.remaps).toEqual(remaps);
+  expect(state?.golden).toBe(GOLDEN_HASH);
+  expect(state?.planHash).toBe(plan.hash);
+  expect(state?.remaps).toEqual(remaps);
 });

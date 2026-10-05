@@ -9,16 +9,6 @@ export function createRoll(notation: string, opts: CreateRollOptions = {}): Roll
   const seed = opts.seed ?? generateSeed();
   if (!isSeed(seed)) throw new TypeError('seed must be 32 lowercase hex characters');
 
-  const draw = (term: DiceTerm): number => {
-    const [min, max] = dieRange(term.die);
-    const size = max - min + 1;
-    const r = rng(size);
-    if (!Number.isInteger(r) || r < 0 || r >= size) {
-      throw new RangeError(`rng must return an integer in [0, ${size}), got ${r}`);
-    }
-    return r + min;
-  };
-
   const terms: DiceTerm[] = [];
   let modifier = 0;
   for (const term of ast.terms) {
@@ -30,9 +20,15 @@ export function createRoll(notation: string, opts: CreateRollOptions = {}): Roll
   type Spawn = [DiceTerm, number];
   const dice: RolledDie[] = [];
   const roll = (term: DiceTerm, group: number, wave: number, next: Spawn[]): void => {
-    const value = draw(term);
+    const [min, max] = dieRange(term.die);
+    const size = max - min + 1;
+    const r = rng(size);
+    if (!Number.isInteger(r) || r < 0 || r >= size) {
+      throw new RangeError(`rng must return an integer in [0, ${size}), got ${r}`);
+    }
+    const value = r + min;
     dice.push({ type: term.die, value, group, wave });
-    if (term.explode && value === dieRange(term.die)[1]) next.push([term, group]);
+    if (term.explode && value === max) next.push([term, group]);
   };
   let pending: Spawn[] = [];
   terms.forEach((term, group) => {
