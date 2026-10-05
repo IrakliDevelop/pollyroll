@@ -15,6 +15,8 @@ export default defineConfig({
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     environment: 'node',
     passWithNoTests: true,
+    // Simulation-heavy suites run several seconds under coverage on shared CI runners.
+    testTimeout: 30_000,
     benchmark: {
       include: ['src/**/*.bench.ts'],
     },
