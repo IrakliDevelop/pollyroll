@@ -16,6 +16,11 @@ const isUnit = (x: unknown): boolean => typeof x === 'number' && x >= 0 && x <= 
 const oneOf = (x: unknown, words: string): boolean =>
   typeof x === 'string' && words.split(' ').includes(x);
 const optional = (x: unknown, test: (x: unknown) => boolean): boolean => x === undefined || test(x);
+/** Like `every`, but visits holes in sparse arrays: the iterator yields them as `undefined`. */
+const all = (list: unknown[], test: (x: unknown) => boolean): boolean => {
+  for (const x of list) if (!test(x)) return false;
+  return true;
+};
 
 const isColor = (x: unknown): boolean => isStr(x, 0, 64);
 
@@ -28,9 +33,7 @@ const isMaterial = (m: unknown): boolean =>
 const isSkin = (s: unknown): boolean =>
   isObj(s)
     ? isMaterial(s.material) &&
-      (Array.isArray(s.color)
-        ? s.color.length === 2 && s.color.every(isColor)
-        : isColor(s.color)) &&
+      (Array.isArray(s.color) ? s.color.length === 2 && all(s.color, isColor) : isColor(s.color)) &&
       isColor(s.labelColor) &&
       optional(s.labelStyle, (x) => oneOf(x, 'engraved printed embossed')) &&
       optional(s.pattern, (x) => oneOf(x, 'none gradient speckle marble wood swirl')) &&
@@ -40,11 +43,18 @@ const isSkin = (s: unknown): boolean =>
 const isId = (x: unknown): boolean => isStr(x, 1, 128);
 
 const isAudience = (a: unknown): boolean =>
-  Array.isArray(a) ? a.length <= 100 && a.every(isId) : oneOf(a, 'all dm');
+  Array.isArray(a) ? a.length <= 100 && all(a, isId) : oneOf(a, 'all dm');
 
 /** Copy of `event` with every die value set to null. */
 export function redact(event: RollEvent): RollEvent {
-  return { ...event, dice: event.dice.map((die) => ({ ...die, value: null })) };
+  const copy: RollEvent = { ...event, dice: event.dice.map((die) => ({ ...die, value: null })) };
+  const { audience, skin } = event;
+  if (Array.isArray(audience)) copy.audience = audience.slice();
+  if (typeof skin === 'object') {
+    const { color } = skin;
+    copy.skin = { ...skin, color: typeof color === 'string' ? color : [color[0], color[1]] };
+  }
+  return copy;
 }
 
 function check(e: unknown): boolean {

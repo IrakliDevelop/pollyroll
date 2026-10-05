@@ -92,15 +92,16 @@ describe('cryptoInt', () => {
   });
 });
 
-const critical: readonly [max: number, chi2: number][] = [
-  [4, 16.266],
-  [6, 20.515],
-  [8, 24.322],
-  [10, 27.877],
-  [12, 31.264],
-  [20, 43.82],
-  [100, 148.23],
-  [3, 13.816],
+/** [max, chi-square critical value at p = 0.001, at p = 1e-6] for df = max - 1. */
+const critical: readonly [max: number, p001: number, p1e6: number][] = [
+  [4, 16.266, 30.665],
+  [6, 20.515, 35.888],
+  [8, 24.322, 40.522],
+  [10, 27.877, 44.811],
+  [12, 31.264, 48.866],
+  [20, 43.82, 63.677],
+  [100, 148.23, 180.792],
+  [3, 13.816, 27.631],
 ];
 
 const chiSquare = (max: number, next: (max: number) => number): number => {
@@ -113,14 +114,15 @@ const chiSquare = (max: number, next: (max: number) => number): number => {
   return counts.reduce((sum, c) => sum + ((c - perBucket) * (c - perBucket)) / perBucket, 0);
 };
 
-describe('chi-square uniformity (p = 0.001)', () => {
-  const seedRng = createSeedRng('9e3779b97f4a7c15f39cc0605cedc834');
-  for (const [max, limit] of critical) {
-    it(`cryptoInt(${max}) is uniform`, () => {
-      expect(chiSquare(max, cryptoInt)).toBeLessThan(limit);
+describe('chi-square uniformity', () => {
+  for (const [max, p001, p1e6] of critical) {
+    // Live randomness: a strict threshold keeps false CI failures negligible.
+    it(`cryptoInt(${max}) is uniform (p = 1e-6)`, () => {
+      expect(chiSquare(max, cryptoInt)).toBeLessThan(p1e6);
     });
-    it(`SeedRng.int(${max}) is uniform`, () => {
-      expect(chiSquare(max, (m) => seedRng.int(m))).toBeLessThan(limit);
+    it(`SeedRng.int(${max}) is uniform (p = 0.001)`, () => {
+      const seedRng = createSeedRng('9e3779b97f4a7c15f39cc0605cedc834');
+      expect(chiSquare(max, (m) => seedRng.int(m))).toBeLessThan(p001);
     });
   }
 });

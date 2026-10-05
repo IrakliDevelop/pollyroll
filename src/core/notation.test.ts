@@ -148,6 +148,7 @@ describe('parse errors', () => {
     ['no dice term', '5', 0],
     ['no dice term with several constants', '3+4', 0],
     ['trailing operator', '1d6+', 4],
+    ['trailing operator with whitespace', '1d6+ ', 5],
     ['count prefix on adv', '2adv', 1],
     ['count prefix on dis', '2dis', 1],
   ];

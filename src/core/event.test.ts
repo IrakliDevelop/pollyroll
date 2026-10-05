@@ -46,6 +46,32 @@ describe('redact', () => {
     expect(event).toEqual(snapshot);
     expect(evaluate(hidden).total).toBeNull();
   });
+
+  it('shares no nested audience or skin objects with the original', () => {
+    const event = createRoll('1d6', {
+      rng: seq(0),
+      seed: S,
+      audience: ['a', 'b'],
+      skin: { material: 'gem', color: ['red', 'blue'], labelColor: 'white' },
+    });
+    const snapshot = JSON.parse(JSON.stringify(event)) as unknown;
+    const hidden = redact(event);
+    expect(hidden.audience).toEqual(event.audience);
+    expect(hidden.skin).toEqual(event.skin);
+    if (Array.isArray(hidden.audience)) hidden.audience.push('c');
+    if (typeof hidden.skin === 'object') {
+      hidden.skin.labelColor = 'black';
+      if (Array.isArray(hidden.skin.color)) hidden.skin.color[0] = 'green';
+    }
+    expect(event).toEqual(snapshot);
+    const solid = createRoll('1d6', {
+      rng: seq(0),
+      seed: S,
+      skin: { material: 'gem', color: 'red', labelColor: 'white' },
+    });
+    expect(redact(solid).skin).toEqual(solid.skin);
+    expect(redact(solid).skin).not.toBe(solid.skin);
+  });
 });
 
 describe('isRollEvent', () => {
@@ -189,6 +215,12 @@ describe('isRollEvent', () => {
     ['audience [1]', (e) => (e.audience = [1] as never)],
     ['audience [""]', (e) => (e.audience = [''])],
     ['audience of 101', (e) => (e.audience = Array.from({ length: 101 }, () => 'x'))],
+    ['audience sparse array', (e) => (e.audience = new Array<string>(3))],
+    [
+      'skin color sparse array',
+      (e) => (e.skin = { material: 'gem', color: new Array(2) as never, labelColor: 'w' }),
+    ],
+    ['dice with a hole', (e) => delete e.dice[1]],
   ];
   it.each(top)('rejects %s', (_name, change) => {
     expect(isRollEvent(mutate(base(), change))).toBe(false);
