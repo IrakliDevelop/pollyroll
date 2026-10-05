@@ -46,7 +46,6 @@ function slots(event: RollEvent): Slot[] {
     const { type, value, wave } = d;
     if (type === 'd100') {
       if (out.length + 2 > MAX_BODIES) break;
-      // 100 → 00 + 0; otherwise tens = floor(v / 10), ones = v mod 10; null → both null.
       let tens: number | null = null;
       let ones: number | null = null;
       if (value !== null) {

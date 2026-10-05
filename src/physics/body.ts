@@ -26,7 +26,6 @@ export function inertiaTensor(shape: ShapeType): Float64Array {
     if (v === undefined) throw new RangeError(`vertex ${i} out of range`);
     return v;
   };
-  // Covariance accumulators (symmetric): xx, yy, zz, xy, xz, yz.
   let cxx = 0;
   let cyy = 0;
   let czz = 0;

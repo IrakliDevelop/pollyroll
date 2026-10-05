@@ -1,19 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { getPolyhedron } from '../geometry/polyhedra';
 import type { ShapeType } from '../geometry/polyhedra';
 import { quatRotate } from '../geometry/vec';
 import type { Quat, Vec3 } from '../geometry/vec';
 import { getBodyShape } from './body';
-import type * as BodyModule from './body';
-import type { BodyShape } from './body';
-import { DT, createWorld } from './world';
+import { DT, checkHull, createWorld } from './world';
 import type { TrayBounds, World } from './world';
-
-// getBodyShape passes through to the real implementation unless a test overrides one call.
-vi.mock('./body', async (importOriginal) => {
-  const actual = await importOriginal<typeof BodyModule>();
-  return { ...actual, getBodyShape: vi.fn(actual.getBodyShape) };
-});
 
 const BOUNDS: TrayBounds = { minX: -6, maxX: 6, minZ: -4, maxZ: 4 };
 const ZERO: Vec3 = [0, 0, 0];
@@ -88,9 +80,6 @@ describe('world: basic correctness', () => {
   });
 
   it('a die resting on a face stays below the settle thresholds on every step', () => {
-    // Placed face-down 0.002 above the floor. Every step after landing must stay below the settle
-    // thresholds (0.05 units/s, 0.1 rad/s); unconverged resting impulses used to lift one vertex
-    // until its contact dropped and the die fell back with a 0.06 units/s spike.
     const shapes: ShapeType[] = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20'];
     for (const shape of shapes) {
       const poly = getPolyhedron(shape);
@@ -168,16 +157,9 @@ describe('world: edge cases', () => {
     }
   });
 
-  it('add() throws RangeError for a hull with more than 20 vertices and adds nothing', () => {
-    const real = getBodyShape('d6');
-    const hull = (n: number): BodyShape => ({ ...real, vertices: new Float64Array(n * 3) });
-    const world = createWorld(BOUNDS);
-    vi.mocked(getBodyShape).mockReturnValueOnce(hull(21));
-    expect(() => world.add('d6', [0, 1, 0], ID, ZERO, ZERO)).toThrow(RangeError);
-    expect(world.count).toBe(0);
-    vi.mocked(getBodyShape).mockReturnValueOnce(hull(20));
-    expect(world.add('d6', [0, 1, 0], ID, ZERO, ZERO)).toBe(0);
-    expect(world.count).toBe(1);
+  it('checkHull throws RangeError for a hull with more than 20 vertices', () => {
+    expect(() => checkHull(new Float64Array(21 * 3))).toThrow(RangeError);
+    expect(() => checkHull(new Float64Array(20 * 3))).not.toThrow();
   });
 
   it('a zero-velocity body sitting on the floor stays finite', () => {

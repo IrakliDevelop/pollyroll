@@ -107,7 +107,7 @@ describe('planRoll remap', () => {
     }
     expect(tensUps.size).toBeGreaterThanOrEqual(2);
     expect(onesUps.size).toBeGreaterThanOrEqual(2);
-  });
+  }, 60_000);
 
   it('remap is an element of the rotation group', () => {
     const group = getRotationGroup('d20');

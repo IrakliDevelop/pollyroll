@@ -84,6 +84,13 @@ function atInt(a: Int32Array, i: number): number {
   return v === undefined ? 0 : v;
 }
 
+/** Throws RangeError when a hull has more vertices than the contact buffers hold. */
+export function checkHull(vertices: Float64Array): void {
+  if (vertices.length > MAX_VERTICES * 3) {
+    throw new RangeError(`at most ${MAX_VERTICES} hull vertices per body`);
+  }
+}
+
 function clampNumber(value: number, min: number, max: number): number {
   if (!(value >= min)) return min; // also maps NaN to min
   return value > max ? max : value;
@@ -97,12 +104,11 @@ function clampNumber(value: number, min: number, max: number): number {
  */
 export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): World {
   const cfg: WorldConfig = { ...DEFAULT_CONFIG, ...config };
-  const gravity = Number.isFinite(cfg.gravity) ? cfg.gravity : DEFAULT_CONFIG.gravity;
+  const { gravity, iterations } = cfg;
   const restitution = clampNumber(cfg.restitution, 0, 1);
   const friction = clampNumber(cfg.friction, 0, Infinity);
   const linearFactor = 1 / (1 + clampNumber(cfg.linearDamping, 0, Infinity) * DT);
   const angularFactor = 1 / (1 + clampNumber(cfg.angularDamping, 0, Infinity) * DT);
-  const iterations = Math.floor(clampNumber(cfg.iterations, 0, 1000));
   const biasRate = BAUMGARTE / DT;
 
   // Planes in contact order: floor, x >= minX, x <= maxX, z >= minZ, z <= maxZ.
@@ -229,14 +235,9 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
   }
 
   /**
-   * Records a contact between A (body index, or -1 for a static plane) and body B with unit normal
-   * n from A to B, offsets rA/rB from each centroid to the contact point, and penetration depth.
-   * Tangents come from a deterministic orthonormal basis of n (Catto, "Computing a Basis", 2009):
-   * t1 = (ny, −nx, 0)/|(nx, ny)| when |nx| ≥ 0.57735 (≈ 1/√3, so nx² + ny² ≥ 1/3), otherwise
-   * t1 = (0, nz, −ny)/|(ny, nz)| (then ny² + nz² > 2/3); t2 = n × t1. Precomputes effective
-   * masses and the velocity target max(Baumgarte bias, restitution target). The accumulated
-   * impulses start from `slot`'s values when the same slot (body, plane, vertex or body pair) had a
-   * contact in the previous step (warm starting), else from 0.
+   * Records a contact of body B against A (-1 = static plane), normal n from A to B. Tangents use
+   * Catto's deterministic basis ("Computing a Basis", 2009); |nx| ≥ 0.57735 ≈ 1/√3 keeps the divisor
+   * ≥ √(1/3). Impulses warm-start from `slot` when it had a contact in the previous step.
    */
   function addContact(
     a: number,
@@ -253,12 +254,11 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
     depth: number,
     slot: number,
   ): void {
-    if (contactCount >= MAX_CONTACTS) return;
     const c = contactCount++;
     contactA[c] = a;
     contactB[c] = b;
     contactSlot[c] = slot;
-    const warm = atInt(slotStep, slot) === stepNumber; // the slot was in contact last step
+    const warm = atInt(slotStep, slot) === stepNumber;
     const base = c * STRIDE;
     let t1x: number;
     let t1y: number;
@@ -382,13 +382,8 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
   }
 
   /**
-   * Sequential impulses with warm starting (Catto 2005): first applies each contact's accumulated
-   * impulses carried over from the previous step, then iterates per contact the normal row
-   * (accumulated impulse clamped >= 0) and two friction rows (accumulated impulse clamped to
-   * ±friction·λn, box friction). Each row solves dλ = m·(target − d·vrel) with
-   * vrel = vB + ωB × rB − vA − ωA × rA and applies +dλ·d to B and −dλ·d to A (mass 1); body
-   * velocities are held in locals for the three rows of a contact. Finally stores the accumulated
-   * impulses in the contact's slot for the next step.
+   * Sequential impulses with warm starting (Catto 2005): normal impulse clamped >= 0, box friction
+   * clamped to ±friction·λn; accumulated impulses are saved per slot for the next step.
    */
   function solve(): void {
     for (let c = 0; c < contactCount; c++) {
@@ -526,9 +521,7 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
       if (count >= MAX_BODIES) throw new RangeError(`at most ${MAX_BODIES} bodies per world`);
       const i = count;
       const body = getBodyShape(shape);
-      if (body.vertices.length > MAX_VERTICES * 3) {
-        throw new RangeError(`at most ${MAX_VERTICES} hull vertices per body`);
-      }
+      checkHull(body.vertices);
       shapes.push(body);
       bodyInvInertia.set(body.invInertia, i * 3);
       bodyRadius[i] = body.radius;

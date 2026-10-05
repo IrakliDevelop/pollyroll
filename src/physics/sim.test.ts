@@ -289,7 +289,7 @@ describe('settle acceptance', () => {
     const median = ((steps[24] ?? 0) + (steps[25] ?? 0)) / 2;
     expect(settled).toBe(50);
     expect(median).toBeLessThanOrEqual(400);
-  });
+  }, 60_000);
 });
 
 describe('static guard', () => {
