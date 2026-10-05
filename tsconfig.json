@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "pollyroll": ["./src/index.ts"],
+      "pollyroll/render": ["./src/render/index.ts"],
+      "pollyroll/react": ["./src/react/index.ts"]
+    }
+  },
+  "include": ["src", "demo", "e2e", "*.config.ts"]
+}

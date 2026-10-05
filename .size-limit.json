@@ -1,0 +1,24 @@
+[
+  {
+    "name": "pollyroll (core)",
+    "path": "dist/index.js",
+    "import": "*",
+    "limit": "4 KB",
+    "gzip": true
+  },
+  {
+    "name": "pollyroll/render",
+    "path": "dist/render.js",
+    "import": "*",
+    "limit": "30 KB",
+    "gzip": true
+  },
+  {
+    "name": "pollyroll/react",
+    "path": "dist/react.js",
+    "import": "*",
+    "limit": "1 KB",
+    "ignore": ["react", "react-dom", "pollyroll", "pollyroll/render"],
+    "gzip": true
+  }
+]
