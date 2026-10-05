@@ -19,6 +19,8 @@ const required = [
   '.agents/skills/pollyroll-visual-tests/SKILL.md',
   '.agents/skills/pollyroll-size-bakeoff/SKILL.md',
   '.agents/skills/pollyroll-concise-code/SKILL.md',
+  '.agents/skills/pollyroll-typescript/SKILL.md',
+  '.agents/skills/pollyroll-testing/SKILL.md',
   '.agents/skills/THIRD_PARTY.md',
   '.claude/agents/pr-implementer.md',
   '.claude/agents/pr-transcriber.md',

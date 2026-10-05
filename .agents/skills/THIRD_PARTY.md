@@ -32,6 +32,11 @@ applications, and to alter it and redistribute it freely, subject to the followi
 ("minimize overengineering") and forrestchang/andrej-karpathy-skills `karpathy-guidelines` in its
 own words. No text from either is reproduced.
 
+`pollyroll-typescript` paraphrases checks from Anthropic `claude-plugins-official`
+`pr-review-toolkit` agents `type-design-analyzer` and `silent-failure-hunter` (Apache-2.0).
+`pollyroll-testing` paraphrases Trail of Bits `property-based-testing` (CC-BY-SA-4.0). No text from
+either is reproduced.
+
 ## MIT-licensed sources
 
 - nuqs `.agents/skills/bundle-size-bake-off` — https://github.com/47ng/nuqs — Copyright (c) 2020
@@ -40,6 +45,16 @@ own words. No text from either is reproduced.
   2026 Matt Pocock. Used in `pollyroll-development` (test anti-patterns).
 - Cursor plugins `cursor-team-kit/skills/deslop` — https://github.com/cursor/plugins — Copyright (c)
   2026 Cursor. Focus areas and guardrails used in `pollyroll-concise-code`.
+- Cursor plugins `pstack/skills/typescript-best-practices` and
+  `pstack/skills/principle-test-behavior-not-implementation` — https://github.com/cursor/plugins —
+  Copyright (c) 2026 Lauren Tan. Used in `pollyroll-typescript` and `pollyroll-testing`.
+- mattpocock/skills `skills/engineering/code-review` and `codebase-design` — Copyright (c) 2026
+  Matt Pocock. Smell list and deletion test used in `pollyroll-typescript`.
+- obra/superpowers `skills/test-driven-development/writing-good-tests.md` —
+  https://github.com/obra/superpowers — Copyright (c) 2025 Jesse Vincent. Used in
+  `pollyroll-testing`.
+- nyxandro/property-testing-skill — https://github.com/nyxandro/property-testing-skill — Copyright
+  (c) 2026 nyxandro. fast-check rules used in `pollyroll-testing`.
 - testdino playwright-skill `core/canvas-and-webgl.md` — https://github.com/testdino-hq/playwright-skill
   — Copyright (c) 2026 TestDino. Used in `pollyroll-visual-tests`.
 

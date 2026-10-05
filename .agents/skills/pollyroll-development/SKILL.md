@@ -18,6 +18,8 @@ Domain skills (load the one matching the task):
 - `pollyroll-physics`: simulation, contacts, symmetry, remap, and their mandatory tests.
 - `pollyroll-webgl`: shaders, PBR, patterns, renderer lifetime, context loss.
 - `pollyroll-visual-tests`: Playwright screenshots and cross-browser determinism.
+- `pollyroll-typescript`: always, for type design, boundaries, errors, and smells.
+- `pollyroll-testing`: always, for any test.
 - `pollyroll-concise-code`: always, while writing code and for the final deslop pass.
 - `pollyroll-size-bakeoff`: when a size budget fails or is within 10%.
 

@@ -50,7 +50,7 @@ physics, result-first rolls built for multiplayer). The approved build specifica
 - Prefer clear names over comments, early returns over nesting, and plain functions and data over
   classes and configuration layers.
 - Delete dead code, unused parameters, and leftover debug output instead of commenting them out.
-- Full rules: the `pollyroll-concise-code` skill.
+- Full rules: the `pollyroll-concise-code`, `pollyroll-typescript`, and `pollyroll-testing` skills.
 
 ## Commits and pull requests
 

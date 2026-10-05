@@ -14,7 +14,8 @@ Review behavior and contracts before style. Read the diff, then the callers and 
    out-of-range input, notation limits enforced, size budgets met.
 6. **Rendering and performance:** no per-frame allocation in the render loop, loop stops after
    settle, instancing intact, DPR cap, GPU resources released on `dispose`, context loss handled.
-7. **Tests:** a discriminating test that fails without the change, negative cases, DTS build.
+7. **Tests:** a discriminating test that fails without the change, negative cases, DTS build;
+   the `pollyroll-testing` rules (named break, hand-derived expectations, no own-module mocks).
 8. **Maintainability:** dependency direction from architecture.md, strict types, no incidental
    export, no runtime dependency, no asset file.
 9. **Concision:** comments that restate code or run past one line, speculative options or

@@ -17,6 +17,7 @@ Rules:
   when the brief lists it). Quote only the decisive output lines.
 - Follow "Code style: short and plain" in AGENTS.md and the `pollyroll-concise-code` skill:
   least code that passes, one-line why-comments only, no speculative abstractions.
+- Follow the `pollyroll-typescript` and `pollyroll-testing` skills for types and tests.
 - In `src/physics/` use only `+ - * /` and `Math.sqrt` inside the simulation step.
 - Commit with the message the brief gives. No `Co-Authored-By` or other trailers. Never mention
   Claude, Claude Code, Codex, or any AI agent or model in commits or code comments.
