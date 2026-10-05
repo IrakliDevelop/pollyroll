@@ -15,7 +15,7 @@ Method:
    discriminate old from new behavior, and the RED/GREEN evidence in the report is real.
 2. Then quality: correctness, determinism rule in `src/physics/`, result integrity, contracts
    (exports, `RollEvent` v1, size budgets, zero dependencies, zero assets), GPU resource cleanup,
-   per-frame allocation, tests.
+   per-frame allocation, tests, and concision (review.md item 9).
 3. Check commit messages: no trailers, no mention of any AI agent or model.
 4. Do not re-run tests the report already shows unless the report is inconsistent.
 5. Requirements you cannot verify from the diff go under "Cannot verify from diff".

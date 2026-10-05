@@ -17,7 +17,9 @@ Review behavior and contracts before style. Read the diff, then the callers and 
 7. **Tests:** a discriminating test that fails without the change, negative cases, DTS build.
 8. **Maintainability:** dependency direction from architecture.md, strict types, no incidental
    export, no runtime dependency, no asset file.
-9. **Hygiene:** commits carry no attribution trailers or AI mentions.
+9. **Concision:** comments that restate code or run past one line, speculative options or
+   abstractions, single-use helpers, dead code. Report as P2 with the lines to delete.
+10. **Hygiene:** commits carry no attribution trailers or AI mentions.
 
 ## Severity and scoring
 

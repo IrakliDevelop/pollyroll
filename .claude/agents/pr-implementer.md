@@ -15,6 +15,8 @@ Rules:
 - TDD: write the discriminating test first, run it and quote the failing line, then implement the
   smallest change, run the focused test, then `pnpm build` and `pnpm typecheck` (and `pnpm size`
   when the brief lists it). Quote only the decisive output lines.
+- Follow "Code style: short and plain" in AGENTS.md and the `pollyroll-concise-code` skill:
+  least code that passes, one-line why-comments only, no speculative abstractions.
 - In `src/physics/` use only `+ - * /` and `Math.sqrt` inside the simulation step.
 - Commit with the message the brief gives. No `Co-Authored-By` or other trailers. Never mention
   Claude, Claude Code, Codex, or any AI agent or model in commits or code comments.

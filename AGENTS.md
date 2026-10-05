@@ -40,6 +40,18 @@ physics, result-first rolls built for multiplayer). The approved build specifica
   update snapshots or screenshot baselines merely to make a failure disappear.
 - Do not modify generated `dist/`, coverage, or test-result artifacts by hand.
 
+## Code style: short and plain
+
+- Write the least code that meets the brief. No speculative options, abstractions, or helpers for
+  a single caller. No defensive checks for states the types already rule out.
+- Comments are rare and short: one line explaining _why_, never _what_ the code does. No comments
+  that restate the code, narrate steps, or describe history. Public exports get a one-line doc
+  comment; physics functions name their algorithm in it. No banner or section-divider comments.
+- Prefer clear names over comments, early returns over nesting, and plain functions and data over
+  classes and configuration layers.
+- Delete dead code, unused parameters, and leftover debug output instead of commenting them out.
+- Full rules: the `pollyroll-concise-code` skill.
+
 ## Commits and pull requests
 
 - No `Co-Authored-By` or any other attribution trailer in commits.

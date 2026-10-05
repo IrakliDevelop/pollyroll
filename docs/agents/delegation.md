@@ -30,7 +30,9 @@ for a transcriber, `DECISIONS.md`, `CHANGELOG.md`, and the PR body.
    fix rounds per task; a third failure means the brief or plan is wrong, and the thinking tier
    rewrites the brief. Minor findings are appended to `.work/minor-findings.md`.
 5. **Next phase** only after every task in the current phase is approved.
-6. **Branch review** once all phases pass: dispatch the branch reviewer with the plan, the full
+6. **Deslop** once all phases pass: one coding-tier task runs the deslop pass from the
+   `pollyroll-concise-code` skill over the whole branch diff, then a task review as usual.
+7. **Branch review** after the deslop task: dispatch the branch reviewer with the plan, the full
    branch diff file, and `.work/minor-findings.md`. It scores every exit criterion. Fix rounds
    follow the same cap. The thinking tier then runs `pnpm verify` and `pnpm e2e` itself, and opens
    the PR per [PLAN.md](../PLAN.md) § 10.

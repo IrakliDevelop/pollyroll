@@ -26,12 +26,20 @@ applications, and to alter it and redistribute it freely, subject to the followi
 3. This notice may not be removed or altered from any source distribution.
 ```
 
+## Guidance paraphrased, not copied
+
+`pollyroll-concise-code` also restates ideas from Anthropic's prompting best practices
+("minimize overengineering") and forrestchang/andrej-karpathy-skills `karpathy-guidelines` in its
+own words. No text from either is reproduced.
+
 ## MIT-licensed sources
 
 - nuqs `.agents/skills/bundle-size-bake-off` — https://github.com/47ng/nuqs — Copyright (c) 2020
   François Best. Used in `pollyroll-size-bakeoff`.
 - mattpocock/skills `skills/engineering/tdd` — https://github.com/mattpocock/skills — Copyright (c)
   2026 Matt Pocock. Used in `pollyroll-development` (test anti-patterns).
+- Cursor plugins `cursor-team-kit/skills/deslop` — https://github.com/cursor/plugins — Copyright (c)
+  2026 Cursor. Focus areas and guardrails used in `pollyroll-concise-code`.
 - testdino playwright-skill `core/canvas-and-webgl.md` — https://github.com/testdino-hq/playwright-skill
   — Copyright (c) 2026 TestDino. Used in `pollyroll-visual-tests`.
 
