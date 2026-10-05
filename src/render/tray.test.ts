@@ -1,6 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RollEvent } from '../core/types';
+import { classic } from '../skins/presets';
+import type { Skin } from '../skins/types';
+import type * as Atlas from './atlas';
+import type { CustomLabels } from './atlas';
 import { PollyrollShaderError } from './gl';
 import { createDiceTray } from './tray';
 import type { DiceTray } from './tray';
@@ -18,11 +22,29 @@ const event: RollEvent = {
   createdAt: 0,
 };
 
+/** Fonts passed to the glyph atlas builder, in call order. */
+const atlasFonts = vi.hoisted((): string[] => []);
+vi.mock('./atlas', async (importOriginal) => {
+  const actual = await importOriginal<typeof Atlas>();
+  return {
+    ...actual,
+    buildAtlas: (font: string, labels?: CustomLabels): HTMLCanvasElement | null => {
+      atlasFonts.push(font);
+      return actual.buildAtlas(font, labels);
+    },
+  };
+});
+
+/** Run after each test: removes listeners added on shared globals. */
+const cleanups: (() => void)[] = [];
+
 function noWebGl(): void {
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
 }
 
 afterEach(() => {
+  for (const undo of cleanups.splice(0)) undo();
+  atlasFonts.length = 0;
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   document.body.innerHTML = '';
@@ -156,7 +178,11 @@ describe('createDiceTray context loss', () => {
     const canvas = document.createElement('canvas');
     const tray = createDiceTray(canvas, { reducedMotion: 'always', shadows: false });
     const errors: unknown[] = [];
-    window.addEventListener('error', (e) => errors.push(e.error));
+    const onError = (e: ErrorEvent): void => {
+      errors.push(e.error);
+    };
+    window.addEventListener('error', onError);
+    cleanups.push(() => window.removeEventListener('error', onError));
     canvas.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
     return { canvas, tray, errors };
   }
@@ -171,6 +197,19 @@ describe('createDiceTray context loss', () => {
     expect(errors).toEqual([]);
     expect(calls).toContain('drawArraysInstanced');
     expect(() => tray.setSkin(broken)).toThrow(PollyrollShaderError);
+    tray.dispose();
+  });
+
+  it('rejects a skin that cannot be resolved in setSkin while lost, not on restore', async () => {
+    const calls = fakeWebGl();
+    const { canvas, tray, errors } = lostTray();
+    await tray.playRoll(event);
+    const bogus = { ...classic, material: 'bogus' } as unknown as Skin;
+    expect(() => tray.setSkin(bogus)).toThrow();
+    calls.length = 0;
+    canvas.dispatchEvent(new Event('webglcontextrestored'));
+    expect(errors).toEqual([]);
+    expect(calls).toContain('drawArraysInstanced');
     tray.dispose();
   });
 
@@ -197,5 +236,42 @@ describe('createDiceTray context loss', () => {
     expect(errors).toEqual([]);
     expect(calls).toContain('drawArraysInstanced');
     tray.dispose();
+  });
+});
+
+describe('createDiceTray label font', () => {
+  it('builds the atlas from skin.font, then labelFont, and rebuilds it when the font changes', async () => {
+    const calls = fakeWebGl();
+    const tray = createDiceTray(document.createElement('canvas'), {
+      reducedMotion: 'always',
+      labelFont: 'TrayFont',
+    });
+    expect(atlasFonts).toEqual(['TrayFont']);
+    await tray.playRoll(event);
+    expect(atlasFonts).toEqual(['TrayFont']);
+    expect(calls.filter((c) => c === 'createTexture')).toHaveLength(1);
+
+    calls.length = 0;
+    tray.setSkin({ ...classic, font: 'SkinFont' });
+    expect(atlasFonts).toEqual(['TrayFont', 'SkinFont']);
+    expect(calls).toContain('deleteTexture');
+    expect(calls).toContain('createTexture');
+
+    calls.length = 0;
+    tray.setSkin({ ...classic, labelColor: '#123', font: 'SkinFont' });
+    expect(atlasFonts).toEqual(['TrayFont', 'SkinFont']);
+    expect(calls).not.toContain('deleteTexture');
+
+    await tray.playRoll({ ...event, skin: { ...classic, font: 'EventFont' } });
+    expect(atlasFonts).toEqual(['TrayFont', 'SkinFont', 'EventFont']);
+    await tray.playRoll({ ...event, skin: 'classic' });
+    expect(atlasFonts).toEqual(['TrayFont', 'SkinFont', 'EventFont', 'TrayFont']);
+    tray.dispose();
+  });
+
+  it('defaults the atlas font to system-ui', () => {
+    fakeWebGl();
+    createDiceTray(document.createElement('canvas')).dispose();
+    expect(atlasFonts).toEqual(['system-ui']);
   });
 });

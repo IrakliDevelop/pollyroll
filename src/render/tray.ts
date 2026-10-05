@@ -88,11 +88,15 @@ interface Roll {
   done: boolean;
 }
 
-/** A resolved skin: program key and fragment source for its feature set, plus uniform values. */
+/**
+ * A resolved skin: program key and fragment source for its feature set, uniform values, and the
+ * label font (undefined = the tray's labelFont).
+ */
 interface SkinGpu {
   key: string;
   fragment: string;
   transparent: boolean;
+  font: string | undefined;
   u: Float32Array; // color a rgb, color b rgb, label rgb (linear), metalness, roughness, clearcoat
 }
 
@@ -137,6 +141,7 @@ function skinGpu(skin: Skin): SkinGpu {
     key: `${label}|${kind}|${pattern}`,
     fragment: dieFragment(label, kind, pattern),
     transparent: kind !== 'opaque',
+    font: skin.font,
     u: new Float32Array([
       ...linearColor(a),
       ...linearColor(b),
@@ -213,11 +218,14 @@ export function createDiceTray(
     premultipliedAlpha: true,
     antialias: true,
   });
-  const atlas = gl === null ? null : buildAtlas(opts.labelFont ?? 'system-ui', opts.labels);
+  const labelFont = opts.labelFont ?? 'system-ui';
+  /** Font of the atlas canvas; the atlas is rebuilt when the drawn skin resolves another font. */
+  let atlasFont = resolveSkin(opts.skin).font ?? labelFont;
+  let atlas = gl === null ? null : buildAtlas(atlasFont, opts.labels);
 
   let traySkin = opts.skin;
-  /** Skin requested by setSkin while the context was lost; compiled and applied on restore. */
-  let lostSkin: { ref: SkinRef } | null = null;
+  /** Skin requested by setSkin while the context was lost, already resolved; compiled on restore. */
+  let lostSkin: { ref: SkinRef; gpu: SkinGpu } | null = null;
   let roll: Roll | null = null;
   let pending: { resolve: (s: RollSummary) => void; summary: RollSummary } | null = null;
   let disposed = false;
@@ -329,6 +337,15 @@ export function createDiceTray(
     return atlasTex;
   }
 
+  /** Rebuilds the atlas canvas for `font` and releases the texture made from the previous one. */
+  function atlasFor(g: WebGL2RenderingContext, font: string): void {
+    if (font === atlasFont) return;
+    atlasFont = font;
+    atlas = buildAtlas(font, opts.labels);
+    if (atlasTex !== null) g.deleteTexture(atlasTex);
+    atlasTex = null;
+  }
+
   /** True when the skin's program compiles (or is cached); a failing skin is not cached. */
   function compiles(g: WebGL2RenderingContext, s: SkinGpu): boolean {
     try {
@@ -422,6 +439,7 @@ export function createDiceTray(
     g.enable(g.DEPTH_TEST);
     g.enable(g.CULL_FACE);
     g.cullFace(g.BACK);
+    atlasFor(g, k.font ?? labelFont);
     g.useProgram(p.program);
     g.activeTexture(g.TEXTURE0);
     g.bindTexture(g.TEXTURE_2D, atlasTexture(g));
@@ -565,12 +583,9 @@ export function createDiceTray(
       // Skins chosen while lost compile now; a failing one is dropped for the previous valid skin.
       const want = lostSkin;
       lostSkin = null;
-      if (want !== null) {
-        const s = skinGpu(resolveSkin(want.ref));
-        if (compiles(g, s)) {
-          traySkin = want.ref;
-          if (r !== null && r.eventSkin === undefined) r.skin = s;
-        }
+      if (want !== null && compiles(g, want.gpu)) {
+        traySkin = want.ref;
+        if (r !== null && r.eventSkin === undefined) r.skin = want.gpu;
       }
       if (r !== null && !compiles(g, r.skin)) {
         r.skin = skinGpu(resolveSkin(traySkin));
@@ -629,11 +644,12 @@ export function createDiceTray(
 
     setSkin(skin: SkinRef): void {
       if (gl !== null && !disposed) {
+        // Resolve before storing: a skin that cannot be resolved throws here, never on restore.
+        const s = skinGpu(resolveSkin(skin));
         if (lost) {
-          lostSkin = { ref: skin };
+          lostSkin = { ref: skin, gpu: s };
           return;
         }
-        const s = skinGpu(resolveSkin(skin));
         // Throws PollyrollShaderError before anything changes, so the tray keeps its skin.
         program(gl, s.key, s.fragment);
         const r = roll;

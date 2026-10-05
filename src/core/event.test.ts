@@ -40,11 +40,26 @@ describe('redact', () => {
     expect(hidden.dice).not.toBe(event.dice);
     expect(hidden.dice.every((die) => die.value === null)).toBe(true);
     expect(hidden.dice.map((die) => [die.type, die.group, die.wave])).toEqual(
-      event.dice.map((die) => [die.type, die.group, die.wave]),
+      event.dice.filter((die) => die.wave === 0).map((die) => [die.type, die.group, die.wave]),
     );
     expect({ ...hidden, dice: [] }).toEqual({ ...event, dice: [] });
     expect(event).toEqual(snapshot);
     expect(evaluate(hidden).total).toBeNull();
+  });
+
+  it('drops explosion dice so a redacted chain does not reveal how it exploded', () => {
+    const chain = createRoll('1d20!', { rng: seq(19, 19, 2), seed: S });
+    const single = createRoll('1d20!', { rng: seq(6), seed: S });
+    expect(chain.dice.map((die) => die.value)).toEqual([20, 20, 3]);
+    expect(single.dice.map((die) => die.value)).toEqual([7]);
+    const snapshot = JSON.parse(JSON.stringify(chain)) as unknown;
+    const hidden = redact(chain);
+    const expected = [{ type: 'd20', value: null, group: 0, wave: 0 }];
+    expect(hidden.dice).toEqual(expected);
+    expect(redact(single).dice).toEqual(expected);
+    expect(isRollEvent(hidden)).toBe(true);
+    expect(evaluate(hidden).total).toBeNull();
+    expect(chain).toEqual(snapshot);
   });
 
   it('shares no nested audience or skin objects with the original', () => {

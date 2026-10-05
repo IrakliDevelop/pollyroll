@@ -9,7 +9,7 @@ export default defineConfig({
   retries: 0,
   reporter: process.env.CI ? 'github' : 'list',
   expect: {
-    toHaveScreenshot: { maxDiffPixelRatio: 0.02 },
+    toHaveScreenshot: { maxDiffPixelRatio: 0.02, threshold: 0.1 },
   },
   use: {
     baseURL: 'http://localhost:4173',
