@@ -79,6 +79,7 @@ function roll(): void {
   // What a transport would carry: a JSON round trip of the (optionally redacted) event.
   const wire: unknown = JSON.parse(JSON.stringify(hiddenBox.checked ? redact(event) : event));
   if (!isRollEvent(wire)) {
+    trayB.clear();
     resultB.textContent = 'Error: received an invalid RollEvent.';
     return;
   }

@@ -221,7 +221,7 @@ export function createDiceTray(
   const labelFont = opts.labelFont ?? 'system-ui';
   /** Font of the atlas canvas; the atlas is rebuilt when the drawn skin resolves another font. */
   let atlasFont = resolveSkin(opts.skin).font ?? labelFont;
-  let atlas = gl === null ? null : buildAtlas(atlasFont, opts.labels);
+  let atlas = gl === null ? null : buildAtlas(atlasFont, opts.labels, labelFont);
 
   let traySkin = opts.skin;
   /** Skin requested by setSkin while the context was lost, already resolved; compiled on restore. */
@@ -341,7 +341,7 @@ export function createDiceTray(
   function atlasFor(g: WebGL2RenderingContext, font: string): void {
     if (font === atlasFont) return;
     atlasFont = font;
-    atlas = buildAtlas(font, opts.labels);
+    atlas = buildAtlas(font, opts.labels, labelFont);
     if (atlasTex !== null) g.deleteTexture(atlasTex);
     atlasTex = null;
   }

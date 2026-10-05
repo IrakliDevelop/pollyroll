@@ -37,7 +37,7 @@ const isSkin = (s: unknown): boolean =>
       isColor(s.labelColor) &&
       optional(s.labelStyle, (x) => oneOf(x, 'engraved printed embossed')) &&
       optional(s.pattern, (x) => oneOf(x, 'none gradient speckle marble wood swirl')) &&
-      optional(s.font, (x) => isStr(x, 0, 128))
+      optional(s.font, (x) => isStr(x, 1, 128))
     : isStr(s, 1, 64);
 
 const isId = (x: unknown): boolean => isStr(x, 1, 128);

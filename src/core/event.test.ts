@@ -221,6 +221,10 @@ describe('isRollEvent', () => {
         (e.skin = { material: 'gem', color: 'r', labelColor: 'w', labelStyle: 'neon' as never }),
     ],
     [
+      'skin font empty',
+      (e) => (e.skin = { material: 'gem', color: 'r', labelColor: 'w', font: '' }),
+    ],
+    [
       'skin font 129 chars',
       (e) => (e.skin = { material: 'gem', color: 'r', labelColor: 'w', font: 'x'.repeat(129) }),
     ],
