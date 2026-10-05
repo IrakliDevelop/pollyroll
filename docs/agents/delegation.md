@@ -96,7 +96,7 @@ Agent definitions live in `.claude/agents/` with pinned models and tool sets:
 | `pr-task-reviewer`   | Review (task)   | `claude-opus-5-5`, no edit tools |
 | `pr-branch-reviewer` | Review (branch) | `claude-opus-5-5`, no edit tools |
 
-The session model is the thinking tier (Fable 5.1 recommended). Dispatch the agents above by name
+The session model is the thinking tier (Opus 5.5, `claude-opus-5-5`). Dispatch the agents above by name
 with the Agent tool. The `superpowers` plugin is enabled in `.claude/settings.json`; its
 `subagent-driven-development` and `test-driven-development` skills match this flow, but this page is
 authoritative and the flow works without the plugin. If a session cannot see `.claude/agents/`,
