@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RollEvent } from '../core/types';
-import { createDiceTray } from './tray';
+import { createDiceTray, materialPresets } from './tray';
 
 const event: RollEvent = {
   v: 1,
@@ -65,5 +65,18 @@ describe('createDiceTray without WebGL2', () => {
       expect(() => tray.setDieScale(bad)).toThrow(RangeError);
     }
     expect(() => tray.setDieScale(2)).not.toThrow();
+  });
+});
+
+describe('materialPresets', () => {
+  it('lists every shader parameter of the glass preset', () => {
+    expect(materialPresets.glass).toEqual({
+      metalness: 0,
+      roughness: 0.05,
+      clearcoat: 1,
+      transmission: 0.8,
+      tint: 0.6,
+      sparkle: 0,
+    });
   });
 });
