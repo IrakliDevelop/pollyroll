@@ -14,7 +14,7 @@ import type { MaterialPreset, Skin, SkinRef } from '../skins/types';
 import { ATLAS_MAX_LEVEL, buildAtlas, LABEL_SETS } from './atlas';
 import { cameraPosition, trayBounds, viewProjection } from './camera';
 import { attrib, createBuffer, createProgram } from './gl';
-import { DIE_VERTEX, dieFragment, SHADOW_FRAGMENT, SHADOW_VERTEX } from './shaders';
+import { DIE_VERTEX, dieFragment, LIGHT_DIR, SHADOW_FRAGMENT, SHADOW_VERTEX } from './shaders';
 import type { DieKind } from './shaders';
 
 export interface TrayOptions {
@@ -47,8 +47,9 @@ export interface DiceTray {
 const FADE_MS = 300;
 const INST = 8; // floats per die instance: x, y, z, atlas row (−1 = blank), qx, qy, qz, qw
 const FRAME = 7; // floats per keyframe: x, y, z, qx, qy, qz, qw
-// Floor shift per unit height away from the key light (−L.xz / L.y for LIGHT_DIR in shaders.ts).
-const SHADOW_SLOPE = 0.7071;
+// Floor shift per unit height away from the key light: −L.xz / L.y.
+const SHADOW_X = -LIGHT_DIR[0] / LIGHT_DIR[1];
+const SHADOW_Z = -LIGHT_DIR[2] / LIGHT_DIR[1];
 /** Material preset → metalness, roughness, clearcoat. */
 const MATERIALS: Record<MaterialPreset, readonly number[]> = {
   plastic: [0, 0.35, 0.3],
@@ -408,9 +409,8 @@ export function createDiceTray(
         const h = at(grp.data, o + 1) * dieScale;
         const fade = 1 - h / 4;
         // Seen from straight above, a blob under the die is hidden; offset it as the light would.
-        const shift = h * SHADOW_SLOPE;
-        shadowData[ns * 4] = at(grp.data, o) * dieScale + shift;
-        shadowData[ns * 4 + 1] = at(grp.data, o + 2) * dieScale + shift;
+        shadowData[ns * 4] = at(grp.data, o) * dieScale + h * SHADOW_X;
+        shadowData[ns * 4 + 1] = at(grp.data, o + 2) * dieScale + h * SHADOW_Z;
         shadowData[ns * 4 + 2] = 1.3 * grp.radius * dieScale;
         shadowData[ns * 4 + 3] = 0.45 * (fade < 0 ? 0 : fade > 1 ? 1 : fade);
         n++;

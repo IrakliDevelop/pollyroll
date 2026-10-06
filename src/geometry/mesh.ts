@@ -112,9 +112,10 @@ function build(shape: ShapeType): DieMesh {
       pts.forEach((v, k) => {
         const next = midpoint(v, at(pts, k + 1));
         const prev = midpoint(at(pts, k - 1), v);
+        // Largest glyph box (0.8 × 0.875 of the side) that fits the corner kite: k ≤ 2 / (0.8 + 0.4375 · 4/√3).
         const label = labelFrame(
-          add(c, scale(sub(v, c), 0.5)),
-          0.75 * r,
+          add(c, scale(sub(v, c), 0.36)),
+          1.1 * r,
           sub(v, c),
           n,
           at(face, k),

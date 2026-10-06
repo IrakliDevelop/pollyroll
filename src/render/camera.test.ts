@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { cameraPosition, trayBounds, viewProjection } from './camera';
 
-// Hand computation for trayBounds(4/3, 1), H = 14, insets x 1, z 0.25:
+// Hand computation for trayBounds(4/3, 1), H = 14, insets in die units x 1, z 0.5:
 //   halfZ = 14 × 0.36397023426620234 ≈ 5.0956;  halfX = (4/3) × halfZ ≈ 6.7941
 //   maxX = 6.7941 − 1 = 5.7941 → floor to 0.25 → 5.75;  minX → −5.75
-//   maxZ = 5.0956 − 0.25 = 4.8456 → floor → 4.75;       minZ → −4.75
-// dieScale 2 halves the raw bounds: 2.8971 → 2.75, 2.4228 → 2.25.
+//   maxZ = 5.0956 − 0.5 = 4.5956 → floor → 4.5;         minZ → −4.5
+// dieScale 2 halves the extents before the insets: 3.3971 − 1 → 2.25, 2.5478 − 0.5 → 2.
 const HALF_Z = 14 * 0.36397023426620234;
 
 function project(m: Float32Array, p: readonly [number, number, number]): [number, number] {
@@ -18,7 +18,7 @@ function project(m: Float32Array, p: readonly [number, number, number]): [number
 
 describe('trayBounds', () => {
   it('matches the hand-computed bounds for a 4:3 canvas', () => {
-    expect(trayBounds(4 / 3, 1)).toEqual({ minX: -5.75, maxX: 5.75, minZ: -4.75, maxZ: 4.75 });
+    expect(trayBounds(4 / 3, 1)).toEqual({ minX: -5.75, maxX: 5.75, minZ: -4.5, maxZ: 4.5 });
   });
 
   it('quantizes every bound to a multiple of 0.25', () => {
@@ -33,8 +33,8 @@ describe('trayBounds', () => {
     }
   });
 
-  it('halves the extents for dieScale 2 (before quantization)', () => {
-    expect(trayBounds(4 / 3, 2)).toEqual({ minX: -2.75, maxX: 2.75, minZ: -2.25, maxZ: 2.25 });
+  it('halves the extents for dieScale 2 before applying die-unit insets', () => {
+    expect(trayBounds(4 / 3, 2)).toEqual({ minX: -2.25, maxX: 2.25, minZ: -2, maxZ: 2 });
   });
 
   it('is identical for repeated calls', () => {
@@ -45,6 +45,17 @@ describe('trayBounds', () => {
     const b = trayBounds(0.2, 1);
     expect(b.minX).toBeLessThanOrEqual(-2);
     expect(b.maxX).toBeGreaterThanOrEqual(2);
+  });
+
+  it('falls back to exactly ±2 on x when the inset tray would be narrower', () => {
+    for (const [aspect, s] of [
+      [0.5, 1.3],
+      [0.5, 2],
+      [0.75, 2],
+    ] as const) {
+      const b = trayBounds(aspect, s);
+      expect([b.minX, b.maxX]).toEqual([-2, 2]);
+    }
   });
 
   it('never returns negative zero', () => {
@@ -68,21 +79,25 @@ describe('trayBounds', () => {
     }
   });
 
-  it('keeps a radius-0.9 die resting in any tray corner fully on screen', () => {
-    const r = 0.9;
+  it('keeps a radius-0.9 die resting in any tray corner fully on screen at any dieScale', () => {
     for (const aspect of [0.5, 0.75, 1, 4 / 3, 16 / 9, 2.5, 3]) {
       const m = viewProjection(aspect, new Float32Array(16));
       const at = (i: number): number => m[i] ?? Number.NaN;
-      const b = trayBounds(aspect, 1);
-      // A die touching a wall at either end of it also touches the adjacent wall: the corners.
-      for (const x of [b.minX + r, b.maxX - r]) {
-        for (const z of [b.minZ + r, b.maxZ - r]) {
-          const [px, py] = project(m, [x, r, z]);
-          const w = at(3) * x + at(7) * r + at(11) * z + at(15);
-          const rx = (r * at(0)) / w;
-          const ry = (r * at(0) * aspect) / w;
-          expect(Math.abs(px) + rx).toBeLessThanOrEqual(1);
-          expect(Math.abs(py) + ry).toBeLessThanOrEqual(1);
+      for (const s of [0.7, 1, 1.3, 2]) {
+        const r = 0.9 * s;
+        const b = trayBounds(aspect, s);
+        // Below the ±2 minimum no inset can fit a corner die; that case is pinned separately.
+        if ((HALF_Z * aspect) / s - 1 < 2) continue;
+        // A die touching a wall at either end of it also touches the adjacent wall: the corners.
+        for (const x of [b.minX * s + r, b.maxX * s - r]) {
+          for (const z of [b.minZ * s + r, b.maxZ * s - r]) {
+            const [px, py] = project(m, [x, r, z]);
+            const w = at(3) * x + at(7) * r + at(11) * z + at(15);
+            const rx = (r * at(0)) / w;
+            const ry = (r * at(0) * aspect) / w;
+            expect(Math.abs(px) + rx).toBeLessThanOrEqual(1);
+            expect(Math.abs(py) + ry).toBeLessThanOrEqual(1);
+          }
         }
       }
     }

@@ -4,6 +4,8 @@ import type { LabelStyle } from '../skins/types';
 
 export const ATLAS_COLUMNS = 20;
 export const ATLAS_ROWS = 9;
+/** Unit direction toward the key light, world space. */
+export const LIGHT_DIR = [-0.5, 0.7071, -0.5] as const;
 
 /** Die vertex: mesh (pos, normal, label lu/lv/cell) + instance (position.xyz, atlas row; quaternion). */
 export const DIE_VERTEX = `#version 300 es
@@ -99,7 +101,7 @@ uniform float uAlpha;
 uniform sampler2D uAtlas;
 out vec4 oColor;
 const float PI = 3.14159265;
-const vec3 LIGHT_DIR = vec3(-0.5, 0.7071, -0.5);
+const vec3 LIGHT_DIR = vec3(${LIGHT_DIR.join(', ')});
 const vec3 LIGHT = vec3(3.2);
 const vec3 SKY = vec3(0.42, 0.44, 0.48);
 const vec3 GROUND = vec3(0.26, 0.24, 0.22);

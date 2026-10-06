@@ -1,12 +1,12 @@
 import type { TrayBounds } from '../physics/world';
 
-export const CAMERA_DISTANCE = 14;
+const CAMERA_DISTANCE = 14;
 /**
- * Wall insets from the visible floor edges, world units: the smallest (in 0.25 steps) that keep a
- * radius-0.9 die resting in any tray corner on screen for aspects 0.5–3, since its top projects outward.
+ * Wall insets from the visible floor edges, die units: the smallest (in 0.25 steps) that keep a
+ * resting die in any tray corner on screen for aspects 0.5–3 and dieScale 0.7–2, since its top projects outward.
  */
 const INSET_X = 1;
-const INSET_Z = 0.25;
+const INSET_Z = 0.5;
 
 // tan of half the 40° vertical FOV, literal so trayBounds is bit-identical in every engine.
 const TAN_20 = 0.36397023426620234;
@@ -54,12 +54,12 @@ export function trayBounds(aspect: number, dieScale: number): TrayBounds {
   positive('dieScale', dieScale);
   const halfX = aspect * HALF_Z;
   // `+ 0` turns a negative-zero result into 0.
-  const ceil = (v: number): number => Math.ceil((v / dieScale) * 4) / 4 + 0;
-  const floor = (v: number): number => Math.floor((v / dieScale) * 4) / 4 + 0;
+  const ceil = (v: number): number => Math.ceil(v * 4) / 4 + 0;
+  const floor = (v: number): number => Math.floor(v * 4) / 4 + 0;
   return {
-    minX: Math.min(ceil(-halfX + INSET_X), -2),
-    maxX: Math.max(floor(halfX - INSET_X), 2),
-    minZ: ceil(-HALF_Z + INSET_Z),
-    maxZ: floor(HALF_Z - INSET_Z),
+    minX: Math.min(ceil(-halfX / dieScale + INSET_X), -2),
+    maxX: Math.max(floor(halfX / dieScale - INSET_X), 2),
+    minZ: ceil(-HALF_Z / dieScale + INSET_Z),
+    maxZ: floor(HALF_Z / dieScale - INSET_Z),
   };
 }
