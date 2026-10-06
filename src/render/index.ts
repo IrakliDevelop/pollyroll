@@ -9,6 +9,11 @@ export {
   oak,
   sapphire,
   ruby,
+  emerald,
+  amethyst,
+  topaz,
+  aquamarine,
+  smoke,
   defineSkin,
   registerSkin,
 } from '../skins/presets';

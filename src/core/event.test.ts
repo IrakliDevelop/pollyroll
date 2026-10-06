@@ -129,6 +129,16 @@ describe('isRollEvent', () => {
       ),
     ).toBe(true);
     expect(ok((e) => (e.skin = { material: 'gem', color: 'red', labelColor: 'white' }))).toBe(true);
+    expect(
+      ok(
+        (e) =>
+          (e.skin = {
+            material: { metalness: 0, roughness: 0.06, transmission: 1, tint: 0, sparkle: 0.5 },
+            color: 'red',
+            labelColor: 'white',
+          }),
+      ),
+    ).toBe(true);
     expect(ok((e) => (e.audience = 'all'))).toBe(true);
     expect(ok((e) => (e.audience = 'dm'))).toBe(true);
     expect(ok((e) => (e.audience = Array.from({ length: 100 }, () => 'x')))).toBe(true);
@@ -198,6 +208,69 @@ describe('isRollEvent', () => {
       (e) =>
         (e.skin = {
           material: { metalness: 0, roughness: 0, clearcoat: Number.NaN },
+          color: 'r',
+          labelColor: 'w',
+        }),
+    ],
+    [
+      'skin with transmission 1.5',
+      (e) =>
+        (e.skin = {
+          material: { metalness: 0, roughness: 0, transmission: 1.5 },
+          color: 'r',
+          labelColor: 'w',
+        }),
+    ],
+    [
+      'skin with transmission -0.1',
+      (e) =>
+        (e.skin = {
+          material: { metalness: 0, roughness: 0, transmission: -0.1 },
+          color: 'r',
+          labelColor: 'w',
+        }),
+    ],
+    [
+      'skin with transmission NaN',
+      (e) =>
+        (e.skin = {
+          material: { metalness: 0, roughness: 0, transmission: Number.NaN },
+          color: 'r',
+          labelColor: 'w',
+        }),
+    ],
+    [
+      'skin with tint string',
+      (e) =>
+        (e.skin = {
+          material: { metalness: 0, roughness: 0, tint: 'x' as never },
+          color: 'r',
+          labelColor: 'w',
+        }),
+    ],
+    [
+      'skin with tint Infinity',
+      (e) =>
+        (e.skin = {
+          material: { metalness: 0, roughness: 0, tint: Number.POSITIVE_INFINITY },
+          color: 'r',
+          labelColor: 'w',
+        }),
+    ],
+    [
+      'skin with sparkle 2',
+      (e) =>
+        (e.skin = {
+          material: { metalness: 0, roughness: 0, sparkle: 2 },
+          color: 'r',
+          labelColor: 'w',
+        }),
+    ],
+    [
+      'skin with sparkle null',
+      (e) =>
+        (e.skin = {
+          material: { metalness: 0, roughness: 0, sparkle: null as never },
           color: 'r',
           labelColor: 'w',
         }),

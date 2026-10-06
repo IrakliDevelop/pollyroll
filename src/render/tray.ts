@@ -10,12 +10,11 @@ import type { PlannedBody, RollPlan } from '../physics/plan';
 import { DT } from '../physics/world';
 import { PATTERNS } from '../skins/patterns';
 import { resolveSkin } from '../skins/presets';
-import type { MaterialPreset, Skin, SkinRef } from '../skins/types';
+import type { MaterialParams, MaterialPreset, Skin, SkinRef } from '../skins/types';
 import { ATLAS_MAX_LEVEL, buildAtlas, LABEL_SETS } from './atlas';
 import { cameraPosition, fitScale, trayBounds, viewProjection } from './camera';
 import { attrib, createBuffer, createProgram } from './gl';
 import { DIE_VERTEX, dieFragment, LIGHT_DIR, SHADOW_FRAGMENT, SHADOW_VERTEX } from './shaders';
-import type { DieKind } from './shaders';
 
 export interface TrayOptions {
   skin?: SkinRef;
@@ -52,14 +51,14 @@ const FRAME = 7; // floats per keyframe: x, y, z, qx, qy, qz, qw
 // Floor shift per unit height away from the key light: −L.xz / L.y.
 const SHADOW_X = -LIGHT_DIR[0] / LIGHT_DIR[1];
 const SHADOW_Z = -LIGHT_DIR[2] / LIGHT_DIR[1];
-/** Material preset → metalness, roughness, clearcoat. */
-const MATERIALS: Record<MaterialPreset, readonly number[]> = {
-  plastic: [0, 0.35, 0.3],
-  metal: [1, 0.3, 0],
-  wood: [0, 0.7, 0.1],
-  stone: [0, 0.45, 0.6],
-  glass: [0, 0.05, 1],
-  gem: [0, 0.08, 1],
+/** Material presets as params; glass and gem set the see-through fields. */
+const MATERIALS: Record<MaterialPreset, MaterialParams> = {
+  plastic: { metalness: 0, roughness: 0.35, clearcoat: 0.3 },
+  metal: { metalness: 1, roughness: 0.3 },
+  wood: { metalness: 0, roughness: 0.7, clearcoat: 0.1 },
+  stone: { metalness: 0, roughness: 0.45, clearcoat: 0.6 },
+  glass: { metalness: 0, roughness: 0.05, clearcoat: 1, transmission: 0.8, tint: 0.6 },
+  gem: { metalness: 0, roughness: 0.08, clearcoat: 1, transmission: 0.4, tint: 0.9, sparkle: 1 },
 };
 const DIE_UNIFORMS = [
   'uVP',
@@ -69,6 +68,7 @@ const DIE_UNIFORMS = [
   'uBase2',
   'uLabel',
   'uMat',
+  'uGlass',
   'uAlpha',
   'uAtlas',
 ];
@@ -103,7 +103,7 @@ interface SkinGpu {
   fragment: string;
   transparent: boolean;
   font: string | undefined;
-  u: Float32Array; // color a rgb, color b rgb, label rgb (linear), metalness, roughness, clearcoat
+  u: Float32Array; // color a, b, label rgb (linear); metalness, roughness, clearcoat; transmission, tint, sparkle
 }
 
 interface Program {
@@ -136,23 +136,27 @@ function linearColor(css: string): readonly number[] {
 
 /** Program feature set and uniform values of a skin; a single color is used for both a and b. */
 function skinGpu(skin: Skin): SkinGpu {
-  const m = skin.material;
-  const mat = typeof m === 'object' ? [m.metalness, m.roughness, m.clearcoat ?? 0] : MATERIALS[m];
-  const kind: DieKind = m === 'glass' || m === 'gem' ? m : 'opaque';
+  const m = typeof skin.material === 'object' ? skin.material : MATERIALS[skin.material];
+  const transparent = (m.transmission ?? 0) > 0;
   const [a, b] = typeof skin.color === 'string' ? [skin.color, skin.color] : skin.color;
   const p = skin.pattern ?? 'none';
   const pattern = typeof p === 'object' ? p.glsl : PATTERNS[p];
   const label = skin.labelStyle ?? 'engraved';
   return {
-    key: `${label}|${kind}|${pattern}`,
-    fragment: dieFragment(label, kind, pattern),
-    transparent: kind !== 'opaque',
+    key: `${label}|${transparent}|${pattern}`,
+    fragment: dieFragment(label, transparent, pattern),
+    transparent,
     font: skin.font,
     u: new Float32Array([
       ...linearColor(a),
       ...linearColor(b),
       ...linearColor(skin.labelColor),
-      ...mat,
+      m.metalness,
+      m.roughness,
+      m.clearcoat ?? 0,
+      m.transmission ?? 0,
+      m.tint ?? 0,
+      m.sparkle ?? 0,
     ]),
   };
 }
@@ -459,6 +463,7 @@ export function createDiceTray(
     g.uniform3f(u.get('uBase2') ?? null, at(f, 3), at(f, 4), at(f, 5));
     g.uniform3f(u.get('uLabel') ?? null, at(f, 6), at(f, 7), at(f, 8));
     g.uniform3f(u.get('uMat') ?? null, at(f, 9), at(f, 10), at(f, 11));
+    g.uniform3f(u.get('uGlass') ?? null, at(f, 12), at(f, 13), at(f, 14));
     g.uniform1f(u.get('uAlpha') ?? null, alpha);
     if (k.transparent) {
       // Glass: back faces without depth writes, then front faces over them.

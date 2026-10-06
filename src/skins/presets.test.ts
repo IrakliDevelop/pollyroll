@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  amethyst,
+  aquamarine,
   brass,
   classic,
   defineSkin,
+  emerald,
   oak,
   obsidian,
   registerSkin,
@@ -10,6 +13,8 @@ import {
   ruby,
   sapphire,
   skinRegistry,
+  smoke,
+  topaz,
 } from './presets';
 import type { Skin } from './types';
 
@@ -90,6 +95,55 @@ describe('presets', () => {
           labelStyle: 'printed',
         },
       ],
+      emerald: [
+        emerald,
+        {
+          material: { metalness: 0, roughness: 0.05, clearcoat: 1, transmission: 0.75, tint: 0.95 },
+          color: ['#003d1a', '#00873f'],
+          labelColor: '#fff4c8',
+          pattern: 'gradient',
+          labelStyle: 'printed',
+        },
+      ],
+      amethyst: [
+        amethyst,
+        {
+          material: 'gem',
+          color: ['#5b1a8c', '#8a3fc0'],
+          labelColor: '#f3e8ff',
+          pattern: 'swirl',
+          labelStyle: 'printed',
+        },
+      ],
+      topaz: [
+        topaz,
+        {
+          material: 'gem',
+          color: ['#b9770e', '#e6b04a'],
+          labelColor: '#3a1e05',
+          pattern: 'gradient',
+          labelStyle: 'printed',
+        },
+      ],
+      aquamarine: [
+        aquamarine,
+        {
+          material: { metalness: 0, roughness: 0.05, clearcoat: 1, transmission: 1, tint: 0.6 },
+          color: '#5fc4d8',
+          labelColor: '#0b2f6b',
+          labelStyle: 'printed',
+        },
+      ],
+      smoke: [
+        smoke,
+        {
+          material: { metalness: 0, roughness: 0.05, clearcoat: 1, transmission: 0.6, tint: 0.35 },
+          color: ['#1e150f', '#3a2c20'],
+          labelColor: '#ffffff',
+          pattern: 'gradient',
+          labelStyle: 'printed',
+        },
+      ],
     };
     for (const [name, [preset, skin]] of Object.entries(expected)) {
       expect(preset).toStrictEqual(skin);
@@ -120,6 +174,14 @@ describe('registerSkin', () => {
     expect(resolveSkin('test-steel')).toBe(skin);
     skinRegistry.delete('test-steel');
     expect(resolveSkin('test-steel')).toBe(classic);
+  });
+
+  it('replaces a new preset name and restores it', () => {
+    const skin = defineSkin('emerald', { labelColor: '#000' });
+    registerSkin('emerald', skin);
+    expect(resolveSkin('emerald')).toBe(skin);
+    registerSkin('emerald', emerald);
+    expect(resolveSkin('emerald')).toBe(emerald);
   });
 
   it('throws TypeError for an empty name', () => {

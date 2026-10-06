@@ -26,7 +26,9 @@ const isColor = (x: unknown): boolean => isStr(x, 0, 64);
 
 const isMaterial = (m: unknown): boolean =>
   isObj(m)
-    ? isUnit(m.metalness) && isUnit(m.roughness) && optional(m.clearcoat, isUnit)
+    ? isUnit(m.metalness) &&
+      isUnit(m.roughness) &&
+      'clearcoat transmission tint sparkle'.split(' ').every((k) => optional(m[k], isUnit))
     : oneOf(m, 'plastic metal wood glass stone gem');
 
 /** Skin reference from untrusted input; inline GLSL patterns are rejected. */
