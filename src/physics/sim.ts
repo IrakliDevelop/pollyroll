@@ -1,7 +1,7 @@
 import { createSeedRng } from '../core/rng';
-import { getPolyhedron } from '../geometry/polyhedra';
 import type { ShapeType } from '../geometry/polyhedra';
 import { getBodyShape } from './body';
+import { FLATTEN_STEPS, flattenTail, upReadout } from './flatten';
 import { throwWave } from './throw';
 import { createWorld } from './world';
 import type { TrayBounds } from './world';
@@ -41,7 +41,8 @@ const ANGULAR_SQ = SETTLE_ANGULAR * SETTLE_ANGULAR;
  * values (bodies keep input order within a wave), each after the previous one settles or reaches
  * MAX_STEPS_PER_WAVE steps; earlier dice stay in the world. A wave is settled once every body in the
  * world has stayed below SETTLE_LINEAR and SETTLE_ANGULAR for SETTLE_STEPS consecutive steps. Every
- * throw parameter comes from the sfc32 stream of `seed`. Tracks are returned in input order.
+ * throw parameter comes from the sfc32 stream of `seed`. Tracks are returned in input order. When any
+ * die rests cocked, every track gains a FLATTEN_STEPS tail (see `flattenTail`); flat dice hold.
  */
 export function simulate(input: SimInput): SimResult {
   const { shapes, waves, bounds } = input;
@@ -122,40 +123,30 @@ export function simulate(input: SimInput): SimResult {
   }
 
   const pose = new Float64Array(FRAME);
-  const tracks = bodies.map((body): BodyTrack => {
-    let up = 0;
-    if (body.index >= 0) {
-      world.read(body.index, pose, 0);
-      up = upReadout(body.shape, pose);
+  const ends = bodies.map((body) => {
+    if (body.index < 0) return { up: 0, tail: null };
+    world.read(body.index, pose, 0);
+    return { up: upReadout(body.shape, pose), tail: flattenTail(body.shape, pose) };
+  });
+  const extra = ends.some((e) => e.tail !== null) ? FLATTEN_STEPS : 0;
+  const tracks = bodies.map((body, i): BodyTrack => {
+    const frames = new Float32Array(body.length + extra * FRAME);
+    frames.set(body.frames.subarray(0, body.length));
+    const tail = ends[i]?.tail;
+    for (let k = 0; k < extra; k++) {
+      const at = body.length + k * FRAME;
+      if (tail) frames.set(tail.subarray(k * FRAME, (k + 1) * FRAME), at);
+      else frames.copyWithin(at, body.length - FRAME, body.length);
     }
     return {
       shape: body.shape,
       wave: body.wave,
       startStep: body.startStep,
-      frames: body.frames.slice(0, body.length),
-      upReadout: up,
+      frames,
+      upReadout: ends[i]?.up ?? 0,
     };
   });
-  return { totalSteps, tracks, settled };
-}
-
-/** Readout index whose world direction R·r has the largest y; ties go to the lowest index. */
-function upReadout(shape: ShapeType, pose: Float64Array): number {
-  const [, , , x = 0, y = 0, z = 0, w = 1] = pose;
-  // Second row of the rotation matrix of q.
-  const r0 = 2 * (x * y + z * w);
-  const r1 = 1 - 2 * (x * x + z * z);
-  const r2 = 2 * (y * z - x * w);
-  let best = 0;
-  let bestY = -Infinity;
-  getPolyhedron(shape).readouts.forEach((r, k) => {
-    const ry = r0 * r[0] + r1 * r[1] + r2 * r[2];
-    if (ry > bestY) {
-      bestY = ry;
-      best = k;
-    }
-  });
-  return best;
+  return { totalSteps: totalSteps + extra, tracks, settled };
 }
 
 const FNV_OFFSET = 0x811c9dc5;
