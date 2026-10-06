@@ -202,6 +202,11 @@ type SkinRef = string | Skin; // string = registered preset name
   space returning base color.
 - Exported presets (plain objects, tree-shakable): `classic` (white plastic, black labels),
   `obsidian` (black stone), `brass` (metal), `oak` (wood), `sapphire` (glass), `ruby` (gem).
+  _(amended)_ Plus `emerald`, `aquamarine`, `smoke` (glass) and `amethyst`, `topaz` (gem).
+- _(amended)_ `MaterialParams` = `{ metalness, roughness, clearcoat?, transmission?, tint?, sparkle? }`
+  (all 0–1). `transmission > 0` renders see-through; `tint` sets body colour depth; `sparkle` adds
+  gem glints. The `glass` and `gem` presets are named values of these (glass 0.8/0.6/0, gem
+  0.4/0.9/1), reproducing the original look pixel for pixel.
 - `defineSkin(base, overrides)` composes skins; `registerSkin(name, skin)` adds a named preset.
 - Out of scope for v1: image textures.
 
@@ -284,7 +289,8 @@ Chromium uses SwiftShader (`--use-angle=swiftshader --enable-unsafe-swiftshader`
   rolls before; 0/150 for 4, 9, and 20 dice after).
 - Settle-to-flat tail; warm-started contacts; tray insets in die units.
 - Notation aliases `k`/`d`/`x`; keep/drop ranks explosion dice too; `group` indexes dice terms only.
-- Custom labels in natural order; presets registered by name; custom GLSL local-only.
+- Custom labels in natural order; presets registered by name (11); custom GLSL local-only;
+  glass/gem tunable through `MaterialParams` transmission/tint/sparkle.
 - No option to switch camera views; React binding reads options once except `skin`.
 
 ### Not verified yet
