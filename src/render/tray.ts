@@ -12,7 +12,7 @@ import { PATTERNS } from '../skins/patterns';
 import { resolveSkin } from '../skins/presets';
 import type { MaterialPreset, Skin, SkinRef } from '../skins/types';
 import { ATLAS_MAX_LEVEL, buildAtlas, LABEL_SETS } from './atlas';
-import { cameraPosition, trayBounds, viewProjection } from './camera';
+import { cameraPosition, fitScale, trayBounds, viewProjection } from './camera';
 import { attrib, createBuffer, createProgram } from './gl';
 import { DIE_VERTEX, dieFragment, LIGHT_DIR, SHADOW_FRAGMENT, SHADOW_VERTEX } from './shaders';
 import type { DieKind } from './shaders';
@@ -618,7 +618,9 @@ export function createDiceTray(
       stop();
       resolvePending();
       fit();
-      const plan = planRoll(event, trayBounds(aspect, dieScale));
+      const count = event.dice.reduce((n, d) => n + (d.type === 'd100' ? 2 : 1), 0);
+      const scale = fitScale(dieScale, Math.min(count, MAX_BODIES), aspect);
+      const plan = planRoll(event, trayBounds(aspect, scale));
       const groups: Group[] = [];
       LABEL_SETS.forEach((set, row) => {
         const bodies = plan.bodies.filter((b) => b.labelSet === set);
@@ -636,7 +638,7 @@ export function createDiceTray(
         groups,
         eventSkin: event.skin,
         skin,
-        scale: dieScale,
+        scale,
         t0: performance.now(),
         step: 0,
         done: false,

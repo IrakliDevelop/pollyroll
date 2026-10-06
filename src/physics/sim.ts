@@ -1,7 +1,7 @@
 import { createSeedRng } from '../core/rng';
 import type { ShapeType } from '../geometry/polyhedra';
 import { getBodyShape } from './body';
-import { FLATTEN_STEPS, flattenTail, upReadout } from './flatten';
+import { FLATTEN_STEPS, flattenTail, separate, upReadout } from './flatten';
 import { throwWave } from './throw';
 import { createWorld } from './world';
 import type { TrayBounds } from './world';
@@ -41,8 +41,9 @@ const ANGULAR_SQ = SETTLE_ANGULAR * SETTLE_ANGULAR;
  * values (bodies keep input order within a wave), each after the previous one settles or reaches
  * MAX_STEPS_PER_WAVE steps; earlier dice stay in the world. A wave is settled once every body in the
  * world has stayed below SETTLE_LINEAR and SETTLE_ANGULAR for SETTLE_STEPS consecutive steps. Every
- * throw parameter comes from the sfc32 stream of `seed`. Tracks are returned in input order. When any
- * die rests cocked, every track gains a FLATTEN_STEPS tail (see `flattenTail`); flat dice hold.
+ * throw parameter comes from the sfc32 stream of `seed`. Tracks are returned in input order. Resting
+ * centres are then pushed apart (see `separate`); when any die rests cocked or moved, every track
+ * gains a FLATTEN_STEPS tail (see `flattenTail`); other dice hold.
  */
 export function simulate(input: SimInput): SimResult {
   const { shapes, waves, bounds } = input;
@@ -122,11 +123,22 @@ export function simulate(input: SimInput): SimResult {
     if (calm < SETTLE_STEPS) settled = false;
   }
 
-  const pose = new Float64Array(FRAME);
-  const ends = bodies.map((body) => {
-    if (body.index < 0) return { up: 0, tail: null };
-    world.read(body.index, pose, 0);
-    return { up: upReadout(body.shape, pose), tail: flattenTail(body.shape, pose) };
+  const poses = bodies.map((body) => {
+    const pose = new Float64Array(FRAME);
+    if (body.index >= 0) world.read(body.index, pose, 0);
+    return pose;
+  });
+  const xz = new Float64Array(poses.flatMap((p) => [p[0] ?? 0, p[2] ?? 0]));
+  separate(
+    xz,
+    bodies.map((b) => getBodyShape(b.shape).radius),
+    bounds,
+  );
+  const ends = bodies.map((body, i) => {
+    const pose = poses[i];
+    if (body.index < 0 || pose === undefined) return { up: 0, tail: null };
+    const tail = flattenTail(body.shape, pose, xz[2 * i] ?? 0, xz[2 * i + 1] ?? 0);
+    return { up: upReadout(body.shape, pose), tail };
   });
   const extra = ends.some((e) => e.tail !== null) ? FLATTEN_STEPS : 0;
   const tracks = bodies.map((body, i): BodyTrack => {
