@@ -38,6 +38,8 @@ export interface DiceTray {
   /** Pre-simulates, remaps, animates, and resolves with the summary once every die has settled. */
   playRoll(event: RollEvent): Promise<RollSummary>;
   setSkin(skin: SkinRef): void;
+  /** Sets the die size for subsequent rolls; the dice already on screen keep their size. */
+  setDieScale(scale: number): void;
   clear(): void;
   resize(): void;
   dispose(): void;
@@ -86,6 +88,7 @@ interface Roll {
   groups: Group[];
   eventSkin: SkinRef | undefined;
   skin: SkinGpu;
+  scale: number;
   t0: number;
   step: number;
   done: boolean;
@@ -212,7 +215,7 @@ export function createDiceTray(
     canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none';
     target.appendChild(canvas);
   }
-  const dieScale = opts.dieScale ?? 1;
+  let dieScale = opts.dieScale ?? 1;
   const shadows = opts.shadows ?? true;
   const maxDpr = opts.maxDpr ?? 2;
   const fadeAfterMs = opts.fadeAfterMs ?? null;
@@ -394,6 +397,7 @@ export function createDiceTray(
     if (r === null) return;
     viewProjection(aspect, vp);
     const s = r.step;
+    const scale = r.scale;
     let ns = 0;
     // eslint-disable-next-line @typescript-eslint/prefer-for-of -- no iterator allocation per frame
     for (let i = 0; i < r.groups.length; i++) {
@@ -406,12 +410,12 @@ export function createDiceTray(
         if (b === undefined || b.startStep > s) continue;
         const o = n * INST;
         writePose(b, s, b.value === null ? -1 : grp.row, grp.data, o);
-        const h = at(grp.data, o + 1) * dieScale;
+        const h = at(grp.data, o + 1) * scale;
         const fade = 1 - h / 4;
         // Seen from straight above, a blob under the die is hidden; offset it as the light would.
-        shadowData[ns * 4] = at(grp.data, o) * dieScale + h * SHADOW_X;
-        shadowData[ns * 4 + 1] = at(grp.data, o + 2) * dieScale + h * SHADOW_Z;
-        shadowData[ns * 4 + 2] = 1.3 * grp.radius * dieScale;
+        shadowData[ns * 4] = at(grp.data, o) * scale + h * SHADOW_X;
+        shadowData[ns * 4 + 1] = at(grp.data, o + 2) * scale + h * SHADOW_Z;
+        shadowData[ns * 4 + 2] = 1.3 * grp.radius * scale;
         shadowData[ns * 4 + 3] = 0.45 * (fade < 0 ? 0 : fade > 1 ? 1 : fade);
         n++;
         ns++;
@@ -449,7 +453,7 @@ export function createDiceTray(
     g.bindTexture(g.TEXTURE_2D, atlasTexture(g));
     g.uniform1i(u.get('uAtlas') ?? null, 0);
     g.uniformMatrix4fv(u.get('uVP') ?? null, false, vp);
-    g.uniform1f(u.get('uScale') ?? null, dieScale);
+    g.uniform1f(u.get('uScale') ?? null, scale);
     g.uniform3f(u.get('uCam') ?? null, cam[0], cam[1], cam[2]);
     g.uniform3f(u.get('uBase') ?? null, at(f, 0), at(f, 1), at(f, 2));
     g.uniform3f(u.get('uBase2') ?? null, at(f, 3), at(f, 4), at(f, 5));
@@ -632,6 +636,7 @@ export function createDiceTray(
         groups,
         eventSkin: event.skin,
         skin,
+        scale: dieScale,
         t0: performance.now(),
         step: 0,
         done: false,
@@ -663,6 +668,13 @@ export function createDiceTray(
         }
       }
       traySkin = skin;
+    },
+
+    setDieScale(scale: number): void {
+      if (!Number.isFinite(scale) || scale <= 0) {
+        throw new RangeError(`dieScale must be a positive finite number, got ${scale}`);
+      }
+      dieScale = scale;
     },
 
     clear(): void {

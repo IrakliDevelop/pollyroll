@@ -264,3 +264,31 @@ test.describe('tray label font', () => {
     expect(await drawn(page)).toEqual(['system-ui']);
   });
 });
+
+test.describe('tray die scale', () => {
+  test.skip(({ browserName }) => browserName !== 'chromium', 'pixel coverage checked in Chromium');
+
+  test('keeps a rolling die at its scale and draws the next roll larger', async ({ page }) => {
+    await open(page, '');
+    const one: RollEvent = {
+      ...EVENT,
+      notation: '1d20',
+      dice: [{ type: 'd20', value: 7, group: 0, wave: 0 }],
+      modifier: 0,
+    };
+    const total = await page.evaluate(async (event) => {
+      const done = window.__pollyrollTray.playRoll(event);
+      await new Promise((r) => setTimeout(r, 100));
+      window.__pollyrollTray.setDieScale(2);
+      return (await done).total;
+    }, one);
+    expect(total).toBe(7);
+    const small = (await coverage(page)).ink;
+    await page.evaluate(async (event) => {
+      await window.__pollyrollTray.playRoll(event);
+    }, one);
+    const large = (await coverage(page)).ink;
+    expect(small).toBeGreaterThan(0.001);
+    expect(large / small).toBeGreaterThan(2.5);
+  });
+});

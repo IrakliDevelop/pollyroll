@@ -111,6 +111,7 @@ const tray = createDiceTray(target, {
 
 tray.playRoll(event); // Promise<RollSummary>; a new roll replaces the previous dice
 tray.setSkin('obsidian');
+tray.setDieScale(1.5); // size for the next roll; dice on screen keep theirs
 tray.clear();
 tray.resize(); // also called automatically through ResizeObserver
 tray.dispose(); // releases every GPU resource and listener
@@ -130,6 +131,8 @@ The label font is the skin's `font` if it has one, otherwise `labelFont`. If the
 - **No WebGL2:** `playRoll` resolves immediately with the summary and draws nothing.
 - **Reduced motion:** the tray draws the settled dice without animating them and resolves
   immediately.
+- **Die size:** `dieScale` sets the walls as well as the drawing, so both sides of a shared roll
+  need the same `dieScale` (and tray aspect) to see identical motion.
 - **Superseded rolls:** if a roll is replaced, cleared, or disposed, its promise still resolves with
   that roll's own summary. It never rejects in these cases.
 - **Dice limit:** at most 30 dice are animated per tray (a d100 counts as two). Dice beyond that
