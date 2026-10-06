@@ -103,7 +103,7 @@ for explosions.
 const tray = createDiceTray(target, {
   skin: 'classic', // preset name or a Skin object
   labelFont: 'system-ui',
-  dieScale: 2,
+  dieScale: 2, // maximum die size; large rolls shrink to fit
   shadows: true,
   maxDpr: 2,
   reducedMotion: 'auto', // 'auto' follows prefers-reduced-motion; 'always' | 'never'
@@ -133,8 +133,10 @@ The label font is the skin's `font` if it has one, otherwise `labelFont`. If the
 - **No WebGL2:** `playRoll` resolves immediately with the summary and draws nothing.
 - **Reduced motion:** the tray draws the settled dice without animating them and resolves
   immediately.
-- **Die size:** `dieScale` sets the walls as well as the drawing, so both sides of a shared roll
-  need the same `dieScale` (and tray aspect) to see identical motion.
+- **Die size:** `dieScale` (default 2) is the largest size a die is drawn at. A roll with many dice
+  shrinks in 0.05 steps until its dice fit the tray, so a single d20 shows at full size while 20d6
+  stays readable without overlapping. The size sets the walls as well as the drawing, so both sides
+  of a shared roll need the same `dieScale` and tray aspect to see identical motion.
 - **Superseded rolls:** if a roll is replaced, cleared, or disposed, its promise still resolves with
   that roll's own summary. It never rejects in these cases.
 - **Dice limit:** at most 30 dice are animated per tray (a d100 counts as two). Dice beyond that
