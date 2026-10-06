@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { cameraPosition, trayBounds, viewProjection } from './camera';
 
-// Hand computation for trayBounds(4/3, 1), H = 14, insets in die units x 1, z 0.5:
-//   halfZ = 14 × 0.36397023426620234 ≈ 5.0956;  halfX = (4/3) × halfZ ≈ 6.7941
-//   maxX = 6.7941 − 1 = 5.7941 → floor to 0.25 → 5.75;  minX → −5.75
-//   maxZ = 5.0956 − 0.5 = 4.5956 → floor → 4.5;         minZ → −4.5
-// dieScale 2 halves the extents before the insets: 3.3971 − 1 → 2.25, 2.5478 − 0.5 → 2.
-const HALF_Z = 14 * 0.36397023426620234;
+// Hand computation for trayBounds(4/3, 1), orthographic half height 5.1, insets 0.6 die units:
+//   halfX = (4/3) × 5.1 = 6.8;  6.8 − 0.6 = 6.2 → floor to 0.25 → 6;  minX → −6
+//   halfZ = 5.1;                5.1 − 0.6 = 4.5 → floor → 4.5;         minZ → −4.5
+// dieScale 2 halves the extents before the insets: 3.4 − 0.6 → 2.75, 2.55 − 0.6 → 1.75.
+const HALF_Z = 5.1;
 
 function project(m: Float32Array, p: readonly [number, number, number]): [number, number] {
   const at = (i: number): number => m[i] ?? Number.NaN;
@@ -18,7 +17,7 @@ function project(m: Float32Array, p: readonly [number, number, number]): [number
 
 describe('trayBounds', () => {
   it('matches the hand-computed bounds for a 4:3 canvas', () => {
-    expect(trayBounds(4 / 3, 1)).toEqual({ minX: -5.75, maxX: 5.75, minZ: -4.5, maxZ: 4.5 });
+    expect(trayBounds(4 / 3, 1)).toEqual({ minX: -6, maxX: 6, minZ: -4.5, maxZ: 4.5 });
   });
 
   it('quantizes every bound to a multiple of 0.25', () => {
@@ -33,8 +32,8 @@ describe('trayBounds', () => {
     }
   });
 
-  it('halves the extents for dieScale 2 before applying die-unit insets', () => {
-    expect(trayBounds(4 / 3, 2)).toEqual({ minX: -2.25, maxX: 2.25, minZ: -2, maxZ: 2 });
+  it('halves the extents for dieScale 2 before applying the die-unit insets', () => {
+    expect(trayBounds(4 / 3, 2)).toEqual({ minX: -2.75, maxX: 2.75, minZ: -1.75, maxZ: 1.75 });
   });
 
   it('is identical for repeated calls', () => {
@@ -67,7 +66,7 @@ describe('trayBounds', () => {
     for (const aspect of [4 / 3, 2.5]) {
       const m = viewProjection(aspect, new Float32Array(16));
       const halfX = HALF_Z * aspect;
-      expect(trayBounds(aspect, 1).maxX).toBeLessThanOrEqual(halfX - 1);
+      expect(trayBounds(aspect, 1).maxX).toBeLessThanOrEqual(halfX);
       for (const [x, z, sx, sy] of [
         [-halfX, -HALF_Z, -1, 1],
         [halfX, HALF_Z, 1, -1],
@@ -86,8 +85,8 @@ describe('trayBounds', () => {
       for (const s of [0.7, 1, 1.3, 2]) {
         const r = 0.9 * s;
         const b = trayBounds(aspect, s);
-        // Below the ±2 minimum no inset can fit a corner die; that case is pinned separately.
-        if ((HALF_Z * aspect) / s - 1 < 2) continue;
+        // A ±2 tray wider than the screen cannot fit a corner die; that case is pinned separately.
+        if (2 * s > HALF_Z * aspect) continue;
         // A die touching a wall at either end of it also touches the adjacent wall: the corners.
         for (const x of [b.minX * s + r, b.maxX * s - r]) {
           for (const z of [b.minZ * s + r, b.maxZ * s - r]) {
@@ -124,6 +123,25 @@ describe('viewProjection', () => {
     const [lx, ly] = project(m, [0, 3, 0]);
     expect(Math.abs(lx)).toBeLessThan(1e-6);
     expect(Math.abs(ly)).toBeLessThan(1e-6);
+  });
+
+  it('is orthographic: an off-centre point projects to the same spot at any height', () => {
+    // (3.4, y, −2.55) at aspect 4/3: x / 6.8 = 0.5, screen-up is −z so 2.55 / 5.1 = 0.5.
+    const m = viewProjection(4 / 3, new Float32Array(16));
+    for (const y of [-1, 0, 3, 20]) {
+      const [px, py] = project(m, [3.4, y, -2.55]);
+      expect(Math.abs(px - 0.5)).toBeLessThan(1e-6);
+      expect(Math.abs(py - 0.5)).toBeLessThan(1e-6);
+    }
+  });
+
+  it('keeps heights −1 to 20 inside the depth range, higher points nearer', () => {
+    const m = viewProjection(4 / 3, new Float32Array(16));
+    const depth = (y: number): number =>
+      ((m[6] ?? Number.NaN) * y + (m[14] ?? Number.NaN)) / (m[15] ?? Number.NaN);
+    expect(Math.abs(depth(20) + 1)).toBeLessThan(1e-6);
+    expect(Math.abs(depth(-1) - 1)).toBeLessThan(1e-6);
+    expect(depth(3)).toBeLessThan(depth(0));
   });
 
   it('places the camera 14 units above the origin', () => {
