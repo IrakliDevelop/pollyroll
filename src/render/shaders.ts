@@ -148,7 +148,7 @@ void main() {
   float m = uMat.x * (1.0 - min(2.0 * lab, 1.0));
   float r = uMat.y;
   float cc = uMat.z;
-  vec3 V = normalize(uCam - vW);
+  vec3 V = normalize(uCam); // orthographic: one view direction everywhere
   vec3 R = reflect(-V, N);
   float nl = max(dot(N, LIGHT_DIR), 0.0);
   float nv = max(dot(N, V), 0.001);
