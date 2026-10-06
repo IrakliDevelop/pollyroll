@@ -20,7 +20,7 @@ import type { DieKind } from './shaders';
 export interface TrayOptions {
   skin?: SkinRef;
   labelFont?: string; // default 'system-ui'
-  dieScale?: number; // default 1
+  dieScale?: number; // default 2
   shadows?: boolean; // default true (blob shadows)
   maxDpr?: number; // default 2
   reducedMotion?: 'auto' | 'always' | 'never'; // default 'auto' (media query)
@@ -215,7 +215,7 @@ export function createDiceTray(
     canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none';
     target.appendChild(canvas);
   }
-  let dieScale = opts.dieScale ?? 1;
+  let dieScale = opts.dieScale ?? 2;
   const shadows = opts.shadows ?? true;
   const maxDpr = opts.maxDpr ?? 2;
   const fadeAfterMs = opts.fadeAfterMs ?? null;

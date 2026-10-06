@@ -103,7 +103,7 @@ for explosions.
 const tray = createDiceTray(target, {
   skin: 'classic', // preset name or a Skin object
   labelFont: 'system-ui',
-  dieScale: 1,
+  dieScale: 2,
   shadows: true,
   maxDpr: 2,
   reducedMotion: 'auto', // 'auto' follows prefers-reduced-motion; 'always' | 'never'
