@@ -47,6 +47,8 @@ export interface DiceTray {
 const FADE_MS = 300;
 const INST = 8; // floats per die instance: x, y, z, atlas row (−1 = blank), qx, qy, qz, qw
 const FRAME = 7; // floats per keyframe: x, y, z, qx, qy, qz, qw
+// Floor shift per unit height away from the key light (−L.xz / L.y for LIGHT_DIR in shaders.ts).
+const SHADOW_SLOPE = 0.7071;
 /** Material preset → metalness, roughness, clearcoat. */
 const MATERIALS: Record<MaterialPreset, readonly number[]> = {
   plastic: [0, 0.35, 0.3],
@@ -405,8 +407,10 @@ export function createDiceTray(
         writePose(b, s, b.value === null ? -1 : grp.row, grp.data, o);
         const h = at(grp.data, o + 1) * dieScale;
         const fade = 1 - h / 4;
-        shadowData[ns * 4] = at(grp.data, o) * dieScale;
-        shadowData[ns * 4 + 1] = at(grp.data, o + 2) * dieScale;
+        // Seen from straight above, a blob under the die is hidden; offset it as the light would.
+        const shift = h * SHADOW_SLOPE;
+        shadowData[ns * 4] = at(grp.data, o) * dieScale + shift;
+        shadowData[ns * 4 + 1] = at(grp.data, o + 2) * dieScale + shift;
         shadowData[ns * 4 + 2] = 1.3 * grp.radius * dieScale;
         shadowData[ns * 4 + 3] = 0.45 * (fade < 0 ? 0 : fade > 1 ? 1 : fade);
         n++;

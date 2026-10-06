@@ -1,62 +1,39 @@
 import type { TrayBounds } from '../physics/world';
 
-export const FOV_Y_DEG = 40;
-export const PITCH_DEG = 50;
 export const CAMERA_DISTANCE = 14;
 /**
- * Per-wall inset from the visible floor edges, world units. Sized so a radius-0.9 die resting in any
- * tray corner projects entirely on screen for aspects 0.5–3: the far wall needs the most because the
- * top screen edge meets the floor at a grazing 30°, so die height reaches past the floor edge.
+ * Wall insets from the visible floor edges, world units: the smallest (in 0.25 steps) that keep a
+ * radius-0.9 die resting in any tray corner on screen for aspects 0.5–3, since its top projects outward.
  */
-const MARGIN_FAR = 2.5;
-const MARGIN_NEAR = 0.75;
-const MARGIN_SIDE = 0.5;
+const INSET_X = 1;
+const INSET_Z = 0.25;
 
-// Literal trig values so trayBounds is bit-identical in every engine.
-const SIN_50 = 0.766044443118978;
-const COS_50 = 0.6427876096865394;
-const SIN_20 = 0.3420201433256687;
-const TAN_30 = 0.5773502691896257;
-const TAN_70 = 2.7474774194546216;
-const SIN_70 = 0.9396926207859083;
-
-const HEIGHT = CAMERA_DISTANCE * SIN_50;
-const OFFSET_Z = CAMERA_DISTANCE * COS_50;
+// tan of half the 40° vertical FOV, literal so trayBounds is bit-identical in every engine.
+const TAN_20 = 0.36397023426620234;
+const HALF_Z = CAMERA_DISTANCE * TAN_20;
 const POSITION: readonly [number, number, number] = Object.freeze<[number, number, number]>([
   0,
-  HEIGHT,
-  OFFSET_Z,
+  CAMERA_DISTANCE,
+  0,
 ]);
 
 const NEAR = 1;
 const FAR = 50;
 
-/** Column-major 4×4 view-projection for the fixed camera (target origin, pitch 50°, on the +Z side looking toward −Z). */
+/** Column-major 4×4 view-projection for the fixed camera above the origin looking down −Y, screen-up −Z. */
 export function viewProjection(aspect: number, out: Float32Array): Float32Array {
-  const pitch = (PITCH_DEG * Math.PI) / 180;
-  const s = Math.sin(pitch);
-  const c = Math.cos(pitch);
-  const f = 1 / Math.tan((FOV_Y_DEG * Math.PI) / 360);
+  const f = 1 / TAN_20;
   const a = (FAR + NEAR) / (NEAR - FAR);
   const b = (2 * FAR * NEAR) / (NEAR - FAR);
-  const d = CAMERA_DISTANCE;
-  // View rows: x, c·y − s·z, s·y + c·z − D; projection P · V written column by column.
+  const h = CAMERA_DISTANCE;
+  // View: (x, −z, y − H); projection P · V written column by column.
+  out.fill(0);
   out[0] = f / aspect;
-  out[1] = 0;
-  out[2] = 0;
-  out[3] = 0;
-  out[4] = 0;
-  out[5] = f * c;
-  out[6] = a * s;
-  out[7] = -s;
-  out[8] = 0;
-  out[9] = -f * s;
-  out[10] = a * c;
-  out[11] = -c;
-  out[12] = 0;
-  out[13] = 0;
-  out[14] = b - a * d;
-  out[15] = d;
+  out[6] = a;
+  out[7] = -1;
+  out[9] = -f;
+  out[14] = b - a * h;
+  out[15] = h;
   return out;
 }
 
@@ -75,18 +52,14 @@ function positive(name: string, value: number): void {
 export function trayBounds(aspect: number, dieScale: number): TrayBounds {
   positive('aspect', aspect);
   positive('dieScale', dieScale);
-  const zFar = OFFSET_Z - HEIGHT / TAN_30;
-  const zNear = OFFSET_Z - HEIGHT / TAN_70;
-  // The near-edge floor point sits 20° off the view axis at view depth (H / sin70)·cos20, so the
-  // visible half width there is (H / sin70)·cos20·aspect·tan20 = (H / sin70)·aspect·sin20.
-  const halfW = (HEIGHT / SIN_70) * aspect * SIN_20;
+  const halfX = aspect * HALF_Z;
   // `+ 0` turns a negative-zero result into 0.
   const ceil = (v: number): number => Math.ceil((v / dieScale) * 4) / 4 + 0;
   const floor = (v: number): number => Math.floor((v / dieScale) * 4) / 4 + 0;
   return {
-    minX: Math.min(ceil(-halfW + MARGIN_SIDE), -2),
-    maxX: Math.max(floor(halfW - MARGIN_SIDE), 2),
-    minZ: ceil(zFar + MARGIN_FAR),
-    maxZ: floor(zNear - MARGIN_NEAR),
+    minX: Math.min(ceil(-halfX + INSET_X), -2),
+    maxX: Math.max(floor(halfX - INSET_X), 2),
+    minZ: ceil(-HALF_Z + INSET_Z),
+    maxZ: floor(HALF_Z - INSET_Z),
   };
 }
