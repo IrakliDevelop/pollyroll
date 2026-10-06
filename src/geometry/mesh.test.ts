@@ -185,7 +185,7 @@ describe('getDieMesh', () => {
     },
   );
 
-  it('d4: corner labels are 0.75 × r_in, halfway to the corner, glyph circle inside the kite', () => {
+  it('d4: corner labels are 1.1 × r_in, 0.36 of the way to the corner, glyph box inside the kite', () => {
     const tris = triangles(getDieMesh('d4')).filter((t) => t[0].cell >= 0);
     const corners = new Map<number, Vec3[]>();
     for (const t of tris) {
@@ -209,15 +209,27 @@ describe('getDieMesh', () => {
       );
       const v = t[0].p;
       const { side, center } = labelSquare(t);
-      expect(side / rIn).toBeCloseTo(0.75, 5);
-      expect(length(sub(center, add(c, scale(sub(v, c), 0.5))))).toBeLessThan(1e-6);
-      // Kite (v, next midpoint, centroid, prev midpoint): every edge clears the glyph circle.
+      expect(side / rIn).toBeCloseTo(1.1, 5);
+      expect(length(sub(center, add(c, scale(sub(v, c), 0.36))))).toBeLessThan(1e-6);
+      // Atlas glyph block: at most 0.8 of the cell high and 0.875 wide (128 px cell, 8 px pad).
+      const n = scale(g, 1 / length(g));
+      const up = scale(sub(v, c), 1 / length(sub(v, c)));
+      const right = cross(up, n);
       const mids = pts.filter((p) => length(sub(p, v)) > 1e-9).map((p) => scale(add(v, p), 0.5));
       expect(mids.length).toBe(2);
-      const glyph = 0.5 * side * 0.8;
-      for (const m of mids) {
-        expect(lineDistance(center, v, m)).toBeGreaterThanOrEqual(glyph);
-        expect(lineDistance(center, m, c)).toBeGreaterThanOrEqual(glyph);
+      const [m0, m1] = mids;
+      if (m0 === undefined || m1 === undefined) throw new Error('kite midpoints');
+      const kite = [v, m0, c, m1];
+      for (const sx of [-1, 1]) {
+        for (const sy of [-1, 1]) {
+          const q = add(center, add(scale(right, sx * 0.4375 * side), scale(up, sy * 0.4 * side)));
+          // Inside the convex kite: q lies on the same side of every edge.
+          const sides = kite.map((a, k) => {
+            const b = kite[(k + 1) % 4] ?? a;
+            return dot(cross(sub(b, a), sub(q, a)), n);
+          });
+          expect(sides.every((d) => d > 0) || sides.every((d) => d < 0)).toBe(true);
+        }
       }
     }
   });
