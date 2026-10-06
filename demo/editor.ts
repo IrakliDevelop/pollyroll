@@ -116,7 +116,6 @@ function load(skin: Skin): void {
   sync();
 }
 
-/** A skin passing isRollEvent's inline-skin rules (custom GLSL allowed), with hex colours. */
 function parseSkin(text: string): Skin | null {
   let x: unknown;
   try {

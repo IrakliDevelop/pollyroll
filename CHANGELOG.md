@@ -25,6 +25,7 @@ First release.
   printed, engraved, and embossed labels; `defineSkin` and `registerSkin`.
 - `MaterialParams` gains `transmission`, `tint`, and `sparkle` for custom glass and gem looks;
   `isRollEvent` accepts them in [0, 1].
+- `pollyroll/render` exports `materialPresets` (frozen built-in material values).
 - Skin presets `emerald`, `amethyst`, `topaz`, `aquamarine`, and `smoke`.
 - Notation aliases `kN` (keep highest), `dN` (drop lowest), and `x` (explode), as in `4d6k3`,
   `4d6d1`, and `3d6x`.

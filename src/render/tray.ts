@@ -51,8 +51,9 @@ const FRAME = 7; // floats per keyframe: x, y, z, qx, qy, qz, qw
 // Floor shift per unit height away from the key light: −L.xz / L.y.
 const SHADOW_X = -LIGHT_DIR[0] / LIGHT_DIR[1];
 const SHADOW_Z = -LIGHT_DIR[2] / LIGHT_DIR[1];
+type PresetParams = Readonly<Required<MaterialParams>>;
 /** The full `MaterialParams` each named material renders with. */
-export const materialPresets: Readonly<Record<MaterialPreset, Required<MaterialParams>>> = {
+export const materialPresets: Readonly<Record<MaterialPreset, PresetParams>> = {
   plastic: { metalness: 0, roughness: 0.35, clearcoat: 0.3, transmission: 0, tint: 0, sparkle: 0 },
   metal: { metalness: 1, roughness: 0.3, clearcoat: 0, transmission: 0, tint: 0, sparkle: 0 },
   wood: { metalness: 0, roughness: 0.7, clearcoat: 0.1, transmission: 0, tint: 0, sparkle: 0 },
@@ -60,6 +61,8 @@ export const materialPresets: Readonly<Record<MaterialPreset, Required<MaterialP
   glass: { metalness: 0, roughness: 0.05, clearcoat: 1, transmission: 0.8, tint: 0.6, sparkle: 0 },
   gem: { metalness: 0, roughness: 0.08, clearcoat: 1, transmission: 0.4, tint: 0.9, sparkle: 1 },
 };
+for (const m of Object.values(materialPresets)) Object.freeze(m);
+Object.freeze(materialPresets);
 const DIE_UNIFORMS = [
   'uVP',
   'uScale',
