@@ -3,7 +3,7 @@ import { getPolyhedron } from '../geometry/polyhedra';
 import type { ShapeType } from '../geometry/polyhedra';
 import { quatMul, quatRotate } from '../geometry/vec';
 import type { Quat } from '../geometry/vec';
-import { FLATTEN_STEPS, flattenTail } from './flatten';
+import { FLATTEN_STEPS, flattenTail, separate } from './flatten';
 import { simulate } from './sim';
 import type { SimResult } from './sim';
 import type { TrayBounds } from './world';
@@ -49,7 +49,7 @@ describe('flattenTail', () => {
     // with its centre at 0.6408. Flat, the top normal is +Y and the centre is at 0.5 (edge 1).
     const half = (10 * Math.PI) / 180;
     const pose = new Float64Array([1.5, 0.6408, -2, 0, 0, Math.sin(half), Math.cos(half)]);
-    const tail = flattenTail('d6', pose);
+    const tail = flattenTail('d6', pose, 1.5, -2);
     expect(tail).not.toBeNull();
     if (tail === null) return;
     expect(tail.length).toBe(FLATTEN_STEPS * 7);
@@ -87,7 +87,7 @@ describe('flattenTail', () => {
     const q = quatMul(q1, q0);
     const rest = restOf('d8', [0, 0, 0, ...q]);
     expect(rest.upY).toBeCloseTo(Math.cos((50 * Math.PI) / 180), 9);
-    const tail = flattenTail('d8', new Float64Array([0, -rest.lowY, 0, ...q]));
+    const tail = flattenTail('d8', new Float64Array([0, -rest.lowY, 0, ...q]), 0, 0);
     expect(tail).not.toBeNull();
     if (tail !== null) expectAboveFloor('d8', tail);
   });
@@ -95,7 +95,57 @@ describe('flattenTail', () => {
   it('leaves a die within 0.5° of flat alone', () => {
     const quarter = (0.2 * Math.PI) / 180;
     const pose = new Float64Array([0, 0.5, 0, Math.sin(quarter), 0, 0, Math.cos(quarter)]);
-    expect(flattenTail('d6', pose)).toBeNull();
+    expect(flattenTail('d6', pose, 0, 0)).toBeNull();
+  });
+});
+
+describe('separate', () => {
+  // d6 circumradius √3/2, so two d6 must end 0.8·√3 ≈ 1.3856 apart.
+  const GAP = 0.8 * Math.sqrt(3);
+  const R = Math.sqrt(3) / 2;
+  const bounds: TrayBounds = { minX: -3, maxX: 3, minZ: -2, maxZ: 2 };
+
+  it('moves two overlapping flat d6 apart and tails them to the new centres', () => {
+    const a = new Float64Array([0, 0.5, 0, 0, 0, 0, 1]);
+    const b = new Float64Array([0.4, 0.5, 0, 0, 0, 0, 1]);
+    const xz = new Float64Array([0, 0, 0.4, 0]);
+    separate(xz, [R, R], bounds);
+    // Each moves (1.3856 − 0.4) / 2 ≈ 0.4928 along x.
+    expect(xz[0]).toBeCloseTo(-0.4928, 4);
+    expect(xz[2]).toBeCloseTo(0.8928, 4);
+    for (const [pose, k] of [
+      [a, 0],
+      [b, 2],
+    ] as const) {
+      const tail = flattenTail('d6', pose, xz[k] ?? NaN, xz[k + 1] ?? NaN);
+      expect(tail).not.toBeNull();
+      if (tail === null) return;
+      const last = frameAt(tail, FLATTEN_STEPS - 1);
+      expect(last[0]).toBeCloseTo(xz[k] ?? NaN, 6);
+      expect(last[1]).toBeCloseTo(0.5, 6);
+      expect(last[2]).toBe(0);
+    }
+  });
+
+  it('pushes coincident centres apart along +x', () => {
+    const xz = new Float64Array([1, -1, 1, -1]);
+    separate(xz, [R, R], bounds);
+    expect([xz[1], xz[3]]).toEqual([-1, -1]);
+    expect((xz[2] ?? NaN) - (xz[0] ?? NaN)).toBeCloseTo(GAP, 9);
+  });
+
+  it('keeps moved centres inside the walls inset by 0.8·R', () => {
+    // Against the +x wall the right die is clamped to 3 − 0.6928; each pass halves the left gap.
+    const xz = new Float64Array([2, 0, 2.2, 0]);
+    separate(xz, [R, R], bounds);
+    expect(xz[2]).toBeCloseTo(3 - 0.8 * R, 9);
+    expect((xz[2] ?? NaN) - (xz[0] ?? NaN)).toBeGreaterThan(GAP - 0.01);
+  });
+
+  it('leaves dice already far enough apart alone', () => {
+    const xz = new Float64Array([-1, 0, 1, 0]);
+    separate(xz, [R, R], bounds);
+    expect(Array.from(xz)).toEqual([-1, 0, 1, 0]);
   });
 });
 
@@ -134,9 +184,11 @@ describe('simulate ends flat', () => {
       tailed++;
       result.tracks.forEach((t, k) => {
         if (cocked[k] === true) return;
-        // Already flat: holds its final frame through the tail.
         const n = t.frames.length / 7;
         const final = frameAt(t.frames, n - 1);
+        const before = frameAt(t.frames, n - 1 - FLATTEN_STEPS);
+        if (before[0] !== final[0] || before[2] !== final[2]) return;
+        // Already flat and not pushed apart: holds its final frame through the tail.
         for (let s = n - 1 - FLATTEN_STEPS; s < n - 1; s++)
           expect(frameAt(t.frames, s)).toEqual(final);
         held++;

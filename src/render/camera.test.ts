@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { cameraPosition, trayBounds, viewProjection } from './camera';
+import type { DieType, RollEvent } from '../core/types';
+import { getPolyhedron } from '../geometry/polyhedra';
+import { planRoll } from '../physics/plan';
+import { cameraPosition, fitScale, trayBounds, viewProjection } from './camera';
 
 // Hand computation for trayBounds(4/3, 1), orthographic half height 5.1, insets 0.6 die units:
 //   halfX = (4/3) × 5.1 = 6.8;  6.8 − 0.6 = 6.2 → floor to 0.25 → 6;  minX → −6
@@ -108,6 +111,74 @@ describe('trayBounds', () => {
       expect(() => trayBounds(1, bad)).toThrow(RangeError);
     }
   });
+});
+
+describe('fitScale', () => {
+  // Hand computation at 4:3 with 5 die units² per die (areas from trayBounds as above):
+  //   s 2    → 5.5 × 3.5 = 19.25 ≥ 1·5
+  //   s 1.45 → 8 × 5.5 = 44 < 9·5;   s 1.4  → 8.5 × 6 = 51 ≥ 45
+  //   s 0.9  → 13.5 × 10 = 135 < 30·5; s 0.85 → 14.5 × 10.5 = 152.25 ≥ 150
+  it.each([
+    [1, 2],
+    [9, 1.4],
+    [30, 0.85],
+    [1000, 0.5],
+  ])('fits %i dice at 4:3 with requested 2 to scale %d', (count, scale) => {
+    expect(fitScale(2, count, 4 / 3)).toBe(scale);
+  });
+
+  it('keeps a requested scale below the 0.5 floor', () => {
+    expect(fitScale(0.4, 30, 4 / 3)).toBe(0.4);
+  });
+
+  it('never exceeds the request, stays on the 0.05 grid, and never grows with more dice', () => {
+    for (const aspect of [4 / 3, 16 / 9, 0.75]) {
+      let prev = Infinity;
+      for (let n = 1; n <= 30; n++) {
+        const s = fitScale(2, n, aspect);
+        expect(s).toBeLessThanOrEqual(2);
+        expect(s).toBeGreaterThanOrEqual(0.5);
+        expect(Number.isInteger(Math.round(s * 1e9) / 5e7)).toBe(true);
+        expect(s).toBeLessThanOrEqual(prev);
+        prev = s;
+      }
+    }
+  });
+
+  it('leaves 9 mixed dice at 4:3 resting apart at the fitted scale (seeds 0–49)', () => {
+    const types: DieType[] = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20'];
+    const bounds = trayBounds(4 / 3, fitScale(2, 9, 4 / 3));
+    for (let i = 0; i < 50; i++) {
+      const event: RollEvent = {
+        v: 1,
+        id: 'fit',
+        notation: '9 mixed',
+        dice: Array.from({ length: 9 }, (_, k) => ({
+          type: types[(i + k) % 6] ?? 'd6',
+          value: 1,
+          group: 0,
+          wave: 0,
+        })),
+        modifier: 0,
+        seed: i.toString(16).padStart(32, '0'),
+        createdAt: 0,
+      };
+      const rest = planRoll(event, bounds).bodies.map((b) => {
+        const n = b.frames.length;
+        return {
+          x: b.frames[n - 7] ?? NaN,
+          z: b.frames[n - 5] ?? NaN,
+          r: getPolyhedron(b.shape).radius,
+        };
+      });
+      rest.forEach((a, j) => {
+        for (const b of rest.slice(j + 1)) {
+          const gap = Math.hypot(a.x - b.x, a.z - b.z) - 0.8 * (a.r + b.r);
+          expect(gap, `seed ${i}`).toBeGreaterThan(-0.05);
+        }
+      });
+    }
+  }, 60_000);
 });
 
 describe('viewProjection', () => {
