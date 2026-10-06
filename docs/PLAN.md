@@ -289,6 +289,8 @@ Chromium uses SwiftShader (`--use-angle=swiftshader --enable-unsafe-swiftshader`
 
 ### Not verified yet
 
+The full consumer-facing list is in the README under **Known limits**.
+
 - Use as an installed package inside RollKeeper (exports, types, `'use client'` in Next.js).
 - 60 fps with 10 dice under Chrome 4× CPU throttle (manual).
 - Rendering on real GPUs and mobile (baselines come from SwiftShader).

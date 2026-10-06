@@ -228,6 +228,54 @@ The physics step uses only `+ − * /` and `Math.sqrt`, with a fixed 1/120 s ste
 order. The geometry and the tray bounds use algebraic constants instead of trigonometry. CI checks
 that Chromium, Firefox, and WebKit compute the same trajectory hash as Node.
 
+## Known limits
+
+These describe 0.1.0 as built. Each one is a deliberate trade-off or a measured edge case, not a
+hidden bug.
+
+**Physics and layout**
+
+- **Dice collide as spheres with each other.** Contact with the floor and walls uses the exact
+  shape, but die-to-die contact uses bounding spheres. Dice therefore stop a little apart and never
+  stack or lean on each other's faces.
+- **Large rolls get smaller dice.** Auto-fit shrinks a roll until its dice fit the tray (5 square
+  die-units per die). With many dice in a small canvas the dice get small, down to a floor of
+  0.5 × `dieScale`. Dice beyond 30 animated bodies are counted in the summary but not shown; a d100
+  counts as two bodies.
+- **30-dice rolls can overlap.** About 3–5 % of 30-dice rolls end with two dice touching. Rolls of
+  4, 9 and 20 dice showed no overlap in 150 test rolls each.
+- **The final settle skips collision checks.** For the last 0.2 s, a die that rested tilted or too
+  close to a neighbour is moved flat and apart without collision checks. In crowded rolls it can
+  briefly pass through a neighbour.
+- **Motion matches only between same-shape trays.** Two clients see identical motion when their
+  trays have the same aspect ratio and the same `dieScale`. The values always match, because the
+  remap runs on each client.
+- **Explosion waves add time.** Each wave is thrown after the previous one settles, so long
+  explosion chains (up to 10 waves) take several seconds.
+
+**Rendering**
+
+- **Camera:** the camera looks straight down (orthographic). There is no option for an angled view,
+  and dice in the air do not grow as they approach; the shadow offset carries the height cue.
+- **Small labels:** d4 and d20 labels are the smallest because of their face shapes. Raise
+  `dieScale` if they are hard to read.
+- **Glass and gem tuning:** the `glass` and `gem` materials have fixed transparency, tint and
+  sparkle. `MaterialParams` (`metalness`, `roughness`, `clearcoat`) only describes opaque materials.
+- **No images:** there are no image textures, and lighting is analytic.
+- **Shadows:** these are soft blobs, not shadow maps.
+- **What has been tested:** screenshot baselines come from SwiftShader in headless Chromium. Real
+  GPUs, mobile devices, and the 60 fps target under CPU throttling have not been measured yet.
+- **WebGL2 is required:** without it, `playRoll` resolves with the summary and draws nothing.
+
+**Notation and wire format**
+
+- **Not supported:** rerolls (`r1`), compounding explosions, success counting (`>=5`), crit ranges,
+  parentheses, `*` and `/`, and dice other than d4, d6, d8, d10, d12, d20, d100 and dF.
+- **Aliases:** `kN`, `dN` and `x` are accepted. An event that uses them is rejected by
+  `isRollEvent` in any build that predates the aliases.
+- **Custom GLSL stays local:** `isRollEvent` rejects inline custom GLSL, so share custom-pattern
+  skins by registered name.
+
 ## Development
 
 ```sh
