@@ -277,6 +277,7 @@ test.describe('tray die scale', () => {
       modifier: 0,
     };
     const total = await page.evaluate(async (event) => {
+      window.__pollyrollTray.setDieScale(1);
       const done = window.__pollyrollTray.playRoll(event);
       await new Promise((r) => setTimeout(r, 100));
       window.__pollyrollTray.setDieScale(2);
