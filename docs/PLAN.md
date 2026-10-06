@@ -4,6 +4,11 @@ Approved specification for the initial build. Decisions here are fixed; an agent
 genuine gap records its choice in [DECISIONS.md](DECISIONS.md) and continues (see
 [agents/delegation.md](agents/delegation.md) § Autonomous run).
 
+> **Amended 2026-10-06 by the owner after the 0.1.0 build.** Sections below describe the shipped
+> behavior; lines marked _(amended)_ replace the original text, and the reason for each is in
+> [DECISIONS.md](DECISIONS.md). § 12 separates what is verified from what was decided and what is
+> still unverified.
+
 Goal: a lightweight, customizable 3D dice library to replace `@3d-dice/dice-box` in RollKeeper,
 built for shared (multiplayer) rolls from day one. Independent of Fieldnotes and RollKeeper.
 
@@ -61,6 +66,8 @@ Baseline being replaced: dice-box JS plus 2.1 MB of `public/assets` (ammo.js + t
   d10 D5 (10), d12 and d20 I (60). Groups are computed at module init from vertex sets and cached;
   tests assert group order and transitivity.
 - Custom label arrays per die type are supported (same geometry, user labels, same value mapping).
+  _(amended)_ `TrayOptions.labels[set][i]` follows the die's natural sequence (d4–d20 value − 1,
+  d10/d100 digit, d100 tens digit, dF −/blank/+).
 
 ## 3. `RollEvent` (wire contract, v1)
 
@@ -88,7 +95,8 @@ interface RollEvent {
 
 - Totals, kept, and dropped dice are derived by `evaluate(event)` and never sent.
 - Throw parameters (positions, velocities, spins, wave timing) derive only from `seed`.
-- `redact(event)` returns a copy with every `value` set to `null`. Playing a redacted event animates
+- `redact(event)` returns a copy with every `value` set to `null` _(amended)_ and every explosion
+  die (wave ≥ 1) removed, so a hidden roll does not reveal a maximum. Playing a redacted event animates
   dice with blank labels and resolves with `total: null`.
 
 ## 4. Core API (`pollyroll`)
@@ -111,6 +119,8 @@ isRollEvent(input: unknown): input is RollEvent;  // validates untrusted input, 
   constants, `khN`/`klN`/`dhN`/`dlN`, `adv`/`dis` (aliases for `2d20kh1`/`2d20kl1`), `!` explode on
   max (explosion dice pre-generated into later waves, capped at 10 waves). Limits: N ≤ 100 per term,
   ≤ 20 terms, total dice ≤ 200.
+- _(amended)_ Aliases: `kN` = `khN`, `dN` (as a suffix) = `dlN`, `x` = `!`; N defaults to 1. Aliases
+  parse to the same AST, so `RollEvent` v1 is unchanged.
 - Out of scope for v1: rerolls, compounding, success counting, crit ranges.
 
 ## 5. Physics (`src/physics/`, internal, DOM-free)
@@ -119,6 +129,7 @@ isRollEvent(input: unknown): input is RollEvent;  // validates untrusted input, 
 - Bodies: convex polyhedra with mass 1 and the inertia tensor of a solid of the die's shape.
 - Contacts: hull vertices against floor and four wall planes (exact); die against die via bounding
   spheres. Sequential impulses with restitution 0.35, friction 0.6, linear and angular damping.
+  _(amended)_ Contacts are warm-started from the previous step's impulses.
 - Settle: every body below 0.05 units/s linear and 0.1 rad/s angular speed for 24 consecutive steps.
 - Determinism rule from AGENTS.md: only `+ - * /` and `Math.sqrt` in the step; quaternion
   integration with a first-order update and explicit renormalization.
@@ -126,6 +137,9 @@ isRollEvent(input: unknown): input is RollEvent;  // validates untrusted input, 
   minus a margin. Throw origin, direction, speed, and spin come from the seed RNG.
 - Waves: each explosion wave is thrown after the previous wave settles; earlier dice stay as bodies.
 - Output: per die, a keyframe track (position + quaternion per step) plus the settled up-face.
+- _(amended)_ Settle-to-flat: after settling, any die more than 0.5° off flat gets a deterministic
+  24-step tail that rolls it onto its up face and rests it on the floor (dice can come to rest
+  cocked against walls, neighbours' spheres, or balanced on an edge).
 
 ## 6. Renderer (`pollyroll/render`)
 
@@ -133,16 +147,18 @@ isRollEvent(input: unknown): input is RollEvent;  // validates untrusted input, 
 createDiceTray(target: HTMLCanvasElement | HTMLElement, opts?: TrayOptions): DiceTray;
 
 interface TrayOptions {
-  skin?: SkinRef; labelFont?: string; dieScale?: number;   // default 1
+  skin?: SkinRef; labelFont?: string; dieScale?: number;   // default 2 (amended)
   shadows?: boolean;                                        // default true (blob shadows)
   maxDpr?: number;                                          // default 2
   reducedMotion?: 'auto' | 'always' | 'never';              // default 'auto' (media query)
   fadeAfterMs?: number | null;                              // default null: dice stay until next roll
+  labels?: Partial<Record<LabelSet, readonly string[]>>;    // (amended) custom labels, natural order
 }
 
 interface DiceTray {
   playRoll(event: RollEvent): Promise<RollSummary>;         // pre-sim → remap → animate → settle
   setSkin(skin: SkinRef): void;
+  setDieScale(scale: number): void;                         // (amended) applies to the next roll
   clear(): void; resize(): void; dispose(): void;
   readonly supported: boolean;                              // false when WebGL2 is unavailable
 }
@@ -150,7 +166,10 @@ interface DiceTray {
 
 - A new `playRoll` replaces the dice of the previous roll.
 - An `HTMLElement` target gets an absolutely positioned, transparent, pointer-events-none canvas.
-- Forward pass, GGX PBR (base color, metalness, roughness, clearcoat), fixed camera at 50° pitch.
+- Forward pass, GGX PBR (base color, metalness, roughness, clearcoat). _(amended)_ Fixed
+  orthographic camera looking straight down (visible half height 5.1 world units at every aspect),
+  so every die's up face is seen face-on; walls inset 0.6 die units; blob shadows offset away from
+  the key light to show height. The original 50° perspective camera made results hard to read.
 - Lighting: analytic sky/ground gradient environment plus one directional key light.
 - Glass: back faces first, then front faces with Fresnel-weighted alpha and an environment
   refraction tint.
@@ -240,3 +259,33 @@ Chromium uses SwiftShader (`--use-angle=swiftshader --enable-unsafe-swiftshader`
   call `playRoll`; hidden rolls send `redact(event)` to players. First confirm presence frames are
   not coalesced under rapid sends.
 - Notation v2, image-texture skins, real shadow maps, persistent roll log.
+
+## 12. Status (2026-10-06)
+
+### Verified (with evidence, on `master`)
+
+- CI green on Node 20.19 and 22 (`pnpm verify`) and e2e in Chromium, Firefox, WebKit.
+- Cross-browser determinism: Chromium, Firefox, and WebKit compute the same trajectory hash as Node.
+- Every die × every value shows the rolled value on top after remap (unit tests + property tests).
+- Settled dice are flat: 0 of 2,400 single-die rolls end tilted (max 0.4°), measured after the
+  settle-to-flat tail; before it, 9.7% of dice rested > 5° off flat.
+- Size budgets: core ≈ 3.2 kB / 4, render ≈ 18.8 kB / 30, react ≈ 0.44 kB / 1 (min+gzip).
+- 10-dice pre-simulation bench ≈ 3.4–3.5 ms mean (target ≤ 5 ms).
+- `redact` leaks no values (null values, explosion dice removed); `isRollEvent` rejects malformed,
+  out-of-range, and inline-GLSL input.
+
+### Decided (owner or build decisions; rationale in DECISIONS.md)
+
+- Top-down orthographic camera (replaces 50° perspective); default `dieScale` 2 (owner eye test).
+- Settle-to-flat tail; warm-started contacts; tray insets in die units.
+- Notation aliases `k`/`d`/`x`; keep/drop ranks explosion dice too; `group` indexes dice terms only.
+- Custom labels in natural order; presets registered by name; custom GLSL local-only.
+- No option to switch camera views; React binding reads options once except `skin`.
+
+### Not verified yet
+
+- Use as an installed package inside RollKeeper (exports, types, `'use client'` in Next.js).
+- 60 fps with 10 dice under Chrome 4× CPU throttle (manual).
+- Rendering on real GPUs and mobile (baselines come from SwiftShader).
+- Known small issues: d4 and d20 labels are the smallest; a die propped on a neighbour passes
+  through that neighbour's collision sphere during the 0.2 s flatten tail.
