@@ -6,7 +6,7 @@ const INSET_X = 0.6;
 const INSET_Z = 0.6;
 // Visible floor half height, literal so trayBounds is bit-identical in every engine.
 const HALF_Z = 5.1;
-// Tray floor per animated die (die units²): the smallest value with no resting overlap for 4–20 dice.
+// Tray floor per animated die (die units²): smallest measured value with 0/150 overlap for 4, 9 and 20 dice.
 const AREA_PER_DIE = 5;
 const POSITION: readonly [number, number, number] = Object.freeze<[number, number, number]>([
   0,

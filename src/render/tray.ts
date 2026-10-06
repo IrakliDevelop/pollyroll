@@ -5,7 +5,7 @@ import type { LabelSet } from '../geometry/labels';
 import { getDieMesh, MESH_STRIDE } from '../geometry/mesh';
 import { getPolyhedron } from '../geometry/polyhedra';
 import type { ShapeType } from '../geometry/polyhedra';
-import { MAX_BODIES, planRoll } from '../physics/plan';
+import { MAX_BODIES, planRoll, slots } from '../physics/plan';
 import type { PlannedBody, RollPlan } from '../physics/plan';
 import { DT } from '../physics/world';
 import { PATTERNS } from '../skins/patterns';
@@ -618,8 +618,7 @@ export function createDiceTray(
       stop();
       resolvePending();
       fit();
-      const count = event.dice.reduce((n, d) => n + (d.type === 'd100' ? 2 : 1), 0);
-      const scale = fitScale(dieScale, Math.min(count, MAX_BODIES), aspect);
+      const scale = fitScale(dieScale, slots(event).length, aspect);
       const plan = planRoll(event, trayBounds(aspect, scale));
       const groups: Group[] = [];
       LABEL_SETS.forEach((set, row) => {

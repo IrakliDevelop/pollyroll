@@ -123,7 +123,7 @@ describe('fitScale', () => {
     [9, 1.4],
     [30, 0.85],
     [1000, 0.5],
-  ])('fits %i dice at 4:3 with requested 2 to scale %d', (count, scale) => {
+  ])('fits %i dice at 4:3 with requested 2 to scale %s', (count, scale) => {
     expect(fitScale(2, count, 4 / 3)).toBe(scale);
   });
 
