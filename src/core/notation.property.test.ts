@@ -25,7 +25,8 @@ const MODES: readonly KeepMode[] = ['kh', 'kl', 'dh', 'dl'];
 
 const signArb = fc.constantFrom<1 | -1>(1, -1);
 
-/** Dice term with count in [1, maxCount], every die spelling, optional keep and explode. */
+/** Dice term with count in [1, maxCount], every die spelling, optional keep and explode, and the
+ *  `k` (kh), `d` (dl), and `x` (!) aliases. */
 const dicePiece = (maxCount: number): fc.Arbitrary<Piece> =>
   fc.integer({ min: 1, max: maxCount }).chain((count) =>
     fc
@@ -39,17 +40,21 @@ const dicePiece = (maxCount: number): fc.Arbitrary<Piece> =>
           { nil: null },
         ),
         omitN: fc.boolean(),
+        shortMode: fc.boolean(),
         explode: fc.boolean(),
+        x: fc.boolean(),
         explodeFirst: fc.boolean(),
       })
       .map((r): Piece => {
         const explode = r.explode && r.die !== 'dF';
         const countText = count === 1 && r.omitCount ? '' : String(count);
         const dieText = r.die === 'dF' ? 'f' : r.die === 'd100' && r.percent ? '%' : r.die.slice(1);
+        const mode = r.keep?.mode ?? '';
+        const modeText = r.shortMode && (mode === 'kh' || mode === 'dl') ? mode.charAt(0) : mode;
         const keepText = r.keep
-          ? r.keep.mode + (r.keep.n === 1 && r.omitN ? '' : String(r.keep.n))
+          ? modeText + (r.keep.n === 1 && r.omitN ? '' : String(r.keep.n))
           : '';
-        const bang = explode ? '!' : '';
+        const bang = explode ? (r.x ? 'x' : '!') : '';
         return {
           term: { kind: 'dice', sign: r.sign, count, die: r.die, keep: r.keep, explode },
           text: `${countText}d${dieText}${r.explodeFirst ? bang + keepText : keepText + bang}`,
@@ -186,6 +191,15 @@ describe('notation properties', () => {
               ws: [' ', '\t'],
               upper: Array.from({ length: 200 }, () => true),
             },
+          ],
+          // Every alias, bare and with n.
+          [
+            plain([
+              dice(1, 4, 'd6', { mode: 'kh', n: 3 }, true, '4d6k3x'),
+              dice(1, 2, 'd20', { mode: 'kh', n: 1 }, false, '2d20k'),
+              dice(1, 4, 'd6', { mode: 'dl', n: 1 }, true, '4d6xd'),
+              dice(1, 4, 'd8', { mode: 'dl', n: 2 }, false, '4d8d2'),
+            ]),
           ],
           // Whitespace inside numbers, implicit count, explode before keep, fudge dice, zero.
           [

@@ -63,7 +63,9 @@ Notation is case-insensitive and ignores whitespace.
 | `d%`, `dF`              | d100; Fudge die (−1, 0, +1)                                     |
 | `+`, `-`, integers      | Add or subtract terms and constants                             |
 | `khN` `klN` `dhN` `dlN` | Keep or drop the highest or lowest N (N defaults to 1)          |
+| `kN`, `dN`              | `khN`, `dlN` (N defaults to 1)                                  |
 | `!`                     | Explode on the maximum, up to 10 extra waves                    |
+| `x`                     | `!`                                                             |
 | `adv`, `dis`            | `2d20kh1`, `2d20kl1`                                            |
 
 Limits are at most 20 terms, at most 200 dice before explosions, and inputs of at most 256

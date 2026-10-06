@@ -113,17 +113,19 @@ export function parse(notation: string): RollAst {
     for (;;) {
       const c = peek();
       const next = peek(1);
-      if (c === '!') {
+      if (c === '!' || c === 'x') {
         if (explode) throw fail('A term can explode only once', pos);
         if (die === 'dF') throw fail('Fudge dice cannot explode', pos);
         explode = true;
         pos++;
-      } else if ((c === 'k' || c === 'd') && (next === 'h' || next === 'l')) {
+      } else if (c === 'k' || c === 'd') {
         if (keep) throw fail('A term can have only one keep or drop', pos);
+        // Bare `k` keeps the highest and bare `d` drops the lowest.
+        const side = next === 'h' || next === 'l' ? next : c === 'k' ? 'h' : 'l';
         const mode: KeepMode =
-          c === 'k' ? (next === 'h' ? 'kh' : 'kl') : next === 'h' ? 'dh' : 'dl';
+          c === 'k' ? (side === 'h' ? 'kh' : 'kl') : side === 'h' ? 'dh' : 'dl';
         let nAt = pos;
-        pos += 2;
+        pos += next === side ? 2 : 1;
         let n = 1;
         if (isDigit(peek())) {
           nAt = pos;
