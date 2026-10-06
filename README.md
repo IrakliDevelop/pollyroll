@@ -154,6 +154,11 @@ import {
   oak,
   sapphire,
   ruby,
+  emerald,
+  amethyst,
+  topaz,
+  aquamarine,
+  smoke,
   defineSkin,
   registerSkin,
 } from 'pollyroll/render';
@@ -162,7 +167,7 @@ registerSkin('table-red', defineSkin('ruby', { labelColor: '#fff' }));
 tray.setSkin('table-red');
 
 tray.setSkin({
-  material: 'plastic', // 'plastic' | 'metal' | 'wood' | 'glass' | 'stone' | 'gem' | { metalness, roughness, clearcoat? }
+  material: 'plastic', // 'plastic' | 'metal' | 'wood' | 'glass' | 'stone' | 'gem' | MaterialParams
   color: ['#204080', '#a0c0ff'], // solid or two-tone
   labelColor: '#ffffff',
   labelStyle: 'engraved', // 'engraved' | 'printed' | 'embossed'
@@ -175,6 +180,30 @@ works in object space and returns the base color. If it fails to compile, `setSk
 `PollyrollShaderError`, and its `log` holds the compiler output. For safety, `isRollEvent` rejects
 events whose inline skin carries custom GLSL. Register custom-pattern skins locally and send only
 their names.
+
+Presets: `classic`, `obsidian`, `brass`, `oak`, `sapphire` (glass), `ruby` (gem), `emerald`
+(glass), `amethyst` (gem), `topaz` (gem), `aquamarine` (clear glass), and `smoke` (smoky glass).
+
+`MaterialParams` takes `metalness`, `roughness`, and optional `clearcoat`, `transmission`, `tint`,
+and `sparkle`, all in [0, 1]. `transmission` above 0 makes the die see-through (higher is clearer),
+`tint` sets how deep the body colour gets along the view path, and `sparkle` adds gem glints.
+`'glass'` is `transmission: 0.8, tint: 0.6`; `'gem'` is `transmission: 0.4, tint: 0.9, sparkle: 1`.
+
+```ts
+tray.setSkin({
+  material: {
+    metalness: 0,
+    roughness: 0.06,
+    clearcoat: 1,
+    transmission: 0.7,
+    tint: 0.8,
+    sparkle: 0.5,
+  },
+  color: ['#0b5d3b', '#18a86b'],
+  labelColor: '#ffffff',
+  labelStyle: 'printed',
+});
+```
 
 ## React (`pollyroll/react`)
 
@@ -259,8 +288,6 @@ hidden bug.
   and dice in the air do not grow as they approach; the shadow offset carries the height cue.
 - **Small labels:** d4 and d20 labels are the smallest because of their face shapes. Raise
   `dieScale` if they are hard to read.
-- **Glass and gem tuning:** the `glass` and `gem` materials have fixed transparency, tint and
-  sparkle. `MaterialParams` (`metalness`, `roughness`, `clearcoat`) only describes opaque materials.
 - **No images:** there are no image textures, and lighting is analytic.
 - **Shadows:** these are soft blobs, not shadow maps.
 - **What has been tested:** screenshot baselines come from SwiftShader in headless Chromium. Real

@@ -52,6 +52,50 @@ export const ruby: Skin = {
   labelStyle: 'printed',
 };
 
+/** Deep green glass with printed pale-gold labels. */
+export const emerald: Skin = {
+  material: { metalness: 0, roughness: 0.05, clearcoat: 1, transmission: 0.75, tint: 0.95 },
+  color: ['#003d1a', '#00873f'],
+  labelColor: '#fff4c8',
+  pattern: 'gradient',
+  labelStyle: 'printed',
+};
+
+/** Swirled purple gem with printed pale labels. */
+export const amethyst: Skin = {
+  material: 'gem',
+  color: ['#5b1a8c', '#8a3fc0'],
+  labelColor: '#f3e8ff',
+  pattern: 'swirl',
+  labelStyle: 'printed',
+};
+
+/** Amber gem with printed dark-brown labels. */
+export const topaz: Skin = {
+  material: 'gem',
+  color: ['#b9770e', '#e6b04a'],
+  labelColor: '#3a1e05',
+  pattern: 'gradient',
+  labelStyle: 'printed',
+};
+
+/** Clear sea-blue glass with printed dark-blue labels. */
+export const aquamarine: Skin = {
+  material: { metalness: 0, roughness: 0.05, clearcoat: 1, transmission: 1, tint: 0.6 },
+  color: '#5fc4d8',
+  labelColor: '#0b2f6b',
+  labelStyle: 'printed',
+};
+
+/** Lightly tinted smoky-quartz glass with printed white labels. */
+export const smoke: Skin = {
+  material: { metalness: 0, roughness: 0.05, clearcoat: 1, transmission: 0.6, tint: 0.35 },
+  color: ['#1e150f', '#3a2c20'],
+  labelColor: '#ffffff',
+  pattern: 'gradient',
+  labelStyle: 'printed',
+};
+
 /** Named skins, pre-seeded with the presets. */
 export const skinRegistry = new Map<string, Skin>([
   ['classic', classic],
@@ -60,6 +104,11 @@ export const skinRegistry = new Map<string, Skin>([
   ['oak', oak],
   ['sapphire', sapphire],
   ['ruby', ruby],
+  ['emerald', emerald],
+  ['amethyst', amethyst],
+  ['topaz', topaz],
+  ['aquamarine', aquamarine],
+  ['smoke', smoke],
 ]);
 
 /** Inline skins resolve to themselves; names resolve through the registry; anything else → classic. */

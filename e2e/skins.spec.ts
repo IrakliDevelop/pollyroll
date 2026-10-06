@@ -1,6 +1,18 @@
 import { expect, test } from '@playwright/test';
 
-const PRESETS = ['classic', 'obsidian', 'brass', 'oak', 'sapphire', 'ruby'];
+const PRESETS = [
+  'classic',
+  'obsidian',
+  'brass',
+  'oak',
+  'sapphire',
+  'ruby',
+  'emerald',
+  'amethyst',
+  'topaz',
+  'aquamarine',
+  'smoke',
+];
 
 test.describe('skins', () => {
   test.skip(
@@ -17,6 +29,40 @@ test.describe('skins', () => {
       await expect(page.locator('#tray')).toHaveScreenshot(`skin-${name}.png`);
     });
   }
+
+  test('renders a custom MaterialParams gem see-through', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto('/smoke.html?reduced');
+    await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 10_000 });
+    const tray = page.locator('#tray');
+    const shot = async (transmission: number): Promise<Buffer> => {
+      await page.evaluate(
+        (t) =>
+          window.__pollyrollTray.setSkin({
+            material: {
+              metalness: 0,
+              roughness: 0.06,
+              clearcoat: 1,
+              transmission: t,
+              tint: 0.8,
+              sparkle: 0.5,
+            },
+            color: '#2a8c5a',
+            labelColor: '#ffffff',
+          }),
+        transmission,
+      );
+      return tray.screenshot();
+    };
+    const gem = await shot(0.7);
+    const opaque = await shot(0);
+    await page.evaluate(() => window.__pollyrollTray.clear());
+    const blank = await tray.screenshot();
+    expect(errors).toEqual([]);
+    expect(gem.equals(blank)).toBe(false);
+    expect(gem.equals(opaque)).toBe(false);
+  });
 
   test('setSkin throws PollyrollShaderError for invalid custom GLSL', async ({ page }) => {
     await page.goto('/smoke.html?reduced');

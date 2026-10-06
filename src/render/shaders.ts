@@ -51,38 +51,36 @@ const LABEL: Record<LabelStyle, string> = {
   embossed: bump('0.02', '+'),
 };
 
-/** Gem glints: object-space cells whose jittered facet normal reflects the key light at the eye. */
-const SPARKLE = `vec3 h = hash3(floor(vObj * 10.0));
-    vec3 Rj = reflect(-V, normalize(N + (h - 0.5) * 0.8));
-    hl += step(0.8, h.x) * pow(max(dot(Rj, LIGHT_DIR), 0.0), 12.0) * 6.0;`;
-
-/** Glass: absorption tint base^(k·path) with path = 1 − N·V, so the body darkens toward the
- *  silhouette; gem uses a deeper tint, sharper highlight, and glints. */
-const glass = (gem: boolean): string => `float fr = 0.04 + 0.96 * pow(1.0 - nv, 5.0);
+/**
+ * See-through body from uGlass (transmission, tint, sparkle): absorption tint base^(k·path) with
+ * path = 1 − N·V darkens toward the silhouette; x = 0 at transmission 0.8 (glass), 1 at 0.4 (gem).
+ * Sparkle sharpens the highlight and adds glints from jittered object-space facet cells.
+ */
+const GLASS = `float x = min((0.8 - uGlass.x) * 2.5, 1.5);
+  float fr = 0.04 + 0.96 * pow(1.0 - nv, 5.0);
   float path = 1.0 - nv;
-  vec3 tint = pow(max(base, vec3(1e-4)), vec3(${gem ? '0.9' : '0.6'} + ${gem ? '1.6' : '1.4'} * path));
-  vec3 g = env(refract(-V, N, 1.0 / 1.5), 0.0) * tint * ${gem ? '3.0' : '4.0'};
+  vec3 tint = pow(max(base, vec3(1e-4)), vec3(uGlass.y + (1.0 + uGlass.y / 1.5) * path));
+  vec3 g = env(refract(-V, N, 1.0 / 1.5), 0.0) * tint * mix(4.0, 3.0, x);
   if (gl_FrontFacing) {
-    vec3 hl = (spec(N, V, LIGHT_DIR, vec3(0.04), ${gem ? '0.12' : '0.18'}) * 2.0
+    vec3 hl = (spec(N, V, LIGHT_DIR, vec3(0.04), 0.18 - 0.06 * uGlass.z) * 2.0
       + spec(N, V, LIGHT_DIR, vec3(0.04), 0.4)) * LIGHT * nl
-      + fr * env(R, 0.0) * 2.0 + vec3(pow(path, 3.0) * ${gem ? '0.8' : '1.6'});
-    ${gem ? SPARKLE : ''}
+      + fr * env(R, 0.0) * 2.0 + vec3(pow(path, 3.0) * mix(1.6, 0.8, x));
+    vec3 h = hash3(floor(vObj * 10.0));
+    vec3 Rj = reflect(-V, normalize(N + (h - 0.5) * 0.8));
+    hl += uGlass.z * step(0.8, h.x) * pow(max(dot(Rj, LIGHT_DIR), 0.0), 12.0) * 6.0;
     g += hl;
-    al = max(mix(${gem ? '0.35' : '0.12'}, ${gem ? '0.9' : '0.85'}, path), clamp(dot(hl, vec3(0.5)), 0.0, 1.0));
+    al = max(mix(mix(0.12, 0.35, x), mix(0.85, 0.9, x), path), clamp(dot(hl, vec3(0.5)), 0.0, 1.0));
   } else {
-    al = mix(${gem ? '0.8' : '0.6'}, ${gem ? '0.95' : '0.85'}, path);
+    al = mix(mix(0.6, 0.8, x), mix(0.85, 0.95, x), path);
   }
   c = mix(g, c, lab);
   al = mix(al, 1.0, lab);`;
 
-/** Material kind of a die program: opaque, glass, or gem (glass with deeper tint and sparkle). */
-export type DieKind = 'opaque' | 'glass' | 'gem';
-
 /**
- * Die fragment for a feature set: label style, material kind, and the `pattern` GLSL function.
- * Glass and gem output Fresnel-weighted alpha with a refraction tint; labels stay opaque.
+ * Die fragment for a feature set: label style, see-through or opaque, and the `pattern` GLSL
+ * function. See-through dice output Fresnel-weighted alpha with a refraction tint; labels stay opaque.
  */
-export function dieFragment(label: LabelStyle, kind: DieKind, pattern: string): string {
+export function dieFragment(label: LabelStyle, transparent: boolean, pattern: string): string {
   const flat = label === 'printed';
   return `#version 300 es
 precision highp float;
@@ -97,6 +95,7 @@ uniform vec3 uBase;
 uniform vec3 uBase2;
 uniform vec3 uLabel;
 uniform vec3 uMat;
+uniform vec3 uGlass;
 uniform float uAlpha;
 uniform sampler2D uAtlas;
 out vec4 oColor;
@@ -163,7 +162,7 @@ void main() {
   }
   c *= 1.0 - 0.7 * lab * uMat.x;
   float al = 1.0;
-  ${kind === 'opaque' ? '' : glass(kind === 'gem')}
+  ${transparent ? GLASS : ''}
   c *= EXPOSURE;
   c = clamp(c * (2.51 * c + 0.03) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0);
   c = pow(c, vec3(1.0 / 2.2));
