@@ -69,14 +69,34 @@ describe('createDiceTray without WebGL2', () => {
 });
 
 describe('materialPresets', () => {
-  it('lists every shader parameter of the glass preset', () => {
-    expect(materialPresets.glass).toEqual({
-      metalness: 0,
-      roughness: 0.05,
-      clearcoat: 1,
-      transmission: 0.8,
-      tint: 0.6,
-      sparkle: 0,
+  it('is frozen, outer table and every entry', () => {
+    expect(Object.isFrozen(materialPresets)).toBe(true);
+    for (const m of Object.values(materialPresets)) expect(Object.isFrozen(m)).toBe(true);
+  });
+
+  it('lists every shader parameter of every preset', () => {
+    const opaque = { transmission: 0, tint: 0, sparkle: 0 };
+    expect(materialPresets).toEqual({
+      plastic: { metalness: 0, roughness: 0.35, clearcoat: 0.3, ...opaque },
+      metal: { metalness: 1, roughness: 0.3, clearcoat: 0, ...opaque },
+      wood: { metalness: 0, roughness: 0.7, clearcoat: 0.1, ...opaque },
+      stone: { metalness: 0, roughness: 0.45, clearcoat: 0.6, ...opaque },
+      glass: {
+        metalness: 0,
+        roughness: 0.05,
+        clearcoat: 1,
+        transmission: 0.8,
+        tint: 0.6,
+        sparkle: 0,
+      },
+      gem: {
+        metalness: 0,
+        roughness: 0.08,
+        clearcoat: 1,
+        transmission: 0.4,
+        tint: 0.9,
+        sparkle: 1,
+      },
     });
   });
 });
