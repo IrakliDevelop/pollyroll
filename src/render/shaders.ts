@@ -99,7 +99,7 @@ uniform float uAlpha;
 uniform sampler2D uAtlas;
 out vec4 oColor;
 const float PI = 3.14159265;
-const vec3 LIGHT_DIR = vec3(-0.33, 0.9428, 0.0471);
+const vec3 LIGHT_DIR = vec3(-0.5, 0.7071, -0.5);
 const vec3 LIGHT = vec3(3.2);
 const vec3 SKY = vec3(0.42, 0.44, 0.48);
 const vec3 GROUND = vec3(0.26, 0.24, 0.22);
