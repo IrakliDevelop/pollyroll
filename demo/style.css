@@ -81,3 +81,67 @@ main {
   margin: 8px 0 0;
   font-family: ui-monospace, monospace;
 }
+
+[hidden] {
+  display: none !important;
+}
+
+#editor {
+  margin-top: 12px;
+}
+
+#editor summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+#skin-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin: 8px 0 0;
+  border: 1px solid #c9ced8;
+  border-radius: 8px;
+}
+
+#skin-fields label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sliders,
+.wide {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  flex-basis: 100%;
+}
+
+.sliders output {
+  width: 4ch;
+  font-family: ui-monospace, monospace;
+}
+
+.wide {
+  flex-direction: column;
+}
+
+textarea {
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.io {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.io > div {
+  flex: 1 1 360px;
+}

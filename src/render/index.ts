@@ -1,4 +1,4 @@
-export { createDiceTray } from './tray';
+export { createDiceTray, materialPresets } from './tray';
 export type { DiceTray, TrayOptions } from './tray';
 export type { LabelSet } from '../geometry/labels';
 export { PollyrollShaderError } from './gl';

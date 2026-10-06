@@ -16,17 +16,6 @@
         </label>
         <button id="roll" type="submit">Roll</button>
         <label>
-          Skin
-          <select id="skin">
-            <option value="classic">classic</option>
-            <option value="obsidian">obsidian</option>
-            <option value="brass">brass</option>
-            <option value="oak">oak</option>
-            <option value="sapphire">sapphire</option>
-            <option value="ruby">ruby</option>
-          </select>
-        </label>
-        <label>
           Size
           <input id="size" type="range" min="0.75" max="2.5" step="0.05" value="2" />
           <output id="size-value" for="size">2</output>
@@ -37,6 +26,106 @@
         </label>
       </form>
       <pre id="error" class="error" hidden></pre>
+      <details id="editor">
+        <summary>Customize dice</summary>
+        <fieldset id="skin-fields">
+          <label>
+            Start from
+            <select id="start-from"></select>
+          </label>
+          <label>
+            Colour
+            <input id="color-a" type="color" />
+          </label>
+          <label class="inline">
+            <input id="two-tone" type="checkbox" />
+            Two-tone
+          </label>
+          <label>
+            Colour B
+            <input id="color-b" type="color" />
+          </label>
+          <label>
+            Label colour
+            <input id="label-color" type="color" />
+          </label>
+          <label>
+            Material
+            <select id="material">
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+          <div id="material-params" class="sliders">
+            <label>
+              Metalness
+              <input id="m-metalness" type="range" min="0" max="1" step="0.01" />
+              <output id="m-metalness-value" for="m-metalness"></output>
+            </label>
+            <label>
+              Roughness
+              <input id="m-roughness" type="range" min="0" max="1" step="0.01" />
+              <output id="m-roughness-value" for="m-roughness"></output>
+            </label>
+            <label>
+              Clearcoat
+              <input id="m-clearcoat" type="range" min="0" max="1" step="0.01" />
+              <output id="m-clearcoat-value" for="m-clearcoat"></output>
+            </label>
+            <label>
+              Transmission
+              <input id="m-transmission" type="range" min="0" max="1" step="0.01" />
+              <output id="m-transmission-value" for="m-transmission"></output>
+            </label>
+            <label>
+              Tint
+              <input id="m-tint" type="range" min="0" max="1" step="0.01" />
+              <output id="m-tint-value" for="m-tint"></output>
+            </label>
+            <label>
+              Sparkle
+              <input id="m-sparkle" type="range" min="0" max="1" step="0.01" />
+              <output id="m-sparkle-value" for="m-sparkle"></output>
+            </label>
+          </div>
+          <label>
+            Label style
+            <select id="label-style"></select>
+          </label>
+          <label>
+            Pattern
+            <select id="pattern">
+              <option value="custom">Custom GLSL</option>
+            </select>
+          </label>
+          <label>
+            Font
+            <input id="font" type="text" placeholder="system-ui" spellcheck="false" />
+          </label>
+          <div id="glsl-panel" class="wide">
+            <textarea id="glsl" rows="6" spellcheck="false">
+vec3 pattern(vec3 p, vec3 n, vec3 a, vec3 b) {
+  // Stripes along the die's x axis, blending the two colours.
+  return mix(a, b, smoothstep(0.4, 0.6, fract(p.x * 4.0)));
+}</textarea>
+            <pre id="glsl-error" class="error" hidden></pre>
+            <p id="glsl-note" class="notice">
+              Custom GLSL is local-only: isRollEvent rejects it on the wire, so the event carries no
+              skin and the other player's tray shows it only through its own setSkin.
+            </p>
+          </div>
+        </fieldset>
+        <div class="io">
+          <div>
+            Skin JSON <button id="copy" type="button">Copy</button>
+            <textarea id="skin-json" rows="8" readonly></textarea>
+          </div>
+          <div>
+            Import <button id="import" type="button">Load</button>
+            <textarea id="import-text" rows="8" spellcheck="false"></textarea>
+            <p id="import-error" class="error" hidden></p>
+          </div>
+        </div>
+      </details>
       <p id="notice" class="notice" hidden>
         WebGL2 is not available: rolls resolve immediately without animation.
       </p>

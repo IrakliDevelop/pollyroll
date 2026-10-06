@@ -188,6 +188,8 @@ Presets: `classic`, `obsidian`, `brass`, `oak`, `sapphire` (glass), `ruby` (gem)
 and `sparkle`, all in [0, 1]. `transmission` above 0 makes the die see-through (higher is clearer),
 `tint` sets how deep the body colour gets along the view path, and `sparkle` adds gem glints.
 `'glass'` is `transmission: 0.8, tint: 0.6`; `'gem'` is `transmission: 0.4, tint: 0.9, sparkle: 1`.
+`materialPresets` (from `pollyroll/render`) gives the full params of every named material, a
+starting point for custom ones: `{ ...materialPresets.glass, tint: 0.3 }`.
 
 ```ts
 tray.setSkin({

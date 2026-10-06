@@ -51,13 +51,13 @@ const FRAME = 7; // floats per keyframe: x, y, z, qx, qy, qz, qw
 // Floor shift per unit height away from the key light: −L.xz / L.y.
 const SHADOW_X = -LIGHT_DIR[0] / LIGHT_DIR[1];
 const SHADOW_Z = -LIGHT_DIR[2] / LIGHT_DIR[1];
-/** Material presets as params; glass and gem set the see-through fields. */
-const MATERIALS: Record<MaterialPreset, MaterialParams> = {
-  plastic: { metalness: 0, roughness: 0.35, clearcoat: 0.3 },
-  metal: { metalness: 1, roughness: 0.3 },
-  wood: { metalness: 0, roughness: 0.7, clearcoat: 0.1 },
-  stone: { metalness: 0, roughness: 0.45, clearcoat: 0.6 },
-  glass: { metalness: 0, roughness: 0.05, clearcoat: 1, transmission: 0.8, tint: 0.6 },
+/** The full `MaterialParams` each named material renders with. */
+export const materialPresets: Readonly<Record<MaterialPreset, Required<MaterialParams>>> = {
+  plastic: { metalness: 0, roughness: 0.35, clearcoat: 0.3, transmission: 0, tint: 0, sparkle: 0 },
+  metal: { metalness: 1, roughness: 0.3, clearcoat: 0, transmission: 0, tint: 0, sparkle: 0 },
+  wood: { metalness: 0, roughness: 0.7, clearcoat: 0.1, transmission: 0, tint: 0, sparkle: 0 },
+  stone: { metalness: 0, roughness: 0.45, clearcoat: 0.6, transmission: 0, tint: 0, sparkle: 0 },
+  glass: { metalness: 0, roughness: 0.05, clearcoat: 1, transmission: 0.8, tint: 0.6, sparkle: 0 },
   gem: { metalness: 0, roughness: 0.08, clearcoat: 1, transmission: 0.4, tint: 0.9, sparkle: 1 },
 };
 const DIE_UNIFORMS = [
@@ -136,7 +136,7 @@ function linearColor(css: string): readonly number[] {
 
 /** Program feature set and uniform values of a skin; a single color is used for both a and b. */
 function skinGpu(skin: Skin): SkinGpu {
-  const m = typeof skin.material === 'object' ? skin.material : MATERIALS[skin.material];
+  const m = typeof skin.material === 'object' ? skin.material : materialPresets[skin.material];
   const transparent = (m.transmission ?? 0) > 0;
   const [a, b] = typeof skin.color === 'string' ? [skin.color, skin.color] : skin.color;
   const p = skin.pattern ?? 'none';

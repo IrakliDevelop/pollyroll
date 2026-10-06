@@ -1,17 +1,11 @@
 import { createRoll, evaluate, isRollEvent, PollyrollSyntaxError, redact } from 'pollyroll';
 import type { RollEvent, RollSummary } from 'pollyroll';
-import { createDiceTray } from 'pollyroll/render';
-import type { DiceTray } from 'pollyroll/render';
-
-function byId<T extends HTMLElement>(id: string, type: new () => T): T {
-  const el = document.getElementById(id);
-  if (!(el instanceof type)) throw new Error(`missing #${id}`);
-  return el;
-}
+import { classic, createDiceTray } from 'pollyroll/render';
+import type { DiceTray, Skin } from 'pollyroll/render';
+import { byId, createSkinEditor } from './editor';
 
 const form = byId('controls', HTMLFormElement);
 const notationInput = byId('notation', HTMLInputElement);
-const skinSelect = byId('skin', HTMLSelectElement);
 const sizeInput = byId('size', HTMLInputElement);
 const sizeValue = byId('size-value', HTMLOutputElement);
 const hiddenBox = byId('hidden', HTMLInputElement);
@@ -26,6 +20,8 @@ const trayB = createDiceTray(byId('tray-b', HTMLDivElement), { dieScale });
 noticeEl.hidden = trayA.supported && trayB.supported;
 
 let rollId = 0;
+let skin: Skin = classic;
+let last: RollEvent | null = null;
 
 function showError(text: string | null): void {
   errorEl.hidden = text === null;
@@ -64,9 +60,8 @@ function play(tray: DiceTray, event: RollEvent, out: HTMLElement, id: number): v
 
 function roll(): void {
   const notation = notationInput.value;
-  let event: RollEvent;
   try {
-    event = createRoll(notation, { skin: skinSelect.value });
+    last = createRoll(notation);
   } catch (error) {
     if (error instanceof PollyrollSyntaxError) {
       showError(`${error.message}\n${notation}\n${' '.repeat(error.index)}^`);
@@ -76,6 +71,12 @@ function roll(): void {
     return;
   }
   showError(null);
+  send(last);
+}
+
+function send(roll: RollEvent): void {
+  // Custom GLSL is local-only (isRollEvent rejects it): such rolls use each tray's setSkin skin.
+  const event = typeof skin.pattern === 'object' ? roll : { ...roll, skin };
   const id = ++rollId;
   play(trayA, event, resultA, id);
 
@@ -88,6 +89,14 @@ function roll(): void {
   }
   play(trayB, wire, resultB, id);
 }
+
+createSkinEditor(skin, (next) => {
+  trayA.setSkin(next);
+  trayB.setSkin(next);
+  skin = next;
+  last ??= createRoll('d20+d6');
+  send(last);
+});
 
 // Both trays share the scale: the walls depend on it, so it must match for identical motion.
 sizeInput.addEventListener('input', () => {
