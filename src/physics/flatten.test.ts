@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { getPolyhedron } from '../geometry/polyhedra';
 import type { ShapeType } from '../geometry/polyhedra';
-import { quatRotate } from '../geometry/vec';
+import { quatMul, quatRotate } from '../geometry/vec';
 import type { Quat } from '../geometry/vec';
 import { FLATTEN_STEPS, flattenTail } from './flatten';
 import { simulate } from './sim';
@@ -19,13 +19,17 @@ function quatOf(f: readonly number[]): Quat {
   return [f[3] ?? 0, f[4] ?? 0, f[5] ?? 0, f[6] ?? 1];
 }
 
-/** Largest world y of any readout direction, and lowest hull vertex y, for one frame. */
 function restOf(shape: ShapeType, f: readonly number[]): { upY: number; lowY: number } {
   const q = quatOf(f);
   const poly = getPolyhedron(shape);
   const upY = Math.max(...poly.readouts.map((r) => quatRotate(q, r)[1]));
   const lowY = (f[1] ?? NaN) + Math.min(...poly.vertices.map((v) => quatRotate(q, v)[1]));
   return { upY, lowY };
+}
+
+function expectAboveFloor(shape: ShapeType, frames: Float64Array): void {
+  for (let k = 0; k < frames.length / 7; k++)
+    expect(restOf(shape, frameAt(frames, k)).lowY, `frame ${k}`).toBeGreaterThan(-1e-6);
 }
 
 function expectFlatEnd(result: SimResult, label: string): void {
@@ -56,10 +60,36 @@ describe('flattenTail', () => {
     expect(Math.abs(top[2])).toBeLessThan(1e-6);
     expect(Math.abs((last[1] ?? NaN) - 0.5)).toBeLessThan(1e-3);
     expect([last[0], last[2]]).toEqual([1.5, -2]);
-    // Halfway: y linear between 0.6408 and 0.5; the tilt about Z halves to 10°.
+    // Halfway the tilt about Z halves to 10°, so the die rests at 0.5·(cos10° + sin10°) ≈ 0.5792,
+    // above the linear 0.5704.
     const mid = frameAt(tail, FLATTEN_STEPS / 2 - 1);
-    expect(Math.abs((mid[1] ?? NaN) - 0.5704)).toBeLessThan(1e-3);
+    expect(Math.abs((mid[1] ?? NaN) - 0.5792)).toBeLessThan(1e-3);
     expect(quatRotate(quatOf(mid), [0, 1, 0])[1]).toBeCloseTo(Math.cos(half), 3);
+    expectAboveFloor('d6', tail);
+  });
+
+  it('keeps a d8 tilted 50° above the floor through the tail', () => {
+    // Face normal n = (1,1,1)/√3 turned to +Y, then tilted 50° away from vertex (1,0,0), so +Y
+    // leans toward that vertex in the body frame and n stays the top face.
+    const n = 1 / Math.sqrt(3);
+    const aw = 1 + n;
+    const an = Math.sqrt(n * n + n * n + aw * aw);
+    const q0: Quat = [-n / an, 0, n / an, aw / an];
+    const v = quatRotate(q0, [1, 0, 0]);
+    const dn = Math.hypot(v[0], v[2]);
+    const half = (-25 * Math.PI) / 180;
+    const q1: Quat = [
+      (Math.sin(half) * v[2]) / dn,
+      0,
+      (-Math.sin(half) * v[0]) / dn,
+      Math.cos(half),
+    ];
+    const q = quatMul(q1, q0);
+    const rest = restOf('d8', [0, 0, 0, ...q]);
+    expect(rest.upY).toBeCloseTo(Math.cos((50 * Math.PI) / 180), 9);
+    const tail = flattenTail('d8', new Float64Array([0, -rest.lowY, 0, ...q]));
+    expect(tail).not.toBeNull();
+    if (tail !== null) expectAboveFloor('d8', tail);
   });
 
   it('leaves a die within 0.5° of flat alone', () => {
