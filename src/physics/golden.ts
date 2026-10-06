@@ -3,6 +3,8 @@ import type { SimInput } from './sim';
 import type { TrayBounds } from './world';
 
 const BOUNDS: TrayBounds = { minX: -6, maxX: 6, minZ: -4, maxZ: 4 };
+// trayBounds(4/3, fitScale(2, 9, 4/3)): crowded enough that resting separation moves dice.
+const CROWDED: TrayBounds = { minX: -4.25, maxX: 4.25, minZ: -3, maxZ: 3 };
 
 /** Fixed simulation inputs whose combined trajectory hash pins the physics across engines. */
 export const GOLDEN_CASES: readonly SimInput[] = [
@@ -25,13 +27,19 @@ export const GOLDEN_CASES: readonly SimInput[] = [
     waves: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     bounds: BOUNDS,
   },
+  {
+    seed: '9e3779b19e3779b19e3779b19e3779b1',
+    shapes: ['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd6', 'd8', 'd10'],
+    waves: [0, 0, 0, 0, 0, 0, 0, 0, 0],
+    bounds: CROWDED,
+  },
 ];
 
 /** goldenHash() of the final implementation. Changing it requires an explanation of the intended
  *  change in motion. */
-export const GOLDEN_HASH = 'fd56c04f';
+export const GOLDEN_HASH = '75906533';
 
-/** trackHash of each golden case, the four 8-char strings joined, then FNV-1a 32-bit over that
+/** trackHash of each golden case, the five 8-char strings joined, then FNV-1a 32-bit over that
  *  string's char codes; 8 lowercase hex chars. */
 export function goldenHash(): string {
   const joined = GOLDEN_CASES.map((input) => trackHash(simulate(input))).join('');

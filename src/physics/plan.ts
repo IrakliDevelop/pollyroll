@@ -38,7 +38,7 @@ interface Slot {
 
 /** Bodies for the event's dice in order: d100 → tens then ones d10, dF → d6. Stops at the first die
  *  that no longer fits in MAX_BODIES. */
-function slots(event: RollEvent): Slot[] {
+export function slots(event: RollEvent): Slot[] {
   const out: Slot[] = [];
   for (let i = 0; i < event.dice.length; i++) {
     const d = event.dice[i];

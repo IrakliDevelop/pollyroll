@@ -123,21 +123,23 @@ export function simulate(input: SimInput): SimResult {
     if (calm < SETTLE_STEPS) settled = false;
   }
 
-  const poses = bodies.map((body) => {
+  const thrown = bodies.filter((b) => b.index >= 0);
+  const poses = thrown.map((body) => {
     const pose = new Float64Array(FRAME);
-    if (body.index >= 0) world.read(body.index, pose, 0);
+    world.read(body.index, pose, 0);
     return pose;
   });
   const xz = new Float64Array(poses.flatMap((p) => [p[0] ?? 0, p[2] ?? 0]));
   separate(
     xz,
-    bodies.map((b) => getBodyShape(b.shape).radius),
+    thrown.map((b) => getBodyShape(b.shape).radius),
     bounds,
   );
-  const ends = bodies.map((body, i) => {
-    const pose = poses[i];
-    if (body.index < 0 || pose === undefined) return { up: 0, tail: null };
-    const tail = flattenTail(body.shape, pose, xz[2 * i] ?? 0, xz[2 * i + 1] ?? 0);
+  const ends = bodies.map((body) => {
+    const k = thrown.indexOf(body);
+    const pose = poses[k];
+    if (pose === undefined) return { up: 0, tail: null };
+    const tail = flattenTail(body.shape, pose, xz[2 * k] ?? 0, xz[2 * k + 1] ?? 0);
     return { up: upReadout(body.shape, pose), tail };
   });
   const extra = ends.some((e) => e.tail !== null) ? FLATTEN_STEPS : 0;

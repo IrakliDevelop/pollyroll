@@ -251,9 +251,25 @@ describe('determinism', () => {
   });
 
   it('matches the golden trajectory hash', () => {
-    expect(GOLDEN_CASES).toHaveLength(4);
+    expect(GOLDEN_CASES).toHaveLength(5);
     expect(goldenHash()).toBe(GOLDEN_HASH);
     expect(GOLDEN_HASH).toMatch(/^[0-9a-f]{8}$/);
+  });
+
+  it('the crowded golden case moves at least one die apart in the flatten tail', () => {
+    const input = GOLDEN_CASES[4];
+    expect(input?.shapes).toHaveLength(9);
+    if (input === undefined) return;
+    const result = simulate(input);
+    const moved = result.tracks.some((t) => {
+      const end = t.frames.length - 7;
+      const rest = end - FLATTEN_STEPS * 7;
+      const dx = (t.frames[end] ?? 0) - (t.frames[rest] ?? 0);
+      const dz = (t.frames[end + 2] ?? 0) - (t.frames[rest + 2] ?? 0);
+      // Settled dice drift under 0.05 units/s, far less than 0.05 units over the tail.
+      return dx * dx + dz * dz > 0.05 * 0.05;
+    });
+    expect(moved).toBe(true);
   });
 
   it('different seeds give different hashes', () => {
