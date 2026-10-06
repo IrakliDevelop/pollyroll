@@ -17,7 +17,7 @@ First release.
 - Deterministic physics: fixed-step rigid bodies using only `+ − * /` and `Math.sqrt`, with warm-started
   sequential impulses, settle detection, and explosion waves. Rotation symmetry groups (T, O, D5, I)
   remap each settled die so it shows the value that was rolled first.
-- `pollyroll/render`: WebGL2 dice tray with instanced chamfered dice, a runtime glyph atlas, GGX PBR
+- `pollyroll/render`: WebGL2 dice tray viewed from directly above, with instanced chamfered dice, a runtime glyph atlas, GGX PBR
   with clearcoat, an analytic environment, blob shadows, render-on-demand, DPR cap, reduced-motion
   and no-WebGL2 fallbacks, and context-loss recovery.
 - Skins: `classic`, `obsidian`, `brass`, `oak`, `sapphire`, `ruby`; materials (plastic, metal, wood,
