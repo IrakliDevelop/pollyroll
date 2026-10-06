@@ -102,6 +102,32 @@ describe('parse', () => {
     expect(parse('4d6!kl2')).toEqual(expected);
   });
 
+  it.each([
+    ['4d6k3', '4d6kh3'],
+    ['2d20k', '2d20kh1'],
+    ['4D6K3', '4d6kh3'],
+    ['4d6d1', '4d6dl1'],
+    ['4d6d', '4d6dl1'],
+    ['4 d 6 d 2', '4d6dl2'],
+    ['3d6x', '3d6!'],
+    ['3D6X', '3d6!'],
+    ['4d6kx', '4d6kh1!'],
+    ['4d6xd', '4d6!dl1'],
+    ['4d6dx', '4d6dl1!'],
+  ])('reads alias %s as %s', (alias, canonical) => {
+    expect(parse(alias)).toEqual(parse(canonical));
+  });
+
+  it('parses aliases to literal ASTs', () => {
+    expect(parse('4d6k3+2d20k')).toEqual({
+      terms: [dice(1, 4, 'd6', { mode: 'kh', n: 3 }), dice(1, 2, 'd20', { mode: 'kh', n: 1 })],
+    });
+    expect(parse('4d6d1-4d6d')).toEqual({
+      terms: [dice(1, 4, 'd6', { mode: 'dl', n: 1 }), dice(-1, 4, 'd6', { mode: 'dl', n: 1 })],
+    });
+    expect(parse('3d6x')).toEqual({ terms: [dice(1, 3, 'd6', null, true)] });
+  });
+
   it('accepts values at the limits', () => {
     expect(parse('100d6+100d6').terms).toHaveLength(2);
     expect(parse(`1d4${'+1'.repeat(19)}`).terms).toHaveLength(20);
@@ -117,7 +143,7 @@ describe('parse errors', () => {
     ['empty input', '', 0],
     ['whitespace-only input', ' \t ', 0],
     ['input longer than 256 characters', '1d6'.padEnd(257, ' '), 256],
-    ['unexpected character', '1d6 x', 4],
+    ['unexpected character', '1d6 y', 4],
     ['unexpected character at start', 'x', 0],
     ['unexpected character after a constant', '2x', 1],
     ['double sign', '--1d6', 1],
@@ -125,8 +151,14 @@ describe('parse errors', () => {
     ['missing die size', '1d', 2],
     ['bad die size character', '1dx', 2],
     ['bad die size character after implicit count', 'dix', 1],
-    ['repeated d', '1d6d6', 3],
-    ['bare k', '1d6k', 3],
+    ['drop alias n above count', '1d6d6', 4],
+    ['drop alias n of 0', '4d6d0', 4],
+    ['keep alias then second keep', '4d6k3kh1', 5],
+    ['keep alias n above count', '2d6k3', 4],
+    ['x then second explode', '3d6x!', 4],
+    ['x with a number', '3d6x2', 4],
+    ['x with a comparison', '3d6x>5', 4],
+    ['x on dF', '1dFx', 3],
     ['suffix on adv', 'adv!', 3],
     ['die size d7', '1d7', 2],
     ['die size d1', '1d1', 2],
