@@ -6,6 +6,7 @@ import type { SeedRng } from '../core/rng';
 import { getPolyhedron } from '../geometry/polyhedra';
 import type { ShapeType } from '../geometry/polyhedra';
 import { quatRotate } from '../geometry/vec';
+import { FLATTEN_STEPS } from './flatten';
 import { GOLDEN_CASES, GOLDEN_HASH, goldenHash } from './golden';
 import {
   MAX_STEPS_PER_WAVE,
@@ -229,7 +230,8 @@ describe('simulate', () => {
       bounds: tight,
     });
     expect(result.settled).toBe(false);
-    expect(result.totalSteps).toBe(MAX_STEPS_PER_WAVE);
+    // The jammed d20s rest cocked, so the roll gains the flatten tail.
+    expect(result.totalSteps).toBe(MAX_STEPS_PER_WAVE + FLATTEN_STEPS);
   });
 });
 
