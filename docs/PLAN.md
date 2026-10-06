@@ -139,7 +139,10 @@ isRollEvent(input: unknown): input is RollEvent;  // validates untrusted input, 
 - Output: per die, a keyframe track (position + quaternion per step) plus the settled up-face.
 - _(amended)_ Settle-to-flat: after settling, any die more than 0.5° off flat gets a deterministic
   24-step tail that rolls it onto its up face and rests it on the floor (dice can come to rest
-  cocked against walls, neighbours' spheres, or balanced on an edge).
+  cocked against walls, neighbours' spheres, or balanced on an edge). Before the tails, resting
+  dice closer than 0.8·(Rᵢ + Rⱼ) are pushed apart (8 deterministic passes, clamped to the walls).
+- _(amended)_ Auto-fit: a roll uses the largest scale ≤ `dieScale` on a 0.05 grid whose tray area
+  holds 5 die-units² per animated body, so large rolls shrink instead of overlapping.
 
 ## 6. Renderer (`pollyroll/render`)
 
@@ -147,7 +150,7 @@ isRollEvent(input: unknown): input is RollEvent;  // validates untrusted input, 
 createDiceTray(target: HTMLCanvasElement | HTMLElement, opts?: TrayOptions): DiceTray;
 
 interface TrayOptions {
-  skin?: SkinRef; labelFont?: string; dieScale?: number;   // default 2 (amended)
+  skin?: SkinRef; labelFont?: string; dieScale?: number;   // default 2, max size; auto-fit (amended)
   shadows?: boolean;                                        // default true (blob shadows)
   maxDpr?: number;                                          // default 2
   reducedMotion?: 'auto' | 'always' | 'never';              // default 'auto' (media query)
@@ -276,7 +279,9 @@ Chromium uses SwiftShader (`--use-angle=swiftshader --enable-unsafe-swiftshader`
 
 ### Decided (owner or build decisions; rationale in DECISIONS.md)
 
-- Top-down orthographic camera (replaces 50° perspective); default `dieScale` 2 (owner eye test).
+- Top-down orthographic camera (replaces 50° perspective); default `dieScale` 2 (owner eye test),
+  with auto-fit for large rolls and resting separation (9 dice at scale 2 overlapped in 146/150
+  rolls before; 0/150 for 4, 9, and 20 dice after).
 - Settle-to-flat tail; warm-started contacts; tray insets in die units.
 - Notation aliases `k`/`d`/`x`; keep/drop ranks explosion dice too; `group` indexes dice terms only.
 - Custom labels in natural order; presets registered by name; custom GLSL local-only.
@@ -287,5 +292,6 @@ Chromium uses SwiftShader (`--use-angle=swiftshader --enable-unsafe-swiftshader`
 - Use as an installed package inside RollKeeper (exports, types, `'use client'` in Next.js).
 - 60 fps with 10 dice under Chrome 4× CPU throttle (manual).
 - Rendering on real GPUs and mobile (baselines come from SwiftShader).
-- Known small issues: d4 and d20 labels are the smallest; a die propped on a neighbour passes
-  through that neighbour's collision sphere during the 0.2 s flatten tail.
+- Known small issues: d4 and d20 labels are the smallest; during the 0.2 s flatten tail a die that
+  is moved or dropped can pass through a neighbour (no collision in the tail); 30-dice rolls still
+  overlap in ~3–5% of rolls.
