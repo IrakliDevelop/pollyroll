@@ -12,14 +12,17 @@ function byId<T extends HTMLElement>(id: string, type: new () => T): T {
 const form = byId('controls', HTMLFormElement);
 const notationInput = byId('notation', HTMLInputElement);
 const skinSelect = byId('skin', HTMLSelectElement);
+const sizeInput = byId('size', HTMLInputElement);
+const sizeValue = byId('size-value', HTMLOutputElement);
 const hiddenBox = byId('hidden', HTMLInputElement);
 const errorEl = byId('error', HTMLPreElement);
 const noticeEl = byId('notice', HTMLParagraphElement);
 const resultA = byId('result-a', HTMLParagraphElement);
 const resultB = byId('result-b', HTMLParagraphElement);
 
-const trayA = createDiceTray(byId('tray-a', HTMLDivElement));
-const trayB = createDiceTray(byId('tray-b', HTMLDivElement));
+const dieScale = Number(sizeInput.value);
+const trayA = createDiceTray(byId('tray-a', HTMLDivElement), { dieScale });
+const trayB = createDiceTray(byId('tray-b', HTMLDivElement), { dieScale });
 noticeEl.hidden = trayA.supported && trayB.supported;
 
 let rollId = 0;
@@ -85,6 +88,13 @@ function roll(): void {
   }
   play(trayB, wire, resultB, id);
 }
+
+// Both trays share the scale: the walls depend on it, so it must match for identical motion.
+sizeInput.addEventListener('input', () => {
+  sizeValue.textContent = sizeInput.value;
+  trayA.setDieScale(Number(sizeInput.value));
+  trayB.setDieScale(Number(sizeInput.value));
+});
 
 form.addEventListener('submit', (e) => {
   e.preventDefault();

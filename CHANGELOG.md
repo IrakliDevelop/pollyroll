@@ -23,6 +23,7 @@ First release.
 - Skins: `classic`, `obsidian`, `brass`, `oak`, `sapphire`, `ruby`; materials (plastic, metal, wood,
   stone, glass, gem); procedural patterns (gradient, speckle, marble, wood, swirl, custom GLSL);
   printed, engraved, and embossed labels; `defineSkin` and `registerSkin`.
+- `DiceTray.setDieScale` changes the die size for later rolls; the demo has a size slider.
 - `pollyroll/react`: `useDiceTray` hook and `<DiceTray />` overlay component.
 - Demo playground with a two-tray shared-roll example; Playwright smoke, skin screenshots, and
   cross-browser determinism tests.

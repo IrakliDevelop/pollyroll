@@ -57,4 +57,13 @@ describe('createDiceTray without WebGL2', () => {
     expect(canvas.isConnected).toBe(true);
     expect((await tray.playRoll(event)).total).toBe(10);
   });
+
+  it('rejects a non-finite or non-positive die scale', () => {
+    noWebGl();
+    const tray = createDiceTray(document.createElement('canvas'));
+    for (const bad of [0, -1, NaN, Infinity]) {
+      expect(() => tray.setDieScale(bad)).toThrow(RangeError);
+    }
+    expect(() => tray.setDieScale(2)).not.toThrow();
+  });
 });
