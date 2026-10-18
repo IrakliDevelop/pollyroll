@@ -3,6 +3,7 @@ import type { ShapeType } from '../geometry/polyhedra';
 import { quatMul, quatRotate } from '../geometry/vec';
 import type { Quat, Vec3 } from '../geometry/vec';
 import { penetrationAt } from './penetration';
+import { clampInto } from './throw';
 import type { TrayBounds } from './world';
 
 export const FLATTEN_STEPS = 36;
@@ -54,8 +55,7 @@ export function separate(
   footprints: readonly Float64Array[],
   bounds: TrayBounds,
 ): void {
-  const clamp = (k: number): void => {
-    const f = footprints[k] ?? new Float64Array(0);
+  const limits = footprints.map((f) => {
     let x0 = Infinity;
     let x1 = -Infinity;
     let z0 = Infinity;
@@ -66,10 +66,12 @@ export function separate(
       z0 = Math.min(z0, f[m + 1] ?? 0);
       z1 = Math.max(z1, f[m + 1] ?? 0);
     }
-    const into = (v: number, lo: number, hi: number): number =>
-      lo > hi ? (lo + hi) / 2 : Math.min(Math.max(v, lo), hi);
-    xz[2 * k] = into(xz[2 * k] ?? 0, bounds.minX - x0, bounds.maxX - x1);
-    xz[2 * k + 1] = into(xz[2 * k + 1] ?? 0, bounds.minZ - z0, bounds.maxZ - z1);
+    return [bounds.minX - x0, bounds.maxX - x1, bounds.minZ - z0, bounds.maxZ - z1];
+  });
+  const clamp = (k: number): void => {
+    const [lx = 0, hx = 0, lz = 0, hz = 0] = limits[k] ?? [];
+    xz[2 * k] = clampInto(xz[2 * k] ?? 0, lx, hx);
+    xz[2 * k + 1] = clampInto(xz[2 * k + 1] ?? 0, lz, hz);
   };
   let moved = true;
   for (let pass = 0; pass < PASSES && moved; pass++) {
@@ -198,13 +200,13 @@ export function flattenTail(
   z: number,
   lift?: number,
 ): Float64Array | null {
-  const [px = 0, py = 0, pz = 0, qx = 0, qy = 0, qz = 0, qw = 1] = pose;
+  const [px = 0, , pz = 0, qx = 0, qy = 0, qz = 0, qw = 1] = pose;
   const poly = getPolyhedron(shape);
   const r = poly.readouts[upReadout(shape, pose)] ?? [0, 1, 0];
   if (quatRotate([qx, qy, qz, qw], r)[1] >= COS_HALF_DEGREE && x === px && z === pz) return null;
   const [fx, fy, fz, fw] = flatOrientation(shape, pose);
   const low = lowestY(poly.vertices, fx, fy, fz, fw);
-  const bottom = Math.max(0, py + lowestY(poly.vertices, qx, qy, qz, qw));
+  const bottom = bottomOf(shape, pose);
   const clear = lift === undefined ? bottom : Math.max(bottom, lift);
   const sign = qx * fx + qy * fy + qz * fz + qw * fw < 0 ? -1 : 1;
   const half = FLATTEN_STEPS / 2;
@@ -240,14 +242,8 @@ const CLEARANCE = 0.02;
 const MAX_RISE = 1.5;
 const LIFT_PASSES = 4;
 
-/** Collision-aware settle tails: up to LIFT_PASSES sweeps over the tailed dice in index order, each
- *  checking the die against every other die (its current tail, or its held pose) at every tail frame
- *  where their bounding spheres meet, by `penetrationAt`. Of a pair past TAIL_DEPTH only the die with
- *  the higher starting bottom b0 lifts (ties: the one moving farther in xz, then the lower index):
- *  its tail is rebuilt as lift–slide–drop with bottom max(b0, top) + CLEARANCE, at most
- *  b0 + MAX_RISE, where top is the highest top the dice it hit reach in their plain tails over the
- *  frames they penetrate (clearances only grow). Stops after a sweep that rebuilds nothing; pairs
- *  still penetrating are left. `tails` holds the plain tails on entry and is updated in place. */
+/** Collision-aware settle tails: of each pair penetrating past TAIL_DEPTH, the die with the higher
+ *  starting bottom is rebuilt as lift–slide–drop over the other, for up to LIFT_PASSES sweeps. */
 export function liftTails(
   shapes: readonly ShapeType[],
   poses: readonly Float64Array[],
@@ -255,11 +251,7 @@ export function liftTails(
   tails: (Float64Array | null)[],
 ): void {
   const plain = tails.slice();
-  const bottoms = poses.map((pose, k) => {
-    const [, py = 0, , qx = 0, qy = 0, qz = 0, qw = 1] = pose;
-    const vertices = getPolyhedron(shapes[k] ?? 'd6').vertices;
-    return Math.max(0, py + lowestY(vertices, qx, qy, qz, qw));
-  });
+  const bottoms = poses.map((pose, k) => bottomOf(shapes[k] ?? 'd6', pose));
   const moves = poses.map((pose, k) => {
     const dx = (xz[2 * k] ?? 0) - (pose[0] ?? 0);
     const dz = (xz[2 * k + 1] ?? 0) - (pose[2] ?? 0);
@@ -320,6 +312,12 @@ export function liftTails(
     });
     if (!rebuilt) return;
   }
+}
+
+/** Floor-clamped height of the lowest hull vertex of `pose` (frame layout). */
+function bottomOf(shape: ShapeType, pose: Float64Array): number {
+  const [, py = 0, , qx = 0, qy = 0, qz = 0, qw = 1] = pose;
+  return Math.max(0, py + lowestY(getPolyhedron(shape).vertices, qx, qy, qz, qw));
 }
 
 /** Lowest world y of the vertices under unit quaternion (x, y, z, w), via its matrix's second row. */

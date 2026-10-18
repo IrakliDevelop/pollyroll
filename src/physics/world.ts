@@ -100,8 +100,9 @@ export function checkHull(body: BodyShape): void {
   if (body.vertices.length > MAX_VERTICES * 3) {
     throw new RangeError(`at most ${MAX_VERTICES} hull vertices per body`);
   }
-  if (body.planes.length > MAX_FACES * 4)
+  if (body.planes.length > MAX_FACES * 4) {
     throw new RangeError(`at most ${MAX_FACES} faces per body`);
+  }
   let sides = 0;
   for (const face of body.faces) {
     if (face.length > FACE_EDGES) throw new RangeError(`at most ${FACE_EDGES} edges per face`);

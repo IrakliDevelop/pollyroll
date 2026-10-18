@@ -47,13 +47,12 @@ const ANGULAR_SQ = SETTLE_ANGULAR * SETTLE_ANGULAR;
 /**
  * Runs the headless simulation for one roll. Waves are thrown in ascending order of their distinct
  * values (bodies keep input order within a wave), each after the previous one settles or reaches
- * MAX_STEPS_PER_WAVE steps; earlier dice stay in the world. A wave is settled once every body in the
- * world has stayed below SETTLE_LINEAR and SETTLE_ANGULAR for SETTLE_STEPS consecutive steps. Every
- * throw parameter comes from the sfc32 stream of `seed`. Tracks are returned in input order. Resting
- * centres are then pushed apart by the footprints of the flattened dice (see `separate`); when any
- * die rests cocked or moved, every track
- * gains a FLATTEN_STEPS tail (see `flattenTail`, lifted over dice it would hit by `liftTails`);
- * other dice hold.
+ * MAX_STEPS_PER_WAVE steps; earlier dice stay in the world. A wave is settled once every body in
+ * the world has stayed below SETTLE_LINEAR and SETTLE_ANGULAR for SETTLE_STEPS consecutive steps.
+ * Every throw parameter comes from the sfc32 stream of `seed`. Tracks are returned in input order.
+ * Resting centres are then pushed apart by the footprints of the flattened dice (see `separate`);
+ * when any die rests cocked or moved, every track gains a FLATTEN_STEPS tail (see `flattenTail`,
+ * lifted over dice it would hit by `liftTails`); other dice hold.
  */
 export function simulate(input: SimInput): SimResult {
   const { shapes, waves, bounds } = input;

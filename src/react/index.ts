@@ -4,12 +4,8 @@ import { createDiceTray } from 'pollyroll/render';
 import type { DiceTray as Tray, TrayOptions } from 'pollyroll/render';
 import { skinChanged } from './skin';
 
-/**
- * Creates a tray on the target element and disposes it on unmount or when an element target
- * changes. A RefObject is read once after mount, so an element that mounts later must be passed
- * directly (for example from a callback ref into state). Options are read once except `skin`,
- * `dieScale`, and `sound`, applied when they change by value (undefined is ignored).
- */
+/** Creates a tray on the target (a RefObject is read once after mount) and disposes it on unmount.
+ *  Options are read once except `skin`, `dieScale`, and `sound`, applied when they change. */
 export function useDiceTray(
   target: RefObject<HTMLElement | null> | HTMLElement | null,
   opts?: TrayOptions,

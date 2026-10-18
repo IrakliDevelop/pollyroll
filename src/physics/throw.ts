@@ -10,7 +10,7 @@ export interface ThrowState {
 }
 
 /** Clamps `value` into [lo, hi]; when the interval is empty (die wider than the tray), the midpoint. */
-function clampInto(value: number, lo: number, hi: number): number {
+export function clampInto(value: number, lo: number, hi: number): number {
   if (lo > hi) return (lo + hi) / 2;
   return value < lo ? lo : value > hi ? hi : value;
 }

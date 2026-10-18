@@ -54,8 +54,8 @@ export const isAudience = (a: unknown): boolean =>
   Array.isArray(a) ? a.length <= 100 && all(a, isId) : oneOf(a, 'all dm');
 
 /**
- * Copy of `event` with every value set to null and explosion and reroll dice (wave ≥ 1) removed, so the
- * number of dice reveals nothing about the hidden values.
+ * Copy of `event` with every value set to null and explosion and reroll dice (wave ≥ 1) removed, so
+ * the number of dice reveals nothing about the hidden values.
  */
 export function redact(event: RollEvent): RollEvent {
   const dice = event.dice.filter((die) => die.wave === 0).map((die) => ({ ...die, value: null }));
