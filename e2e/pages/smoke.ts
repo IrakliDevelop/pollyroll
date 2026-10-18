@@ -38,6 +38,20 @@ const event: RollEvent = {
   createdAt: 0,
 };
 
+// ?event=adv drops the 4; ?event=all rolls the same dice and seed with nothing dropped.
+const pair = (notation: string): RollEvent => ({
+  v: 1,
+  id: 'smoke-adv',
+  notation,
+  dice: [
+    { type: 'd20', value: 15, group: 0, wave: 0 },
+    { type: 'd20', value: 4, group: 0, wave: 0 },
+  ],
+  modifier: 0,
+  seed: '0123456789abcdef0123456789abcdef',
+  createdAt: 0,
+});
+
 const state: SmokeState = {
   ready: false,
   settled: false,
@@ -61,7 +75,10 @@ window.__pollyrollTray = tray;
 window.__pollyrollCreate = createDiceTray;
 state.supported = tray.supported;
 const start = performance.now();
-const done = tray.playRoll(event);
+const which = params.get('event');
+const done = tray.playRoll(
+  which === 'adv' ? pair('2d20kh1') : which === 'all' ? pair('2d20') : event,
+);
 state.ready = true;
 void done.then((summary) => {
   state.elapsedMs = performance.now() - start;

@@ -7,13 +7,17 @@ export const ATLAS_ROWS = 9;
 /** Unit direction toward the key light, world space. */
 export const LIGHT_DIR = [-0.5, 0.7071, -0.5] as const;
 
-/** Die vertex: mesh (pos, normal, label lu/lv/cell) + instance (position.xyz, atlas row; quaternion). */
+/**
+ * Die vertex: mesh (pos, normal, label lu/lv/cell) + instance (position.xyz, atlas row; quaternion;
+ * opacity).
+ */
 export const DIE_VERTEX = `#version 300 es
 layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNormal;
 layout(location=2) in vec3 aLabel;
 layout(location=3) in vec4 aInst;
 layout(location=4) in vec4 aQuat;
+layout(location=5) in float aOpacity;
 uniform mat4 uVP;
 uniform float uScale;
 out vec3 vObj;
@@ -22,6 +26,7 @@ out vec3 vN;
 out vec3 vW;
 out vec2 vUV;
 flat out vec2 vCell;
+flat out float vOpacity;
 vec3 rot(vec4 q, vec3 v) {
   vec3 t = 2.0 * cross(q.xyz, v);
   return v + q.w * t + cross(q.xyz, t);
@@ -32,6 +37,7 @@ void main() {
   vN = rot(aQuat, aNormal);
   vW = (rot(aQuat, aPos) + aInst.xyz) * uScale;
   vUV = aLabel.xy;
+  vOpacity = aOpacity;
   vCell = aLabel.z < 0.0 || aInst.w < 0.0 ? vec2(-1.0) : vec2(aLabel.z, aInst.w);
   gl_Position = uVP * vec4(vW, 1.0);
 }
@@ -90,6 +96,7 @@ in vec3 vN;
 in vec3 vW;
 in vec2 vUV;
 flat in vec2 vCell;
+flat in float vOpacity;
 uniform vec3 uCam;
 uniform vec3 uBase;
 uniform vec3 uBase2;
@@ -166,7 +173,7 @@ void main() {
   c *= EXPOSURE;
   c = clamp(c * (2.51 * c + 0.03) / (c * (2.43 * c + 0.59) + 0.14), 0.0, 1.0);
   c = pow(c, vec3(1.0 / 2.2));
-  al *= uAlpha;
+  al *= uAlpha * vOpacity;
   oColor = vec4(c * al, al);
 }
 `;

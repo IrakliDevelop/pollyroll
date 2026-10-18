@@ -293,3 +293,51 @@ test.describe('tray die scale', () => {
     expect(large / small).toBeGreaterThan(2.5);
   });
 });
+
+test.describe('dropped dice', () => {
+  test.skip(
+    ({ browserName }) => browserName !== 'chromium',
+    'pixel comparison checked in Chromium',
+  );
+
+  test('fades the dropped die after settle and leaves kept dice unchanged', async ({ page }) => {
+    await open(page, '?reduced&event=all');
+    const all = (await page.locator('#tray').screenshot()).toString('base64');
+    await open(page, '?reduced&event=adv');
+    const adv = (await page.locator('#tray').screenshot()).toString('base64');
+    const diff = await page.evaluate(
+      async ([a, b]) => {
+        const pixels = async (b64: string): Promise<Uint8ClampedArray> => {
+          const img = new Image();
+          img.src = `data:image/png;base64,${b64}`;
+          await img.decode();
+          const c = document.createElement('canvas');
+          c.width = img.width;
+          c.height = img.height;
+          const ctx = c.getContext('2d');
+          if (ctx === null) throw new Error('no 2D context');
+          ctx.drawImage(img, 0, 0);
+          return ctx.getImageData(0, 0, c.width, c.height).data;
+        };
+        const pa = await pixels(a);
+        const pb = await pixels(b);
+        let changed = 0;
+        let lighter = 0;
+        for (let i = 0; i < pa.length; i += 4) {
+          const sa = (pa[i] ?? 0) + (pa[i + 1] ?? 0) + (pa[i + 2] ?? 0);
+          const sb = (pb[i] ?? 0) + (pb[i + 1] ?? 0) + (pb[i + 2] ?? 0);
+          if (Math.abs(sb - sa) <= 30) continue;
+          changed++;
+          if (sb > sa) lighter++;
+        }
+        return {
+          changed: changed / (pa.length / 4),
+          lighter: changed === 0 ? 0 : lighter / changed,
+        };
+      },
+      [all, adv] as const,
+    );
+    expect(diff.changed).toBeGreaterThan(0.003);
+    expect(diff.lighter).toBeGreaterThan(0.95);
+  });
+});

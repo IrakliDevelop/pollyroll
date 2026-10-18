@@ -46,7 +46,8 @@ export interface DiceTray {
 }
 
 const FADE_MS = 300;
-const INST = 8; // floats per die instance: x, y, z, atlas row (−1 = blank), qx, qy, qz, qw
+const DROPPED_OPACITY = 0.35;
+const INST = 9; // floats per die instance: x, y, z, atlas row (−1 = blank), qx, qy, qz, qw, opacity
 const FRAME = 7; // floats per keyframe: x, y, z, qx, qy, qz, qw
 // Floor shift per unit height away from the key light: −L.xz / L.y.
 const SHADOW_X = -LIGHT_DIR[0] / LIGHT_DIR[1];
@@ -89,6 +90,7 @@ interface Group {
 interface Roll {
   plan: RollPlan;
   groups: Group[];
+  dropped: Set<number>; // event dice indices dropped by keep/drop
   eventSkin: SkinRef | undefined;
   skin: SkinGpu;
   scale: number;
@@ -298,6 +300,7 @@ export function createDiceTray(
       const buf = createBuffer(g, MAX_BODIES * INST * 4);
       attrib(g, 3, 4, INST, 0, 1);
       attrib(g, 4, 4, INST, 4, 1);
+      attrib(g, 5, 1, INST, 8, 1);
       g.bindVertexArray(null);
       s = { vao, buf };
       sets.set(set, s);
@@ -417,13 +420,15 @@ export function createDiceTray(
         if (b === undefined || b.startStep > s) continue;
         const o = n * INST;
         writePose(b, s, b.value === null ? -1 : grp.row, grp.data, o);
+        const opacity = r.done && r.dropped.has(b.die) ? DROPPED_OPACITY : 1;
+        grp.data[o + 8] = opacity;
         const h = at(grp.data, o + 1) * scale;
         const fade = 1 - h / 4;
         // Seen from straight above, a blob under the die is hidden; offset it as the light would.
         shadowData[ns * 4] = at(grp.data, o) * scale + h * SHADOW_X;
         shadowData[ns * 4 + 1] = at(grp.data, o + 2) * scale + h * SHADOW_Z;
         shadowData[ns * 4 + 2] = 1.3 * grp.radius * scale;
-        shadowData[ns * 4 + 3] = 0.45 * (fade < 0 ? 0 : fade > 1 ? 1 : fade);
+        shadowData[ns * 4 + 3] = 0.45 * (fade < 0 ? 0 : fade > 1 ? 1 : fade) * opacity;
         n++;
         ns++;
       }
@@ -640,9 +645,18 @@ export function createDiceTray(
         }
         groups.push({ set, row, bodies, radius, data, count: 0 });
       });
+      // Summary indices are group-local: die i is the k-th die of its group.
+      const dropped = new Set<number>();
+      const seen: number[] = [];
+      event.dice.forEach((d, i) => {
+        const k = seen[d.group] ?? 0;
+        seen[d.group] = k + 1;
+        if (summary.groups[d.group]?.dropped.includes(k)) dropped.add(i);
+      });
       const r: Roll = {
         plan,
         groups,
+        dropped,
         eventSkin: event.skin,
         skin,
         scale,
