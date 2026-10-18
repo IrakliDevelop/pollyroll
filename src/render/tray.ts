@@ -124,7 +124,7 @@ interface Program {
 let colorCtx: CanvasRenderingContext2D | null | undefined;
 const colors = new Map<string, readonly number[]>();
 
-/** Linear RGB of a CSS color, painted into a shared 1×1 2D canvas and cached per string. */
+/** Linear RGB of a CSS color, normalized by a shared 1×1 2D canvas and cached per string. */
 function linearColor(css: string): readonly number[] {
   let c = colors.get(css);
   if (c === undefined) {
@@ -134,11 +134,19 @@ function linearColor(css: string): readonly number[] {
     }).getContext('2d', { willReadFrequently: true });
     let srgb: ArrayLike<number> = [0, 0, 0];
     if (colorCtx !== null) {
-      colorCtx.clearRect(0, 0, 1, 1);
       colorCtx.fillStyle = '#000';
       colorCtx.fillStyle = css;
-      colorCtx.fillRect(0, 0, 1, 1);
-      srgb = colorCtx.getImageData(0, 0, 1, 1).data;
+      // Parse the serialized colour first; some browsers block or randomize canvas readback.
+      const s = String(colorCtx.fillStyle);
+      const hex = /^#(..)(..)(..)$/.exec(s);
+      const rgb = /^rgba?\(([\d.]+), ([\d.]+), ([\d.]+)/.exec(s);
+      if (hex !== null) srgb = hex.slice(1).map((h) => parseInt(h, 16));
+      else if (rgb !== null) srgb = rgb.slice(1).map(Number);
+      else {
+        colorCtx.clearRect(0, 0, 1, 1);
+        colorCtx.fillRect(0, 0, 1, 1);
+        srgb = colorCtx.getImageData(0, 0, 1, 1).data;
+      }
     }
     c = [0, 1, 2].map((i) => Math.pow((srgb[i] ?? 0) / 255, 2.2));
     colors.set(css, c);

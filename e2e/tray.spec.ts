@@ -20,6 +20,7 @@ declare global {
     __atlasFonts: string[];
     __audio: AudioRecord;
     __fontLoad: { spec: string; drawnBefore: number; done: boolean };
+    __getImageData: CanvasRenderingContext2D['getImageData'];
   }
 }
 
@@ -437,6 +438,37 @@ test.describe('tray robustness', () => {
     const hex = await mean('#ff7f50');
     const modern = await mean('color(srgb 1 0.498 0.314)');
     for (const c of ['r', 'g', 'b'] as const) expect(Math.abs(modern[c] - hex[c])).toBeLessThan(8);
+  });
+
+  test('renders a hex colour when canvas readback is blocked', async ({ page, context }) => {
+    const mean = async (p: Page): Promise<{ r: number; g: number; b: number }> => {
+      await p.evaluate(async (event) => {
+        await window.__pollyrollTray.playRoll({
+          ...event,
+          skin: { material: 'plastic', color: '#ff7f50', labelColor: '#000' },
+        });
+        CanvasRenderingContext2D.prototype.getImageData = window.__getImageData;
+      }, EVENT);
+      return (await coverage(p)).mean;
+    };
+    const blocked = await context.newPage();
+    await blocked.addInitScript(() => {
+      const proto = CanvasRenderingContext2D.prototype;
+      window.__getImageData = proto.getImageData;
+      proto.getImageData = () => {
+        throw new Error('canvas readback blocked');
+      };
+    });
+    const errors = await open(blocked, '?reduced');
+    const stubbed = await mean(blocked);
+    await page.addInitScript(() => {
+      window.__getImageData = CanvasRenderingContext2D.prototype.getImageData;
+    });
+    await open(page, '?reduced');
+    const plain = await mean(page);
+    expect(errors).toEqual([]);
+    for (const c of ['r', 'g', 'b'] as const)
+      expect(Math.abs(stubbed[c] - plain[c])).toBeLessThan(8);
   });
 
   test('never fades the dice when fadeAfterMs is Infinity', async ({ page }) => {
