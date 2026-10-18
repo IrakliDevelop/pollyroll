@@ -49,7 +49,7 @@ positioning). You can also pass an existing `<canvas>`.
 parse(notation: string): RollAst;            // throws PollyrollSyntaxError { message, index }
 createRoll(notation, opts?): RollEvent;      // opts: { rng?, seed?, skin?, rollerId?, audience? }
 evaluate(event: RollEvent): RollSummary;     // { total | null, modifier, groups: [{ die, dice, kept, dropped, subtotal }] }
-redact(event: RollEvent): RollEvent;         // copy with every value set to null
+redact(event: RollEvent): RollEvent;         // copy with every value null and wave ≥ 1 dice removed
 isRollEvent(input: unknown): input is RollEvent; // validates untrusted input, including bounds
 ```
 
@@ -57,19 +57,31 @@ isRollEvent(input: unknown): input is RollEvent; // validates untrusted input, i
 
 Notation is case-insensitive and ignores whitespace.
 
-| Syntax                  | Meaning                                                         |
-| ----------------------- | --------------------------------------------------------------- |
-| `NdX`                   | N dice (1–100) of X ∈ 4, 6, 8, 10, 12, 20, 100; N defaults to 1 |
-| `d%`, `dF`              | d100; Fudge die (−1, 0, +1)                                     |
-| `+`, `-`, integers      | Add or subtract terms and constants                             |
-| `khN` `klN` `dhN` `dlN` | Keep or drop the highest or lowest N (N defaults to 1)          |
-| `kN`, `dN`              | `khN`, `dlN` (N defaults to 1)                                  |
-| `!`                     | Explode on the maximum, up to 10 extra waves                    |
-| `x`                     | `!`                                                             |
-| `adv`, `dis`            | `2d20kh1`, `2d20kl1`                                            |
+| Syntax                  | Meaning                                                               |
+| ----------------------- | --------------------------------------------------------------------- |
+| `NdX`                   | N dice (1–100) of X ∈ 4, 6, 8, 10, 12, 20, 100; N defaults to 1       |
+| `d%`, `dF`              | d100; Fudge die (−1, 0, +1)                                           |
+| `+`, `-`, integers      | Add or subtract terms and constants                                   |
+| `khN` `klN` `dhN` `dlN` | Keep or drop the highest or lowest N (N defaults to 1)                |
+| `kN`, `dN`              | `khN`, `dlN` (N defaults to 1)                                        |
+| `!`, `x`                | Explode on the maximum, up to 10 extra waves                          |
+| `!>=5`, `!6`, `x>8`     | Explode on a comparison (`=`, `<`, `<=`, `>`, `>=`, or a bare number) |
+| `r`, `r1`, `r<3`        | Reroll matching dice until they stop matching (default: the minimum)  |
+| `ro`, `ro1`, `ro<3`     | Reroll matching dice once                                             |
+| `>=7`, `>4`, `<3`, `=6` | Count successes: the term adds the number of kept dice that match     |
+| `adv`, `dis`            | `2d20kh1`, `2d20kl1`                                                  |
 
-Limits are at most 20 terms, at most 200 dice before explosions, and inputs of at most 256
-characters. Examples: `2d20kh1+5`, `4d6dl1`, `3d6!`, `adv+3`, `1d%`, `4dF`.
+Limits are at most 20 terms, at most 200 dice before explosions and rerolls, and inputs of at most
+256 characters. Examples: `2d20kh1+5`, `4d6dl1`, `4d6r1`, `2d20ro1`, `3d6!`, `d6!>=5`, `5d10>=7+1`,
+`4d6kh3>=5`, `adv+3`, `1d%`, `4dF`.
+
+- **Rerolls** keep the replaced die on the table: it is listed in `dropped`, its replacement comes
+  in the next wave, and keep/drop ranks only the dice that were not rerolled.
+- **Success counting** applies after keep/drop. A comparison written right after a bare `!` or `r`
+  belongs to that modifier (`d6!>=5` explodes on 5+); put the success comparison first
+  (`4d6>=5r`) or after an explicit number (`4d6r1>=5`).
+- A term cannot both explode and reroll. Compounding (`!!`), crit ranges, and failures (`f`) are not
+  supported.
 
 ### `RollEvent` (wire format, `v: 1`)
 
@@ -95,7 +107,7 @@ explosion dice included, and ties go to the lower index.
 
 The event never carries totals or kept/dropped dice; `evaluate(event)` derives them. `group` is the
 index of the dice term (constants are not counted). `wave` is 0 for the initial throw and 1 or more
-for explosions.
+for explosions and rerolls.
 
 ## Renderer (`pollyroll/render`)
 
@@ -109,11 +121,13 @@ const tray = createDiceTray(target, {
   reducedMotion: 'auto', // 'auto' follows prefers-reduced-motion; 'always' | 'never'
   fadeAfterMs: null, // number: fade the dice out after they settle
   labels: { d6: ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'] }, // optional custom labels per die
+  sound: 0, // 0–1: volume of procedural impact clacks; 0 (default) never creates an AudioContext
 });
 
 tray.playRoll(event); // Promise<RollSummary>; a new roll replaces the previous dice
 tray.setSkin('obsidian');
 tray.setDieScale(1.5); // size for the next roll; dice on screen keep theirs
+tray.setSound(0.8); // volume for the next roll; 0 mutes
 tray.clear();
 tray.resize(); // also called automatically through ResizeObserver
 tray.dispose(); // releases every GPU resource and listener
@@ -137,6 +151,11 @@ The label font is the skin's `font` if it has one, otherwise `labelFont`. If the
   shrinks in 0.05 steps until its dice fit the tray, so a single d20 shows at full size while 20d6
   stays readable without overlapping. The size sets the walls as well as the drawing, so both sides
   of a shared roll need the same `dieScale` and tray aspect to see identical motion.
+- **Dropped dice fade:** once a roll settles, dice that `evaluate` lists as dropped (keep/drop and
+  rerolled dice) are drawn at 35% opacity with their shadows, so the kept dice stand out.
+- **Sound:** with `sound` above 0 the tray plays a short procedural clack for each hard impact,
+  derived from the dice tracks (no audio files). Browsers start audio only after a user gesture, so a
+  roll that does not start from a click may stay silent.
 - **Superseded rolls:** if a roll is replaced, cleared, or disposed, its promise still resolves with
   that roll's own summary. It never rejects in these cases.
 - **Dice limit:** at most 30 dice are animated per tray (a d100 counts as two). Dice beyond that
@@ -226,9 +245,11 @@ function Table() {
 }
 ```
 
-`useDiceTray(ref, opts)` creates a tray on `ref.current` after mount and disposes it exactly once on
-unmount, including under StrictMode. Options are read when the tray is created. Only `skin` updates
-afterwards, and object skins are compared by value.
+`useDiceTray(target, opts)` creates a tray on the target element after mount and disposes it exactly
+once on unmount, including under StrictMode. `target` is a ref or an element; pass the element
+itself (for example from a callback ref kept in state) when it mounts later than the component.
+Options are read when the tray is created, except `skin` (compared by value), `dieScale`, and
+`sound`, which update the tray when they change.
 
 ## Multiplayer
 
@@ -237,7 +258,7 @@ The library never touches the network. Send the event over whatever channel you 
 ```ts
 // roller
 const event = createRoll('1d20+4', { rollerId: me.id });
-// redact() nulls every value and drops explosion dice, so a hidden roll reveals nothing
+// redact() nulls every value and drops explosion and reroll dice, so a hidden roll reveals nothing
 tray.playRoll(event);
 channel.send({ kind: 'dice', event: hidden ? redact(event) : event });
 
@@ -245,7 +266,7 @@ channel.send({ kind: 'dice', event: hidden ? redact(event) : event });
 channel.on('dice', ({ event }) => {
   if (!isRollEvent(event) || seen.has(event.id)) return;
   seen.add(event.id);
-  tray.playRoll(event); // redacted: blank labels, total null, explosion dice removed
+  tray.playRoll(event); // redacted: blank labels, total null, wave ≥ 1 dice removed
 });
 ```
 
@@ -298,10 +319,11 @@ hidden bug.
 
 **Notation and wire format**
 
-- **Not supported:** rerolls (`r1`), compounding explosions, success counting (`>=5`), crit ranges,
-  parentheses, `*` and `/`, and dice other than d4, d6, d8, d10, d12, d20, d100 and dF.
-- **Aliases:** `kN`, `dN` and `x` are accepted. An event that uses them is rejected by
-  `isRollEvent` in any build that predates the aliases.
+- **Not supported:** compounding explosions (`!!`), crit ranges, failures (`f`), parentheses, `*`
+  and `/`, and dice other than d4, d6, d8, d10, d12, d20, d100 and dF.
+- **Older receivers:** aliases (`kN`, `dN`, `x`, added in 0.1.0) and the 0.2.0 notation (rerolls,
+  explode thresholds, success counting) are rejected by `isRollEvent` in builds that predate them.
+  Upgrade every client before sending them.
 - **Custom GLSL stays local:** `isRollEvent` rejects inline custom GLSL, so share custom-pattern
   skins by registered name.
 

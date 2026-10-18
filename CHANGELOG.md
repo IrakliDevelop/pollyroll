@@ -4,6 +4,38 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - Unreleased
+
+### Added
+
+- Notation: rerolls (`r`, `r1`, `r<3`) and reroll once (`ro`), explode thresholds (`!>=5`, `x>8`,
+  `!6`), and success counting (`5d10>=7`, `4d6kh3>=5`). Rerolled dice stay on the table, are
+  listed in `dropped`, and their replacements arrive in later waves; `RollEvent` stays v1.
+- `pollyroll/render`: dropped and rerolled dice fade to 35% opacity once a roll settles.
+- `pollyroll/render`: opt-in procedural impact sounds (`TrayOptions.sound`, `DiceTray.setSound`),
+  generated from the dice tracks with WebAudio; no AudioContext is created while the volume is 0.
+- `pollyroll/react`: `dieScale` and `sound` update the tray when they change; `useDiceTray` accepts
+  an element as well as a ref.
+- `typesVersions` so TypeScript `moduleResolution: node` resolves `pollyroll/render` and
+  `pollyroll/react` types.
+- Demo: notation example buttons, a sound toggle, and success counts in the results line.
+
+### Changed
+
+- **Breaking (AST type only):** `DiceTerm.explode` is now `Compare | null` instead of `boolean`;
+  `DiceTerm` gains `reroll` and `success`. `RollEvent` is unchanged.
+- Dice are thrown from a block laid out inside the walls with no two dice overlapping, instead of a
+  tighter grid that started dice inside each other.
+- Resting dice are pushed apart by their real footprints instead of 0.8 × their bounding spheres,
+  so settled dice no longer end up inside each other in crowded mixed rolls.
+- `createRoll` throws `RangeError` for a `rollerId`, `audience`, or inline skin that `isRollEvent`
+  would reject, and `registerSkin` rejects names outside 1–64 characters (now `RangeError`, was
+  `TypeError` for an empty name) and material values outside [0, 1].
+
+### Fixed
+
+- `createRoll` works on non-secure (plain http) pages, where `crypto.randomUUID` is missing.
+
 ## [0.1.0] - Unreleased
 
 First release.
