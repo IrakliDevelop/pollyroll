@@ -15,7 +15,7 @@ import { ATLAS_MAX_LEVEL, buildAtlas, LABEL_SETS } from './atlas';
 import { cameraPosition, fitScale, trayBounds, viewProjection } from './camera';
 import { attrib, createBuffer, createProgram } from './gl';
 import { DIE_VERTEX, dieFragment, LIGHT_DIR, SHADOW_FRAGMENT, SHADOW_VERTEX } from './shaders';
-import { impacts, playImpacts } from './sound';
+import { impacts, noiseBuffer, playImpacts } from './sound';
 
 export interface TrayOptions {
   skin?: SkinRef;
@@ -256,7 +256,7 @@ export function createDiceTray(
   let alpha = 1;
   let aspect = 1;
   let sound = 0;
-  let audio: AudioContext | null = null;
+  let audio: { ctx: AudioContext; noise: AudioBuffer } | null = null;
   let sources: AudioBufferSourceNode[] = [];
   const vp = new Float32Array(16);
   const shadowData = new Float32Array(MAX_BODIES * 4);
@@ -528,6 +528,10 @@ export function createDiceTray(
     fadeTimer = undefined;
     fadeStart = -1;
     alpha = 1;
+    silence();
+  }
+
+  function silence(): void {
     for (const src of sources) src.stop();
     sources = [];
   }
@@ -536,6 +540,8 @@ export function createDiceTray(
   function settle(r: Roll): void {
     r.step = r.plan.totalSteps;
     r.done = true;
+    // Impacts end ≥ 25 steps before settle; a suspended context must not play them on resume.
+    silence();
     render();
     resolvePending();
     if (fadeAfterMs === null) return;
@@ -684,10 +690,14 @@ export function createDiceTray(
         return done;
       }
       loop();
-      if (sound > 0 && 'AudioContext' in globalThis) {
-        audio ??= new AudioContext();
-        if (audio.state === 'suspended') void audio.resume();
-        sources = playImpacts(audio, impacts(plan.bodies), audio.currentTime, sound);
+      if (sound > 0 && typeof AudioContext === 'function') {
+        if (audio === null) {
+          const ctx = new AudioContext();
+          audio = { ctx, noise: noiseBuffer(ctx) };
+        }
+        const { ctx, noise } = audio;
+        if (ctx.state === 'suspended') void ctx.resume();
+        sources = playImpacts(ctx, noise, impacts(plan.bodies), ctx.currentTime, sound);
       }
       return done;
     },
@@ -749,7 +759,7 @@ export function createDiceTray(
       observer = null;
       if (gl !== null) dropGpu(gl, !lost && !gl.isContextLost());
       if (own) canvas.remove();
-      void audio?.close();
+      void audio?.ctx.close();
       audio = null;
     },
   };

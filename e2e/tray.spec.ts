@@ -355,8 +355,6 @@ test.describe('dropped dice', () => {
 });
 
 test.describe('sound', () => {
-  test.skip(({ browserName }) => browserName === 'webkit', 'WebKit cannot launch here');
-
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       const rec: AudioRecord = { constructed: 0, starts: [], stops: 0, gains: [], closes: 0 };
@@ -409,43 +407,61 @@ test.describe('sound', () => {
     await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
   };
 
-  test('schedules impact clacks within the roll, stops them on replay, and closes on dispose', async ({
+  test('schedules impact clacks within the roll, stops them on replace and settle, and closes on dispose', async ({
     page,
   }) => {
     await settled(page, '?sound');
     const first = await page.evaluate(() => ({
       constructed: window.__audio.constructed,
       starts: window.__audio.starts.length,
+      stops: window.__audio.stops,
       gains: window.__audio.gains.map((g) => g.value),
     }));
     expect(first.constructed).toBe(1);
     expect(first.starts).toBeGreaterThanOrEqual(3);
     expect(first.starts).toBeLessThanOrEqual(48);
+    // A suspended context must not play a settled roll's clacks on a later resume.
+    expect(first.stops).toBe(first.starts);
     for (const g of first.gains) {
       expect(g).toBeGreaterThan(0);
       expect(g).toBeLessThanOrEqual(1);
     }
 
     const replay = await page.evaluate(async (event) => {
+      const tray = window.__pollyrollTray;
       const a = window.__audio;
       a.starts = [];
       a.stops = 0;
-      const done = window.__pollyrollTray.playRoll(event);
-      const stoppedOnReplay = a.stops;
+      void tray.playRoll(event);
+      const replaced = a.starts.length;
+      const done = tray.playRoll(event);
+      const stoppedOnReplace = a.stops;
+      const current = a.starts.length - replaced;
       await done;
-      window.__pollyrollTray.dispose();
-      return { stoppedOnReplay, starts: a.starts, stops: a.stops, closes: a.closes };
+      const stoppedAtSettle = a.stops - stoppedOnReplace;
+      tray.dispose();
+      return {
+        replaced,
+        stoppedOnReplace,
+        current,
+        stoppedAtSettle,
+        starts: a.starts,
+        stops: a.stops,
+        closes: a.closes,
+      };
     }, EVENT);
     // The smoke canvas is 800 × 600 CSS pixels at the default dieScale 2.
     const bounds = trayBounds(4 / 3, fitScale(2, slots(EVENT).length, 4 / 3));
     const end = planRoll(EVENT, bounds).totalSteps * DT + 0.1;
-    expect(replay.stoppedOnReplay).toBe(first.starts);
-    expect(replay.starts.length).toBeGreaterThan(0);
+    expect(replay.current).toBeGreaterThan(0);
+    expect(replay.stoppedOnReplace).toBe(replay.replaced);
+    expect(replay.stoppedAtSettle).toBe(replay.current);
     for (const when of replay.starts) {
       expect(when).toBeGreaterThanOrEqual(0);
       expect(when).toBeLessThanOrEqual(end);
     }
-    expect(replay.stops).toBe(first.starts + replay.starts.length);
+    // Settle already stopped every source, so dispose only closes the context.
+    expect(replay.stops).toBe(replay.replaced + replay.current);
     expect(replay.closes).toBe(1);
   });
 

@@ -41,29 +41,29 @@ export function impacts(
   return new Float32Array(keep.flatMap((i) => all[i] ?? []));
 }
 
-const noise = new WeakMap<BaseAudioContext, AudioBuffer>();
+/** 60 ms of mono white noise with an exponential decay baked in. */
+export function noiseBuffer(ctx: AudioContext): AudioBuffer {
+  const rate = ctx.sampleRate;
+  const buffer = ctx.createBuffer(1, Math.round(rate * 0.06), rate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i++) {
+    data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (rate * 0.01));
+  }
+  return buffer;
+}
 
-/** Schedules one band-passed noise burst per impact at `start + step · DT`; returns the sources. */
+/** Schedules one band-passed `noise` burst per impact at `start + step · DT`; returns the sources. */
 export function playImpacts(
   ctx: AudioContext,
+  noise: AudioBuffer,
   list: Float32Array,
   start: number,
   volume: number,
 ): AudioBufferSourceNode[] {
-  let buffer = noise.get(ctx);
-  if (buffer === undefined) {
-    const rate = ctx.sampleRate;
-    buffer = ctx.createBuffer(1, Math.round(rate * 0.06), rate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < data.length; i++) {
-      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (rate * 0.01));
-    }
-    noise.set(ctx, buffer);
-  }
   const sources: AudioBufferSourceNode[] = [];
   for (let i = 0; i < list.length / 2; i++) {
     const src = ctx.createBufferSource();
-    src.buffer = buffer;
+    src.buffer = noise;
     const filter = ctx.createBiquadFilter();
     filter.type = 'bandpass';
     filter.frequency.value = 1800 + ((i * 5) % 8) * 200;
