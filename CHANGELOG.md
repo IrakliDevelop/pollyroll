@@ -28,6 +28,14 @@ All notable changes to this project are documented here. The format follows
   tighter grid that started dice inside each other.
 - Resting dice are pushed apart by their real footprints instead of 0.8 × their bounding spheres,
   so settled dice no longer end up inside each other in crowded mixed rolls.
+- Dice collide with each other by their hull shapes (clipped face contacts) instead of bounding
+  spheres: they touch instead of stopping apart, and can no longer rest on an invisible sphere.
+- The settle-to-flat tail is 0.3 s (was 0.2 s) and collision-aware: dice slide and flatten without
+  sinking, lift over a neighbour (at most 1.5 die units) when needed, then drop.
+- Gentler throws (5–8 units/s, was 9–14), so fewer dice end against a wall.
+- The d4 (circumradius 0.95, was 0.75) and d20 (0.85, was 0.8) are larger and easier to read.
+- The motion of every roll changed (new golden trajectory hash); values are unaffected. Both sides
+  of a shared roll need 0.2.0 to see the same motion.
 - `createRoll` throws `RangeError` for a `rollerId`, `audience`, or inline skin that `isRollEvent`
   would reject, and `registerSkin` rejects names outside 1–64 characters (now `RangeError`, was
   `TypeError` for an empty name) and material values outside [0, 1].
@@ -35,6 +43,17 @@ All notable changes to this project are documented here. The format follows
 ### Fixed
 
 - `createRoll` works on non-secure (plain http) pages, where `crypto.randomUUID` is missing.
+- A user `<canvas>` without a CSS size no longer grows without bound at device pixel ratios above 1.
+- An overlay tray no longer escapes an unpositioned host element.
+- Skin colours in `oklch()`, `lab()`, `color()` and `color-mix()` render correctly instead of black.
+- Labels pick up a web font that finishes loading after the tray was created.
+- A `playRoll` that throws (invalid event) leaves the current roll animating instead of freezing it.
+- `createDiceTray` validates `dieScale`; `fadeAfterMs` above the timer limit or `Infinity` no longer
+  fades immediately; `dispose()` clears a user canvas.
+
+### Performance
+
+- Core entry 3.95 → 3.73 kB after a size bake-off (no behaviour change).
 
 ## [0.1.0] - Unreleased
 

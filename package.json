@@ -1,6 +1,6 @@
 {
   "name": "pollyroll",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Lightweight, zero-dependency 3D dice for the web: WebGL2 renderer, deterministic physics, result-first rolls for multiplayer.",
   "license": "MIT",
   "author": "IrakliDevelop",
