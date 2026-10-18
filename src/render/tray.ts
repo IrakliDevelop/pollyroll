@@ -124,20 +124,22 @@ interface Program {
 let colorCtx: CanvasRenderingContext2D | null | undefined;
 const colors = new Map<string, readonly number[]>();
 
-/** Linear RGB of a CSS color, resolved through a shared 2D context and cached per string. */
+/** Linear RGB of a CSS color, painted into a shared 1×1 2D canvas and cached per string. */
 function linearColor(css: string): readonly number[] {
   let c = colors.get(css);
   if (c === undefined) {
-    colorCtx ??= document.createElement('canvas').getContext('2d');
-    let text = '#000000';
+    colorCtx ??= Object.assign(document.createElement('canvas'), {
+      width: 1,
+      height: 1,
+    }).getContext('2d', { willReadFrequently: true });
+    let srgb: ArrayLike<number> = [0, 0, 0];
     if (colorCtx !== null) {
+      colorCtx.clearRect(0, 0, 1, 1);
       colorCtx.fillStyle = '#000';
       colorCtx.fillStyle = css;
-      text = String(colorCtx.fillStyle);
+      colorCtx.fillRect(0, 0, 1, 1);
+      srgb = colorCtx.getImageData(0, 0, 1, 1).data;
     }
-    const srgb = text.startsWith('#')
-      ? [1, 3, 5].map((i) => parseInt(text.slice(i, i + 2), 16))
-      : (text.match(/[\d.]+/g) ?? []).map(Number);
     c = [0, 1, 2].map((i) => Math.pow((srgb[i] ?? 0) / 255, 2.2));
     colors.set(css, c);
   }
@@ -169,6 +171,13 @@ function skinGpu(skin: Skin): SkinGpu {
       m.sparkle ?? 0,
     ]),
   };
+}
+
+function checkScale(scale: number): number {
+  if (!Number.isFinite(scale) || scale <= 0) {
+    throw new RangeError(`dieScale must be a positive finite number, got ${scale}`);
+  }
+  return scale;
 }
 
 function at(f: Float32Array, i: number): number {
@@ -223,16 +232,20 @@ export function createDiceTray(
   target: HTMLCanvasElement | HTMLElement,
   opts: TrayOptions = {},
 ): DiceTray {
+  let dieScale = checkScale(opts.dieScale ?? 2);
   const own = !(target instanceof HTMLCanvasElement);
   const canvas = own ? document.createElement('canvas') : target;
   if (own) {
+    // The overlay is absolute; a static target would let it escape to a positioned ancestor.
+    if (getComputedStyle(target).position === 'static') target.style.position = 'relative';
     canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none';
     target.appendChild(canvas);
   }
-  let dieScale = opts.dieScale ?? 2;
   const shadows = opts.shadows ?? true;
   const maxDpr = opts.maxDpr ?? 2;
-  const fadeAfterMs = opts.fadeAfterMs ?? null;
+  const fadeMs = opts.fadeAfterMs ?? NaN;
+  // setTimeout fires at once for delays beyond 2^31 − 1 ms.
+  const fadeAfterMs = Number.isFinite(fadeMs) && fadeMs <= 2147483647 ? fadeMs : null;
   const gl = canvas.getContext('webgl2', {
     alpha: true,
     premultipliedAlpha: true,
@@ -268,6 +281,7 @@ export function createDiceTray(
   const sets = new Map<LabelSet, { vao: WebGLVertexArrayObject; buf: WebGLBuffer }>();
   let shadowGpu: { vao: WebGLVertexArrayObject; quad: WebGLBuffer; buf: WebGLBuffer } | null = null;
   let atlasTex: WebGLTexture | null = null;
+  const loading = new Set<string>(); // fonts already checked for a pending load
 
   /** Cached program for `key`; `fragment` is compiled with the die vertex shader on first use. */
   function program(g: WebGL2RenderingContext, key: string, fragment: string): Program {
@@ -362,12 +376,36 @@ export function createDiceTray(
   }
 
   /** Rebuilds the atlas canvas for `font` and releases the texture made from the previous one. */
-  function atlasFor(g: WebGL2RenderingContext, font: string): void {
-    if (font === atlasFont) return;
+  function rebuildAtlas(g: WebGL2RenderingContext, font: string): void {
     atlasFont = font;
     atlas = buildAtlas(font, opts.labels, labelFont);
     if (atlasTex !== null) g.deleteTexture(atlasTex);
     atlasTex = null;
+    awaitFont(g, font);
+  }
+
+  function atlasFor(g: WebGL2RenderingContext, font: string): void {
+    if (font !== atlasFont) rebuildAtlas(g, font);
+  }
+
+  /** Redraws the atlas once a web font that was not ready when it was drawn finishes loading. */
+  function awaitFont(g: WebGL2RenderingContext, font: string): void {
+    if (loading.has(font)) return;
+    loading.add(font);
+    const spec = `bold 64px ${font}`;
+    try {
+      if (document.fonts.check(spec)) return;
+    } catch {
+      return; // no FontFaceSet, or a font string it cannot parse
+    }
+    document.fonts.load(spec).then(
+      () => {
+        if (disposed || atlasFont !== font) return;
+        rebuildAtlas(g, font);
+        if (frame === 0) render();
+      },
+      () => undefined,
+    );
   }
 
   /** True when the skin's program compiles (or is cached); a failing skin is not cached. */
@@ -640,12 +678,10 @@ export function createDiceTray(
     async playRoll(event: RollEvent): Promise<RollSummary> {
       const summary = evaluate(event);
       if (disposed || gl === null) return summary;
-      // Compile first: a skin whose shader fails rejects here and leaves the current roll alone.
+      // Build first: a failing skin shader or invalid event rejects and leaves the current roll alone.
       // While lost the skin compiles on restore, falling back to the tray skin if it fails.
       const skin = skinGpu(resolveSkin(event.skin ?? traySkin));
       if (!lost) program(gl, skin.key, skin.fragment);
-      stop();
-      resolvePending();
       fit();
       const scale = fitScale(dieScale, slots(event).length, aspect);
       const plan = planRoll(event, trayBounds(aspect, scale));
@@ -669,6 +705,8 @@ export function createDiceTray(
         seen[d.group] = k + 1;
         if (summary.groups[d.group]?.dropped.includes(k)) dropped.add(i);
       });
+      stop();
+      resolvePending();
       const r: Roll = {
         plan,
         groups,
@@ -722,10 +760,7 @@ export function createDiceTray(
     },
 
     setDieScale(scale: number): void {
-      if (!Number.isFinite(scale) || scale <= 0) {
-        throw new RangeError(`dieScale must be a positive finite number, got ${scale}`);
-      }
-      dieScale = scale;
+      dieScale = checkScale(scale);
     },
 
     setSound(volume: number): void {
@@ -752,6 +787,7 @@ export function createDiceTray(
       stop();
       roll = null;
       resolvePending();
+      render(); // a user canvas would otherwise keep showing the last frame
       disposed = true;
       canvas.removeEventListener('webglcontextlost', onLost);
       canvas.removeEventListener('webglcontextrestored', onRestored);
@@ -766,6 +802,7 @@ export function createDiceTray(
   tray.setSound(opts.sound ?? 0);
 
   if (gl !== null) {
+    awaitFont(gl, atlasFont);
     canvas.addEventListener('webglcontextlost', onLost);
     canvas.addEventListener('webglcontextrestored', onRestored);
     observer = new ResizeObserver(() => tray.resize());

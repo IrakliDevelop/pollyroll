@@ -19,6 +19,7 @@ declare global {
     __loseContext: WEBGL_lose_context;
     __atlasFonts: string[];
     __audio: AudioRecord;
+    __fontLoad: { spec: string; drawnBefore: number; done: boolean };
   }
 }
 
@@ -42,8 +43,20 @@ const BROKEN: Skin = {
   pattern: { glsl: 'BROKEN' },
 };
 
-/** Shares of #tray pixels that are clearly darker than the white page, and clearly red. */
-async function coverage(page: Page): Promise<{ ink: number; red: number }> {
+const SIX: RollEvent = {
+  ...EVENT,
+  notation: '6d6',
+  dice: [1, 2, 3, 4, 5, 6].map((value) => ({ type: 'd6', value, group: 0, wave: 0 })),
+  modifier: 0,
+};
+
+/**
+ * Shares of #tray pixels that are clearly darker than the white page, and clearly red; mean colour
+ * of the darker ones.
+ */
+async function coverage(
+  page: Page,
+): Promise<{ ink: number; red: number; mean: { r: number; g: number; b: number } }> {
   const png = await page.locator('#tray').screenshot();
   return page.evaluate(async (b64) => {
     const img = new Image();
@@ -58,15 +71,22 @@ async function coverage(page: Page): Promise<{ ink: number; red: number }> {
     const { data } = ctx.getImageData(0, 0, c.width, c.height);
     let ink = 0;
     let red = 0;
+    const sum = { r: 0, g: 0, b: 0 };
     for (let i = 0; i < data.length; i += 4) {
       const r = data[i] ?? 255;
       const g = data[i + 1] ?? 255;
       const b = data[i + 2] ?? 255;
-      if (r + g + b < 3 * 235) ink++;
+      if (r + g + b < 3 * 235) {
+        ink++;
+        sum.r += r;
+        sum.g += g;
+        sum.b += b;
+      }
       if (r > 120 && g < 60 && b < 60) red++;
     }
     const n = data.length / 4;
-    return { ink: ink / n, red: red / n };
+    const k = ink || 1;
+    return { ink: ink / n, red: red / n, mean: { r: sum.r / k, g: sum.g / k, b: sum.b / k } };
   }, png.toString('base64'));
 }
 
@@ -269,6 +289,41 @@ test.describe('tray label font', () => {
     expect(await drawn(page)).toEqual(['sans-serif']);
   });
 
+  test('rebuilds the atlas once a font that was not ready finishes loading', async ({ page }) => {
+    await page.addInitScript(() => {
+      const rec = { spec: '', drawnBefore: -1, done: false };
+      window.__fontLoad = rec;
+      const fonts = document.fonts;
+      const check = fonts.check.bind(fonts);
+      let first = true;
+      fonts.check = (font, text) => {
+        if (!first) return check(font, text);
+        first = false;
+        return false;
+      };
+      fonts.load = (font) =>
+        new Promise((resolve) => {
+          rec.spec = font;
+          setTimeout(() => {
+            rec.drawnBefore = window.__atlasFonts.length;
+            rec.done = true;
+            resolve([]);
+          }, 200);
+        });
+    });
+    await open(page, '?reduced');
+    await page.waitForFunction(() => window.__fontLoad.done);
+    const { spec, before, after } = await page.evaluate(() => {
+      const fonts = window.__atlasFonts;
+      const n = window.__fontLoad.drawnBefore;
+      return { spec: window.__fontLoad.spec, before: fonts.slice(0, n), after: fonts.slice(n) };
+    });
+    expect(spec).toBe('bold 64px sans-serif');
+    expect(before.length).toBeGreaterThan(0);
+    expect(new Set(before)).toEqual(new Set(['sans-serif']));
+    expect(after).toEqual(before);
+  });
+
   test('defaults the atlas font to system-ui', async ({ page }) => {
     await open(page, '?reduced');
     await drawn(page);
@@ -304,6 +359,82 @@ test.describe('tray die scale', () => {
     expect(small).toBeGreaterThan(0.001);
     expect(large / small).toBeGreaterThan(2.5);
   });
+});
+
+test.describe('tray robustness', () => {
+  test.skip(({ browserName }) => browserName !== 'chromium', 'pixel coverage checked in Chromium');
+
+  test('renders a modern CSS color like its hex equivalent', async ({ page }) => {
+    await open(page, '?reduced');
+    const mean = async (color: string): Promise<{ r: number; g: number; b: number }> => {
+      await page.evaluate(
+        async ([event, c]) => {
+          await window.__pollyrollTray.playRoll({
+            ...event,
+            skin: { material: 'plastic', color: c, labelColor: '#000' },
+          });
+        },
+        [EVENT, color] as const,
+      );
+      return (await coverage(page)).mean;
+    };
+    const hex = await mean('#ff7f50');
+    const modern = await mean('color(srgb 1 0.498 0.314)');
+    for (const c of ['r', 'g', 'b'] as const) expect(Math.abs(modern[c] - hex[c])).toBeLessThan(8);
+  });
+
+  test('never fades the dice when fadeAfterMs is Infinity', async ({ page }) => {
+    await open(page, '?reduced');
+    await page.evaluate(async (event) => {
+      window.__pollyrollTray.dispose();
+      const canvas = document.getElementById('tray');
+      if (!(canvas instanceof HTMLCanvasElement)) throw new Error('missing #tray');
+      const tray = window.__pollyrollCreate(canvas, {
+        labelFont: 'sans-serif',
+        reducedMotion: 'always',
+        fadeAfterMs: Infinity,
+      });
+      await tray.playRoll(event);
+      await new Promise((r) => setTimeout(r, 800));
+    }, EVENT);
+    expect((await coverage(page)).ink).toBeGreaterThan(0.005);
+  });
+
+  test('clears a user canvas on dispose', async ({ page }) => {
+    await open(page, '?reduced');
+    expect((await coverage(page)).ink).toBeGreaterThan(0.005);
+    await page.evaluate(() => window.__pollyrollTray.dispose());
+    expect((await coverage(page)).ink).toBe(0);
+  });
+});
+
+test('a failing playRoll leaves the current roll animating and pending', async ({ page }) => {
+  await page.goto('/smoke.html');
+  await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
+  const bad: RollEvent = {
+    ...EVENT,
+    notation: '1d6',
+    dice: [{ type: 'd6', value: 7, group: 0, wave: 0 }],
+  };
+  const result = await page.evaluate(
+    async ([six, invalid]) => {
+      const tray = window.__pollyrollTray;
+      const t0 = performance.now();
+      const first = tray
+        .playRoll(six)
+        .then((s) => ({ total: s.total, ms: performance.now() - t0 }));
+      await new Promise((r) => setTimeout(r, 100));
+      const error = await tray.playRoll(invalid).then(
+        () => 'resolved',
+        (e: unknown) => (e instanceof Error ? e.name : String(e)),
+      );
+      return { error, ...(await first) };
+    },
+    [SIX, bad] as const,
+  );
+  expect(result.error).toBe('RangeError');
+  expect(result.total).toBe(21);
+  expect(result.ms).toBeGreaterThan(300);
 });
 
 test.describe('dropped dice', () => {

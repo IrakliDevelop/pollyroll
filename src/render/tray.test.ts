@@ -48,6 +48,19 @@ describe('createDiceTray without WebGL2', () => {
     expect(host.querySelector('canvas')).toBeNull();
   });
 
+  it('positions a static element target so the overlay stays inside it', () => {
+    noWebGl();
+    const host = document.createElement('div');
+    host.style.position = 'static';
+    const placed = document.createElement('div');
+    placed.style.position = 'absolute';
+    document.body.append(host, placed);
+    createDiceTray(host);
+    createDiceTray(placed);
+    expect(host.style.position).toBe('relative');
+    expect(placed.style.position).toBe('absolute');
+  });
+
   it('never removes a canvas target and resolves rolls after dispose', async () => {
     noWebGl();
     const canvas = document.createElement('canvas');
@@ -65,6 +78,15 @@ describe('createDiceTray without WebGL2', () => {
       expect(() => tray.setDieScale(bad)).toThrow(RangeError);
     }
     expect(() => tray.setDieScale(2)).not.toThrow();
+  });
+
+  it('rejects an invalid dieScale option before adding an overlay', () => {
+    noWebGl();
+    const host = document.createElement('div');
+    for (const bad of [0, -1, NaN, Infinity]) {
+      expect(() => createDiceTray(host, { dieScale: bad })).toThrow(RangeError);
+    }
+    expect(host.querySelector('canvas')).toBeNull();
   });
 });
 
