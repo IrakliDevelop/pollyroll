@@ -1,12 +1,24 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import type { RollEvent } from '../src/core/types';
+import { planRoll, slots } from '../src/physics/plan';
+import { DT } from '../src/physics/world';
+import { fitScale, trayBounds } from '../src/render/camera';
 import type { Skin } from '../src/skins/types';
+
+interface AudioRecord {
+  constructed: number;
+  starts: number[];
+  stops: number;
+  gains: { value: number }[];
+  closes: number;
+}
 
 declare global {
   interface Window {
     __loseContext: WEBGL_lose_context;
     __atlasFonts: string[];
+    __audio: AudioRecord;
   }
 }
 
@@ -339,5 +351,135 @@ test.describe('dropped dice', () => {
     );
     expect(diff.changed).toBeGreaterThan(0.003);
     expect(diff.lighter).toBeGreaterThan(0.95);
+  });
+});
+
+test.describe('sound', () => {
+  test.skip(({ browserName }) => browserName === 'webkit', 'WebKit cannot launch here');
+
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      const rec: AudioRecord = { constructed: 0, starts: [], stops: 0, gains: [], closes: 0 };
+      window.__audio = rec;
+      const node = <T extends object>(props: T): T & { connect: <N>(n: N) => N } => ({
+        ...props,
+        connect: (n) => n,
+      });
+      class StubAudioContext {
+        currentTime = 0;
+        sampleRate = 48000;
+        state = 'suspended';
+        destination = {};
+        constructor() {
+          rec.constructed++;
+        }
+        createBuffer(_channels: number, length: number) {
+          return { getChannelData: () => new Float32Array(length) };
+        }
+        createBufferSource() {
+          return node({
+            buffer: null,
+            start: (when: number) => rec.starts.push(when),
+            stop: () => rec.stops++,
+          });
+        }
+        createBiquadFilter() {
+          return node({ type: '', frequency: { value: 0 }, Q: { value: 0 } });
+        }
+        createGain() {
+          const gain = { value: 0 };
+          rec.gains.push(gain);
+          return node({ gain });
+        }
+        resume() {
+          this.state = 'running';
+          return Promise.resolve();
+        }
+        close() {
+          rec.closes++;
+          return Promise.resolve();
+        }
+      }
+      Object.defineProperty(window, 'AudioContext', { value: StubAudioContext });
+    });
+  });
+
+  const settled = async (page: Page, query: string): Promise<void> => {
+    await page.goto(`/smoke.html${query}`);
+    await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
+  };
+
+  test('schedules impact clacks within the roll, stops them on replay, and closes on dispose', async ({
+    page,
+  }) => {
+    await settled(page, '?sound');
+    const first = await page.evaluate(() => ({
+      constructed: window.__audio.constructed,
+      starts: window.__audio.starts.length,
+      gains: window.__audio.gains.map((g) => g.value),
+    }));
+    expect(first.constructed).toBe(1);
+    expect(first.starts).toBeGreaterThanOrEqual(3);
+    expect(first.starts).toBeLessThanOrEqual(48);
+    for (const g of first.gains) {
+      expect(g).toBeGreaterThan(0);
+      expect(g).toBeLessThanOrEqual(1);
+    }
+
+    const replay = await page.evaluate(async (event) => {
+      const a = window.__audio;
+      a.starts = [];
+      a.stops = 0;
+      const done = window.__pollyrollTray.playRoll(event);
+      const stoppedOnReplay = a.stops;
+      await done;
+      window.__pollyrollTray.dispose();
+      return { stoppedOnReplay, starts: a.starts, stops: a.stops, closes: a.closes };
+    }, EVENT);
+    // The smoke canvas is 800 × 600 CSS pixels at the default dieScale 2.
+    const bounds = trayBounds(4 / 3, fitScale(2, slots(EVENT).length, 4 / 3));
+    const end = planRoll(EVENT, bounds).totalSteps * DT + 0.1;
+    expect(replay.stoppedOnReplay).toBe(first.starts);
+    expect(replay.starts.length).toBeGreaterThan(0);
+    for (const when of replay.starts) {
+      expect(when).toBeGreaterThanOrEqual(0);
+      expect(when).toBeLessThanOrEqual(end);
+    }
+    expect(replay.stops).toBe(first.starts + replay.starts.length);
+    expect(replay.closes).toBe(1);
+  });
+
+  test('setSound clamps to 1, mutes at 0, and rejects non-finite volumes', async ({ page }) => {
+    await settled(page, '?sound');
+    const result = await page.evaluate(async (event) => {
+      const tray = window.__pollyrollTray;
+      const a = window.__audio;
+      const gains = async (): Promise<number[]> => {
+        a.gains = [];
+        await tray.playRoll(event);
+        return a.gains.map((g) => g.value);
+      };
+      const atOne = await gains();
+      tray.setSound(5);
+      const atFive = await gains();
+      tray.setSound(0);
+      const muted = await gains();
+      let error = '';
+      try {
+        tray.setSound(Number.NaN);
+      } catch (e) {
+        error = e instanceof RangeError ? 'RangeError' : String(e);
+      }
+      return { atOne, atFive, muted, error };
+    }, EVENT);
+    expect(result.atOne.length).toBeGreaterThan(0);
+    expect(result.atFive).toEqual(result.atOne);
+    expect(result.muted).toEqual([]);
+    expect(result.error).toBe('RangeError');
+  });
+
+  test('creates no AudioContext by default', async ({ page }) => {
+    await settled(page, '');
+    expect(await page.evaluate(() => window.__audio.constructed)).toBe(0);
   });
 });

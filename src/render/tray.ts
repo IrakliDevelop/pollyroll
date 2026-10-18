@@ -15,6 +15,7 @@ import { ATLAS_MAX_LEVEL, buildAtlas, LABEL_SETS } from './atlas';
 import { cameraPosition, fitScale, trayBounds, viewProjection } from './camera';
 import { attrib, createBuffer, createProgram } from './gl';
 import { DIE_VERTEX, dieFragment, LIGHT_DIR, SHADOW_FRAGMENT, SHADOW_VERTEX } from './shaders';
+import { impacts, playImpacts } from './sound';
 
 export interface TrayOptions {
   skin?: SkinRef;
@@ -31,6 +32,8 @@ export interface TrayOptions {
    * blank faces, 2 = the +1 faces. Missing entries use the default text.
    */
   labels?: Partial<Record<LabelSet, readonly string[]>>;
+  /** Volume 0–1 of procedural impact sounds; default 0 (silent). */
+  sound?: number;
 }
 
 export interface DiceTray {
@@ -39,6 +42,8 @@ export interface DiceTray {
   setSkin(skin: SkinRef): void;
   /** Sets the die size for subsequent rolls; the dice already on screen keep their size. */
   setDieScale(scale: number): void;
+  /** Sets the impact sound volume (clamped to 0–1, 0 mutes) for subsequent rolls. */
+  setSound(volume: number): void;
   clear(): void;
   resize(): void;
   dispose(): void;
@@ -250,6 +255,9 @@ export function createDiceTray(
   let fadeStart = -1;
   let alpha = 1;
   let aspect = 1;
+  let sound = 0;
+  let audio: AudioContext | null = null;
+  let sources: AudioBufferSourceNode[] = [];
   const vp = new Float32Array(16);
   const shadowData = new Float32Array(MAX_BODIES * 4);
   const instances = new Map<LabelSet, Float32Array>(); // reused across rolls, one per label set
@@ -520,6 +528,8 @@ export function createDiceTray(
     fadeTimer = undefined;
     fadeStart = -1;
     alpha = 1;
+    for (const src of sources) src.stop();
+    sources = [];
   }
 
   /** Shows the final frame, resolves the roll, and schedules the fade. */
@@ -669,8 +679,16 @@ export function createDiceTray(
         pending = { resolve, summary };
       });
       // While lost the outcome resolves now; the dice draw on restore if this roll is still current.
-      if (reduced() || lost) settle(r);
-      else loop();
+      if (reduced() || lost) {
+        settle(r);
+        return done;
+      }
+      loop();
+      if (sound > 0 && 'AudioContext' in globalThis) {
+        audio ??= new AudioContext();
+        if (audio.state === 'suspended') void audio.resume();
+        sources = playImpacts(audio, impacts(plan.bodies), audio.currentTime, sound);
+      }
       return done;
     },
 
@@ -700,6 +718,13 @@ export function createDiceTray(
       dieScale = scale;
     },
 
+    setSound(volume: number): void {
+      if (!Number.isFinite(volume)) {
+        throw new RangeError(`sound must be a finite number, got ${volume}`);
+      }
+      sound = Math.min(1, Math.max(0, volume));
+    },
+
     clear(): void {
       stop();
       roll = null;
@@ -724,8 +749,11 @@ export function createDiceTray(
       observer = null;
       if (gl !== null) dropGpu(gl, !lost && !gl.isContextLost());
       if (own) canvas.remove();
+      void audio?.close();
+      audio = null;
     },
   };
+  tray.setSound(opts.sound ?? 0);
 
   if (gl !== null) {
     canvas.addEventListener('webglcontextlost', onLost);

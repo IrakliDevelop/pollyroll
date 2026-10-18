@@ -69,6 +69,7 @@ const tray = createDiceTray(canvas, {
   labelFont: 'sans-serif',
   reducedMotion: reduced ? 'always' : 'never',
   skin: params.get('skin') ?? 'classic',
+  sound: params.has('sound') ? 1 : 0,
   ...(params.get('labels') === 'custom' ? { labels: { d6: ['A', 'B', 'C', 'D', 'E', 'F'] } } : {}),
 });
 window.__pollyrollTray = tray;
