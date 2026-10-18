@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PollyrollSyntaxError } from './notation';
+import { isRollEvent } from './event';
 import { createRoll } from './roll';
 
 const S = '0123456789abcdef0123456789abcdef';
@@ -168,6 +169,53 @@ describe('createRoll', () => {
       skin: 'classic',
       audience: 'dm',
     });
+  });
+
+  it('formats a v4 id from getRandomValues when randomUUID is missing (http pages)', () => {
+    const { randomUUID } = globalThis.crypto;
+    Reflect.deleteProperty(Object.getPrototypeOf(globalThis.crypto), 'randomUUID');
+    try {
+      expect(globalThis.crypto.randomUUID).toBeUndefined();
+      const event = createRoll('d6');
+      expect(event.id).toMatch(UUID_V4);
+      expect(isRollEvent(event)).toBe(true);
+    } finally {
+      Object.defineProperty(Object.getPrototypeOf(globalThis.crypto), 'randomUUID', {
+        value: randomUUID,
+        configurable: true,
+        writable: true,
+      });
+    }
+    expect(createRoll('d6').id).toMatch(UUID_V4);
+  });
+
+  it('rejects options that isRollEvent would reject, naming the field', () => {
+    const plain = { material: 'plastic' as const, color: '#fff', labelColor: '#000' };
+    const bad: [string, Parameters<typeof createRoll>[1]][] = [
+      ['rollerId', { rollerId: '' }],
+      ['rollerId', { rollerId: 'r'.repeat(129) }],
+      ['audience', { audience: Array.from({ length: 101 }, (_, i) => `p${i}`) }],
+      ['audience', { audience: [''] }],
+      ['skin', { skin: 'x'.repeat(65) }],
+      ['skin', { skin: { ...plain, color: 'c'.repeat(65) } }],
+      ['skin', { skin: { ...plain, material: { metalness: 2, roughness: 0.5 } } }],
+    ];
+    for (const [field, opts] of bad) {
+      expect(() => createRoll('d6', opts)).toThrow(RangeError);
+      expect(() => createRoll('d6', opts)).toThrow(field);
+    }
+  });
+
+  it('accepts boundary options and custom GLSL skins', () => {
+    const event = createRoll('d6', {
+      rollerId: 'r'.repeat(128),
+      audience: Array.from({ length: 100 }, (_, i) => `p${i}`),
+      skin: 'x'.repeat(64),
+    });
+    expect(isRollEvent(event)).toBe(true);
+    const glsl = { glsl: 'vec3 pattern(vec3 p, vec3 n, vec3 a, vec3 b) { return a; }' };
+    const skin = { material: 'plastic' as const, color: '#fff', labelColor: '#000', pattern: glsl };
+    expect(createRoll('d6', { skin }).skin).toBe(skin);
   });
 
   it('propagates syntax errors', () => {

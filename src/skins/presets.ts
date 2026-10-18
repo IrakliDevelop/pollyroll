@@ -1,3 +1,4 @@
+import { isMaterial } from '../core/event';
 import type { Skin, SkinRef } from './types';
 
 /** White plastic with black printed labels; the default skin. */
@@ -122,8 +123,10 @@ export function defineSkin(base: SkinRef, overrides: Partial<Skin>): Skin {
   return { ...resolveSkin(base), ...overrides };
 }
 
-/** Adds or replaces the named preset `name`. Throws TypeError for an empty name. */
+/** Adds or replaces the named preset `name`; throws RangeError for values isRollEvent rejects. */
 export function registerSkin(name: string, skin: Skin): void {
-  if (name === '') throw new TypeError('skin name must not be empty');
+  if (name.length < 1 || name.length > 64)
+    throw new RangeError('skin name must be 1-64 characters');
+  if (!isMaterial(skin.material)) throw new RangeError('skin material values must be within 0-1');
   skinRegistry.set(name, skin);
 }

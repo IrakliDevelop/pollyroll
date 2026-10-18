@@ -1,6 +1,7 @@
 import { MAX_WAVE, dieRange, fires } from './dice';
+import { isAudience, isId, isSkin } from './event';
 import { parse } from './notation';
-import { cryptoInt, generateSeed, isSeed } from './rng';
+import { cryptoInt, generateId, generateSeed, isSeed } from './rng';
 import type { CreateRollOptions, DiceTerm, RollEvent, RolledDie } from './types';
 
 export function createRoll(notation: string, opts: CreateRollOptions = {}): RollEvent {
@@ -8,6 +9,12 @@ export function createRoll(notation: string, opts: CreateRollOptions = {}): Roll
   const rng = opts.rng ?? cryptoInt;
   const seed = opts.seed ?? generateSeed();
   if (!isSeed(seed)) throw new TypeError('seed must be 32 lowercase hex characters');
+  const { skin, rollerId, audience } = opts;
+  if (rollerId !== undefined && !isId(rollerId)) throw new RangeError('invalid rollerId');
+  if (audience !== undefined && !isAudience(audience)) throw new RangeError('invalid audience');
+  // Custom GLSL never passes isRollEvent but stays allowed for local rolls.
+  const glsl = typeof skin === 'object' && typeof skin.pattern === 'object';
+  if (skin !== undefined && !glsl && !isSkin(skin)) throw new RangeError('invalid skin');
 
   const terms: DiceTerm[] = [];
   let modifier = 0;
@@ -42,15 +49,15 @@ export function createRoll(notation: string, opts: CreateRollOptions = {}): Roll
 
   const event: RollEvent = {
     v: 1,
-    id: globalThis.crypto.randomUUID(),
+    id: generateId(),
     notation,
     dice,
     modifier,
     seed,
     createdAt: Date.now(),
   };
-  if (opts.skin !== undefined) event.skin = opts.skin;
-  if (opts.rollerId !== undefined) event.rollerId = opts.rollerId;
-  if (opts.audience !== undefined) event.audience = opts.audience;
+  if (skin !== undefined) event.skin = skin;
+  if (rollerId !== undefined) event.rollerId = rollerId;
+  if (audience !== undefined) event.audience = audience;
   return event;
 }

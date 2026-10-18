@@ -24,7 +24,7 @@ const all = (list: unknown[], test: (x: unknown) => boolean): boolean => {
 
 const isColor = (x: unknown): boolean => isStr(x, 0, 64);
 
-const isMaterial = (m: unknown): boolean =>
+export const isMaterial = (m: unknown): boolean =>
   isObj(m)
     ? isUnit(m.metalness) &&
       isUnit(m.roughness) &&
@@ -32,7 +32,7 @@ const isMaterial = (m: unknown): boolean =>
     : oneOf(m, 'plastic metal wood glass stone gem');
 
 /** Skin reference from untrusted input; inline GLSL patterns are rejected. */
-const isSkin = (s: unknown): boolean =>
+export const isSkin = (s: unknown): boolean =>
   isObj(s)
     ? isMaterial(s.material) &&
       (Array.isArray(s.color) ? s.color.length === 2 && all(s.color, isColor) : isColor(s.color)) &&
@@ -42,18 +42,18 @@ const isSkin = (s: unknown): boolean =>
       optional(s.font, (x) => isStr(x, 1, 128))
     : isStr(s, 1, 64);
 
-const isId = (x: unknown): boolean => isStr(x, 1, 128);
+export const isId = (x: unknown): boolean => isStr(x, 1, 128);
 
 const maxWave = (term: DiceTerm): number => {
   if (term.reroll) return term.reroll.once ? 1 : MAX_WAVE;
   return term.explode ? MAX_WAVE : 0;
 };
 
-const isAudience = (a: unknown): boolean =>
+export const isAudience = (a: unknown): boolean =>
   Array.isArray(a) ? a.length <= 100 && all(a, isId) : oneOf(a, 'all dm');
 
 /**
- * Copy of `event` with every value set to null and explosion dice (wave ≥ 1) removed, so the
+ * Copy of `event` with every value set to null and explosion and reroll dice (wave ≥ 1) removed, so the
  * number of dice reveals nothing about the hidden values.
  */
 export function redact(event: RollEvent): RollEvent {

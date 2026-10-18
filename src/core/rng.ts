@@ -30,6 +30,17 @@ export function generateSeed(): string {
   return seed;
 }
 
+/** v4 UUID; randomUUID exists only in secure contexts, getRandomValues everywhere. */
+export function generateId(): string {
+  const { crypto } = globalThis;
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  const hex = Array.from(bytes, (b, i) =>
+    (i === 6 ? (b & 15) | 64 : i === 8 ? (b & 63) | 128 : b).toString(16).padStart(2, '0'),
+  ).join('');
+  return hex.replace(/^(.{8})(.{4})(.{4})(.{4})/, '$1-$2-$3-$4-');
+}
+
 /** True when `value` is a string of exactly 32 lowercase hex characters. */
 export function isSeed(value: unknown): value is string {
   return typeof value === 'string' && SEED_PATTERN.test(value);

@@ -184,7 +184,22 @@ describe('registerSkin', () => {
     expect(resolveSkin('emerald')).toBe(emerald);
   });
 
-  it('throws TypeError for an empty name', () => {
-    expect(() => registerSkin('', classic)).toThrow(TypeError);
+  it('throws RangeError for a name outside 1-64 chars', () => {
+    expect(() => registerSkin('', classic)).toThrow(RangeError);
+    expect(() => registerSkin('a'.repeat(65), classic)).toThrow(RangeError);
+    registerSkin('a'.repeat(64), classic);
+    expect(resolveSkin('a'.repeat(64))).toBe(classic);
+    skinRegistry.delete('a'.repeat(64));
+  });
+
+  it('throws RangeError for material values outside 0-1', () => {
+    const skin = (material: Skin['material']): Skin => ({ ...classic, material });
+    expect(() => registerSkin('test-bad', skin({ metalness: 2, roughness: 0.5 }))).toThrow(
+      RangeError,
+    );
+    expect(() =>
+      registerSkin('test-bad', skin({ metalness: 0, roughness: 0, sparkle: -0.1 })),
+    ).toThrow(RangeError);
+    expect(skinRegistry.has('test-bad')).toBe(false);
   });
 });
