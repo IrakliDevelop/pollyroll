@@ -33,7 +33,7 @@ export function evaluate(event: RollEvent): RollSummary {
         pairs.push([value, i]);
       }
     });
-    if (pairs.length + rerolled.length < dice.length) {
+    if (dice.includes(null)) {
       total = null;
       return { die: term.die, dice, kept: [], dropped: [], subtotal: null };
     }
@@ -41,12 +41,10 @@ export function evaluate(event: RollEvent): RollSummary {
     let drop: [number, number][] = [];
     if (term.keep) {
       const { mode, n } = term.keep;
-      const dir = mode === 'kh' || mode === 'dh' ? -1 : 1;
-      const ranked = pairs.slice().sort(([va, a], [vb, b]) => dir * (va - vb) || a - b);
-      [keep, drop] =
-        mode[0] === 'k'
-          ? [ranked.slice(0, n), ranked.slice(n)]
-          : [ranked.slice(n), ranked.slice(0, n)];
+      const dir = mode[1] === 'h' ? -1 : 1;
+      const rest = pairs.slice().sort(([va, a], [vb, b]) => dir * (va - vb) || a - b);
+      const first = rest.splice(0, n);
+      [keep, drop] = mode[0] === 'k' ? [first, rest] : [rest, first];
     }
     let subtotal = 0;
     for (const [v] of keep) {

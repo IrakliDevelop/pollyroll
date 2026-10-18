@@ -10,12 +10,13 @@ type Obj = Record<string, unknown>;
 const isObj = (x: unknown): x is Obj => typeof x === 'object' && x !== null && !Array.isArray(x);
 const isStr = (x: unknown, min: number, max: number): boolean =>
   typeof x === 'string' && x.length >= min && x.length <= max;
-const isInt = (x: unknown, min: number, max: number): x is number =>
+export const isInt = (x: unknown, min: number, max: number): x is number =>
   typeof x === 'number' && Number.isInteger(x) && x >= min && x <= max;
 const isUnit = (x: unknown): boolean => typeof x === 'number' && x >= 0 && x <= 1;
 const oneOf = (x: unknown, words: string): boolean =>
   typeof x === 'string' && words.split(' ').includes(x);
-const optional = (x: unknown, test: (x: unknown) => boolean): boolean => x === undefined || test(x);
+export const optional = (x: unknown, test: (x: unknown) => boolean): boolean =>
+  x === undefined || test(x);
 /** Like `every`, but visits holes in sparse arrays: the iterator yields them as `undefined`. */
 const all = (list: unknown[], test: (x: unknown) => boolean): boolean => {
   for (const x of list) if (!test(x)) return false;
@@ -63,7 +64,7 @@ export function redact(event: RollEvent): RollEvent {
   if (Array.isArray(audience)) copy.audience = audience.slice();
   if (typeof skin === 'object') {
     const { color } = skin;
-    copy.skin = { ...skin, color: typeof color === 'string' ? color : [color[0], color[1]] };
+    copy.skin = { ...skin, color: typeof color === 'string' ? color : [...color] };
   }
   return copy;
 }
@@ -91,20 +92,13 @@ function check(e: unknown): boolean {
     else modifier += t.sign * t.value;
   }
   const dice = e.dice;
-  if (
-    e.modifier !== modifier ||
-    !Array.isArray(dice) ||
-    dice.length < 1 ||
-    dice.length > MAX_EVENT_DICE
-  ) {
-    return false;
-  }
+  if (e.modifier !== modifier || !Array.isArray(dice) || dice.length > MAX_EVENT_DICE) return false;
 
   // Per group g and wave w at index g * W + w: dice count and dice that explode or reroll.
   const W = MAX_WAVE + 1;
-  const count: number[] = new Array<number>(terms.length * W).fill(0);
-  const fired = count.slice();
-  const hidden = terms.map(() => false);
+  const count: number[] = [];
+  const fired: number[] = [];
+  const hidden: boolean[] = [];
   const get = (list: number[], i: number): number => list[i] ?? 0;
   let lastWave = 0;
   for (const die of dice as unknown[]) {
@@ -114,10 +108,9 @@ function check(e: unknown): boolean {
     const term = terms[group];
     if (!term || term.die !== type || !isInt(wave, lastWave, maxWave(term))) return false;
     lastWave = wave;
-    const [min, max] = dieRange(term.die);
     const k = group * W + wave;
     if (value === null) hidden[group] = true;
-    else if (!isInt(value, min, max)) return false;
+    else if (!isInt(value, ...dieRange(term.die))) return false;
     else if (fires(term, value, wave)) fired[k] = get(fired, k) + 1;
     count[k] = get(count, k) + 1;
   }
@@ -126,8 +119,8 @@ function check(e: unknown): boolean {
     const at = (list: number[], w: number): number => get(list, g * W + w);
     if (at(count, 0) !== term.count) return false;
     for (let w = 1; w <= maxWave(term); w++) {
-      const limit = hidden[g] ? at(count, w - 1) : at(fired, w - 1);
-      if (hidden[g] ? at(count, w) > limit : at(count, w) !== limit) return false;
+      const n = at(count, w);
+      if (hidden[g] ? n > at(count, w - 1) : n !== at(fired, w - 1)) return false;
     }
     return true;
   });

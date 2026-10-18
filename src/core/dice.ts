@@ -9,20 +9,9 @@ export function dieRange(type: DieType): readonly [number, number] {
 
 export const MAX_WAVE = 10;
 
-/** True when `v` satisfies the comparison `c`. */
+/** True when `v` satisfies `c`: the operator holds `<`, `=`, or `>` for `v` below, at, or above `n`. */
 export function matches(c: Compare, v: number): boolean {
-  switch (c.op) {
-    case '=':
-      return v === c.n;
-    case '<':
-      return v < c.n;
-    case '<=':
-      return v <= c.n;
-    case '>':
-      return v > c.n;
-    case '>=':
-      return v >= c.n;
-  }
+  return c.op.includes(v < c.n ? '<' : v > c.n ? '>' : '=');
 }
 
 /** True when a die of `term` showing `v` in `wave` explodes or is rerolled into the next wave. */
