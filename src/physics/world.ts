@@ -51,8 +51,13 @@ export interface World {
 
 const MAX_BODIES = 30;
 const MAX_VERTICES = 20;
+const MAX_FACES = 20;
 const PLANES = 5;
-const MAX_CONTACTS = MAX_BODIES * PLANES * MAX_VERTICES + (MAX_BODIES * (MAX_BODIES - 1)) / 2;
+const PAIR_CONTACTS = MAX_BODIES * 8;
+const PAIR_KEEP = 4;
+const MAX_CLIP = 32;
+const REFERENCE_BIAS = 0.005; // prefer A's face unless B's separates clearly more (frame coherence)
+const MAX_CONTACTS = MAX_BODIES * PLANES * MAX_VERTICES + PAIR_CONTACTS;
 const BAUMGARTE = 0.2;
 const SLOP = 0.005;
 const RESTITUTION_THRESHOLD = 1;
@@ -68,9 +73,9 @@ const C_MASS = 13; // effective masses: normal, tangent 1, tangent 2
 const C_ROWS = 16; // per row (normal, t1, t2): rA×d, IA⁻¹(rA×d), rB×d, IB⁻¹(rB×d)
 const ROW = 12;
 const STRIDE = C_ROWS + 3 * ROW;
-// Warm-start slots: one per (body, plane, vertex), then one per body pair (i, j).
+// Warm-start slots: one per (body, plane, vertex), then PAIR_KEEP per body pair (i, j).
 const PLANE_SLOTS = MAX_BODIES * PLANES * MAX_VERTICES;
-const SLOTS = PLANE_SLOTS + MAX_BODIES * MAX_BODIES;
+const SLOTS = PLANE_SLOTS + MAX_BODIES * MAX_BODIES * PAIR_KEEP;
 
 /** Element i of a preallocated buffer (indexes are in range by construction). */
 function at(a: Float64Array, i: number): number {
@@ -100,6 +105,8 @@ function clampNumber(value: number, min: number, max: number): number {
  * Fixed-step rigid-body world for convex dice of mass 1 in a box tray (floor y = 0 and four walls).
  * Each step is semi-implicit Euler (velocities first, then positions) with contacts solved by
  * warm-started sequential impulses (Catto, "Iterative Dynamics with Temporal Coherence", GDC 2005).
+ * Dice collide by their hulls: face-normal separating axis test, then the incident face clipped
+ * against the reference face (Gregorius, "Robust Contact Creation for Physics Simulations", GDC 2015).
  * All state lives in preallocated Float64Arrays; `step()` allocates nothing.
  */
 export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): World {
@@ -124,7 +131,15 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
   const omega = new Float64Array(MAX_BODIES * 3);
   const rot = new Float64Array(MAX_BODIES * 9); // row-major rotation matrix
   const invI = new Float64Array(MAX_BODIES * 9); // world inverse inertia R·diag·Rᵀ
-  const worldVerts = new Float64Array(MAX_VERTICES * 3);
+  const vertexCount = new Int32Array(MAX_BODIES);
+  const faceCount = new Int32Array(MAX_BODIES);
+  const worldVerts = new Float64Array(MAX_BODIES * MAX_VERTICES * 3); // R·v + p
+  const worldPlanes = new Float64Array(MAX_BODIES * MAX_FACES * 4); // R·n, R·n·p + h
+  const queryFace = new Int32Array(2); // argmax face of the last face query, per side
+  const clipA = new Float64Array(MAX_CLIP * 3); // Sutherland–Hodgman ping-pong polygons
+  const clipB = new Float64Array(MAX_CLIP * 3);
+  const clipDepth = new Float64Array(MAX_CLIP);
+  const clipKept = new Uint8Array(MAX_CLIP);
 
   const contacts = new Float64Array(MAX_CONTACTS * STRIDE);
   const contactA = new Int32Array(MAX_CONTACTS); // -1 for a static plane
@@ -305,8 +320,250 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
     contacts[base + C_TARGET] = bias > bounce ? bias : bounce;
   }
 
-  /** Convex vertex–plane contacts (exact for a hull against a half-space), then bounding-sphere
-   *  pairs i < j. Order: body, plane, vertex; then pairs in (i, j) order. */
+  /** Face query of the face-normal SAT: max over `ref` faces of min over `inc` vertices of n·v − d,
+   *  argmax face (lowest index on ties) into queryFace[side]; returns early once > 0 (separated). */
+  function faceQuery(ref: number, inc: number, side: number): number {
+    const nv = atInt(vertexCount, inc);
+    let best = -Infinity;
+    for (let f = 0; f < atInt(faceCount, ref); f++) {
+      const pl = (ref * MAX_FACES + f) * 4;
+      const nx = at(worldPlanes, pl);
+      const ny = at(worldPlanes, pl + 1);
+      const nz = at(worldPlanes, pl + 2);
+      const d = at(worldPlanes, pl + 3);
+      let min = Infinity;
+      for (let k = 0; k < nv; k++) {
+        const w = (inc * MAX_VERTICES + k) * 3;
+        const sep =
+          nx * at(worldVerts, w) + ny * at(worldVerts, w + 1) + nz * at(worldVerts, w + 2) - d;
+        if (sep < min) min = sep;
+      }
+      if (min > best) {
+        best = min;
+        queryFace[side] = f;
+        if (best > 0) return best;
+      }
+    }
+    return best;
+  }
+
+  /** Contact of pair (a, b) at world point x with normal n from a to b. */
+  function pairContact(
+    a: number,
+    b: number,
+    nx: number,
+    ny: number,
+    nz: number,
+    x: number,
+    y: number,
+    z: number,
+    depth: number,
+    slot: number,
+  ): void {
+    const pa = a * 3;
+    const pb = b * 3;
+    addContact(
+      a,
+      b,
+      nx,
+      ny,
+      nz,
+      x - at(pos, pa),
+      y - at(pos, pa + 1),
+      z - at(pos, pa + 2),
+      x - at(pos, pb),
+      y - at(pos, pb + 1),
+      z - at(pos, pb + 2),
+      depth,
+      slot,
+    );
+  }
+
+  /**
+   * Hull contacts of pair a < b: face-normal SAT (edge–edge axes are not tested, so edge–edge
+   * separations may report a small early contact), then the incident face (most antiparallel to the
+   * reference normal) is clipped against the reference face's side planes (Sutherland–Hodgman).
+   * Clipped points below the reference plane are contacts, reduced to PAIR_KEEP (deepest, then
+   * farthest from those kept); an empty clip falls back to Inc's deepest vertex.
+   */
+  function collidePair(a: number, b: number): void {
+    const sepA = faceQuery(a, b, 0);
+    if (sepA > 0) return;
+    const sepB = faceQuery(b, a, 1);
+    if (sepB > 0) return;
+    const flip = sepB > sepA + REFERENCE_BIAS;
+    const ref = flip ? b : a;
+    const inc = flip ? a : b;
+    const refShape = shapes[ref];
+    const incShape = shapes[inc];
+    if (refShape === undefined || incShape === undefined) return;
+    const refFace = atInt(queryFace, flip ? 1 : 0);
+    const pl = (ref * MAX_FACES + refFace) * 4;
+    const nx = at(worldPlanes, pl);
+    const ny = at(worldPlanes, pl + 1);
+    const nz = at(worldPlanes, pl + 2);
+    const d = at(worldPlanes, pl + 3);
+    const sign = flip ? -1 : 1;
+    const slotBase = PLANE_SLOTS + (a * MAX_BODIES + b) * PAIR_KEEP;
+
+    let incFace = 0;
+    let minDot = Infinity;
+    for (let f = 0; f < atInt(faceCount, inc); f++) {
+      const q = (inc * MAX_FACES + f) * 4;
+      const dn =
+        at(worldPlanes, q) * nx + at(worldPlanes, q + 1) * ny + at(worldPlanes, q + 2) * nz;
+      if (dn < minDot) {
+        minDot = dn;
+        incFace = f;
+      }
+    }
+    let src = clipA;
+    let dst = clipB;
+    const incPoly = incShape.faces[incFace] ?? [];
+    let points = incPoly.length;
+    for (let k = 0; k < points; k++) {
+      const w = (inc * MAX_VERTICES + (incPoly[k] ?? 0)) * 3;
+      src[k * 3] = at(worldVerts, w);
+      src[k * 3 + 1] = at(worldVerts, w + 1);
+      src[k * 3 + 2] = at(worldVerts, w + 2);
+    }
+    const refPoly = refShape.faces[refFace] ?? [];
+    for (let e = 0; e < refPoly.length && points > 0; e++) {
+      const p = (ref * MAX_VERTICES + (refPoly[e] ?? 0)) * 3;
+      const q = (ref * MAX_VERTICES + (refPoly[(e + 1) % refPoly.length] ?? 0)) * 3;
+      const px = at(worldVerts, p);
+      const py = at(worldVerts, p + 1);
+      const pz = at(worldVerts, p + 2);
+      const ex = at(worldVerts, q) - px;
+      const ey = at(worldVerts, q + 1) - py;
+      const ez = at(worldVerts, q + 2) - pz;
+      // (q − p) × n points out of a counter-clockwise face.
+      const sx = ey * nz - ez * ny;
+      const sy = ez * nx - ex * nz;
+      const sz = ex * ny - ey * nx;
+      const limit = sx * px + sy * py + sz * pz;
+      let out = 0;
+      for (let k = 0; k < points; k++) {
+        const c = k * 3;
+        const n = ((k + 1) % points) * 3;
+        const cx = at(src, c);
+        const cy = at(src, c + 1);
+        const cz = at(src, c + 2);
+        const da = sx * cx + sy * cy + sz * cz - limit;
+        const db = sx * at(src, n) + sy * at(src, n + 1) + sz * at(src, n + 2) - limit;
+        if (da <= 0) {
+          dst[out * 3] = cx;
+          dst[out * 3 + 1] = cy;
+          dst[out * 3 + 2] = cz;
+          out++;
+        }
+        if ((da < 0 && db > 0) || (da > 0 && db < 0)) {
+          const t = da / (da - db);
+          dst[out * 3] = cx + (at(src, n) - cx) * t;
+          dst[out * 3 + 1] = cy + (at(src, n + 1) - cy) * t;
+          dst[out * 3 + 2] = cz + (at(src, n + 2) - cz) * t;
+          out++;
+        }
+      }
+      const swap = src;
+      src = dst;
+      dst = swap;
+      points = out;
+    }
+
+    let below = 0;
+    for (let k = 0; k < points; k++) {
+      const x = at(src, k * 3);
+      const y = at(src, k * 3 + 1);
+      const z = at(src, k * 3 + 2);
+      const depth = d - (nx * x + ny * y + nz * z);
+      if (!(depth > 0)) continue;
+      src[below * 3] = x;
+      src[below * 3 + 1] = y;
+      src[below * 3 + 2] = z;
+      clipDepth[below] = depth;
+      below++;
+    }
+
+    if (below === 0) {
+      let deepest = 0;
+      let minAlong = Infinity;
+      for (let k = 0; k < atInt(vertexCount, inc); k++) {
+        const w = (inc * MAX_VERTICES + k) * 3;
+        const along =
+          nx * at(worldVerts, w) + ny * at(worldVerts, w + 1) + nz * at(worldVerts, w + 2);
+        if (along < minAlong) {
+          minAlong = along;
+          deepest = w;
+        }
+      }
+      const depth = -(sepA > sepB ? sepA : sepB);
+      pairContact(
+        a,
+        b,
+        sign * nx,
+        sign * ny,
+        sign * nz,
+        at(worldVerts, deepest),
+        at(worldVerts, deepest + 1),
+        at(worldVerts, deepest + 2),
+        depth,
+        slotBase,
+      );
+      return;
+    }
+
+    for (let k = 0; k < below; k++) clipKept[k] = below > PAIR_KEEP ? 0 : 1;
+    if (below > PAIR_KEEP) {
+      let first = 0;
+      for (let k = 1; k < below; k++) if (at(clipDepth, k) > at(clipDepth, first)) first = k;
+      clipKept[first] = 1;
+      for (let r = 1; r < PAIR_KEEP; r++) {
+        let pick = 0;
+        let pickDistSq = -1;
+        for (let k = 0; k < below; k++) {
+          if (clipKept[k] === 1) continue;
+          let nearSq = Infinity;
+          for (let l = 0; l < below; l++) {
+            if (clipKept[l] !== 1) continue;
+            const dx = at(src, k * 3) - at(src, l * 3);
+            const dy = at(src, k * 3 + 1) - at(src, l * 3 + 1);
+            const dz = at(src, k * 3 + 2) - at(src, l * 3 + 2);
+            const distSq = dx * dx + dy * dy + dz * dz;
+            if (distSq < nearSq) nearSq = distSq;
+          }
+          if (nearSq > pickDistSq) {
+            pickDistSq = nearSq;
+            pick = k;
+          }
+        }
+        clipKept[pick] = 1;
+      }
+    }
+    let rank = 0;
+    for (let k = 0; k < below; k++) {
+      if (clipKept[k] !== 1) continue;
+      pairContact(
+        a,
+        b,
+        sign * nx,
+        sign * ny,
+        sign * nz,
+        at(src, k * 3),
+        at(src, k * 3 + 1),
+        at(src, k * 3 + 2),
+        at(clipDepth, k),
+        slotBase + rank,
+      );
+      rank++;
+    }
+  }
+
+  /**
+   * Convex vertex–plane contacts (exact for a hull against a half-space), then die pairs i < j:
+   * bounding spheres as the broad phase, hull contacts by `collidePair`. Order: body, plane,
+   * vertex; then pairs in (i, j) order, skipping the rest once PAIR_CONTACTS could be exceeded.
+   */
   function collide(): void {
     contactCount = 0;
     for (let i = 0; i < count; i++) {
@@ -318,13 +575,37 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
       const px = at(pos, i * 3);
       const py = at(pos, i * 3 + 1);
       const pz = at(pos, i * 3 + 2);
+      const r00 = at(rot, m);
+      const r01 = at(rot, m + 1);
+      const r02 = at(rot, m + 2);
+      const r10 = at(rot, m + 3);
+      const r11 = at(rot, m + 4);
+      const r12 = at(rot, m + 5);
+      const r20 = at(rot, m + 6);
+      const r21 = at(rot, m + 7);
+      const r22 = at(rot, m + 8);
       for (let k = 0; k < nv; k++) {
         const vx = at(verts, k * 3);
         const vy = at(verts, k * 3 + 1);
         const vz = at(verts, k * 3 + 2);
-        worldVerts[k * 3] = at(rot, m) * vx + at(rot, m + 1) * vy + at(rot, m + 2) * vz;
-        worldVerts[k * 3 + 1] = at(rot, m + 3) * vx + at(rot, m + 4) * vy + at(rot, m + 5) * vz;
-        worldVerts[k * 3 + 2] = at(rot, m + 6) * vx + at(rot, m + 7) * vy + at(rot, m + 8) * vz;
+        const w = (i * MAX_VERTICES + k) * 3;
+        worldVerts[w] = r00 * vx + r01 * vy + r02 * vz + px;
+        worldVerts[w + 1] = r10 * vx + r11 * vy + r12 * vz + py;
+        worldVerts[w + 2] = r20 * vx + r21 * vy + r22 * vz + pz;
+      }
+      const planes = shape.planes;
+      for (let f = 0; f < planes.length / 4; f++) {
+        const nx = at(planes, f * 4);
+        const ny = at(planes, f * 4 + 1);
+        const nz = at(planes, f * 4 + 2);
+        const wx = r00 * nx + r01 * ny + r02 * nz;
+        const wy = r10 * nx + r11 * ny + r12 * nz;
+        const wz = r20 * nx + r21 * ny + r22 * nz;
+        const pl = (i * MAX_FACES + f) * 4;
+        worldPlanes[pl] = wx;
+        worldPlanes[pl + 1] = wy;
+        worldPlanes[pl + 2] = wz;
+        worldPlanes[pl + 3] = wx * px + wy * py + wz * pz + at(planes, f * 4 + 3);
       }
       for (let p = 0; p < PLANES; p++) {
         const nx = at(planeNormal, p * 3);
@@ -332,17 +613,19 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
         const nz = at(planeNormal, p * 3 + 2);
         const offset = at(planeOffset, p);
         for (let k = 0; k < nv; k++) {
-          const rx = at(worldVerts, k * 3);
-          const ry = at(worldVerts, k * 3 + 1);
-          const rz = at(worldVerts, k * 3 + 2);
-          const separation = nx * (px + rx) + ny * (py + ry) + nz * (pz + rz) - offset;
+          const w = (i * MAX_VERTICES + k) * 3;
+          const wx = at(worldVerts, w);
+          const wy = at(worldVerts, w + 1);
+          const wz = at(worldVerts, w + 2);
+          const separation = nx * wx + ny * wy + nz * wz - offset;
           if (separation < 0) {
             const slot = (i * PLANES + p) * MAX_VERTICES + k;
-            addContact(-1, i, nx, ny, nz, 0, 0, 0, rx, ry, rz, -separation, slot);
+            addContact(-1, i, nx, ny, nz, 0, 0, 0, wx - px, wy - py, wz - pz, -separation, slot);
           }
         }
       }
     }
+    const pairStart = contactCount;
     for (let i = 0; i < count; i++) {
       const ri = at(bodyRadius, i);
       for (let j = i + 1; j < count; j++) {
@@ -350,33 +633,10 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
         const dx = at(pos, j * 3) - at(pos, i * 3);
         const dy = at(pos, j * 3 + 1) - at(pos, i * 3 + 1);
         const dz = at(pos, j * 3 + 2) - at(pos, i * 3 + 2);
-        const distSq = dx * dx + dy * dy + dz * dz;
         const reach = ri + rj;
-        if (distSq >= reach * reach) continue;
-        const dist = Math.sqrt(distSq);
-        let nx = 0;
-        let ny = 1;
-        let nz = 0;
-        if (dist >= 1e-9) {
-          nx = dx / dist;
-          ny = dy / dist;
-          nz = dz / dist;
-        }
-        addContact(
-          i,
-          j,
-          nx,
-          ny,
-          nz,
-          nx * ri,
-          ny * ri,
-          nz * ri,
-          -nx * rj,
-          -ny * rj,
-          -nz * rj,
-          reach - dist,
-          PLANE_SLOTS + i * MAX_BODIES + j,
-        );
+        if (dx * dx + dy * dy + dz * dz >= reach * reach) continue;
+        if (contactCount - pairStart > PAIR_CONTACTS - PAIR_KEEP) return;
+        collidePair(i, j);
       }
     }
   }
@@ -525,6 +785,8 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
       shapes.push(body);
       bodyInvInertia.set(body.invInertia, i * 3);
       bodyRadius[i] = body.radius;
+      vertexCount[i] = body.vertices.length / 3;
+      faceCount[i] = body.planes.length / 4;
       pos.set(position, i * 3);
       vel.set(velocity, i * 3);
       omega.set(angularVelocity, i * 3);

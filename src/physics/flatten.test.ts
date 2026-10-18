@@ -61,9 +61,9 @@ describe('flattenTail', () => {
     expect(Math.abs(top[2])).toBeLessThan(1e-6);
     expect(Math.abs((last[1] ?? NaN) - 0.5)).toBeLessThan(1e-3);
     expect([last[0], last[2]]).toEqual([1.5, -2]);
-    // Halfway the tilt about Z halves to 10°, so the die rests at 0.5·(cos10° + sin10°) ≈ 0.5792,
-    // above the linear 0.5704.
-    const mid = frameAt(tail, FLATTEN_STEPS / 2 - 1);
+    // Halfway through the 12-step flatten phase the tilt about Z halves to 10°, so the die rests at
+    // 0.5·(cos10° + sin10°) ≈ 0.5792, above the linear 0.5704.
+    const mid = frameAt(tail, FLATTEN_STEPS / 4 - 1);
     expect(Math.abs((mid[1] ?? NaN) - 0.5792)).toBeLessThan(1e-3);
     expect(quatRotate(quatOf(mid), [0, 1, 0])[1]).toBeCloseTo(Math.cos(half), 3);
     expectAboveFloor('d6', tail);
@@ -91,6 +91,26 @@ describe('flattenTail', () => {
     const tail = flattenTail('d8', new Float64Array([0, -rest.lowY, 0, ...q]), 0, 0);
     expect(tail).not.toBeNull();
     if (tail !== null) expectAboveFloor('d8', tail);
+  });
+
+  it('slides a d6 stacked on another off it before dropping it to the floor', () => {
+    const bottom = new Float64Array([0, 0.5, 0, 0, 0, 0, 1]);
+    const top = new Float64Array([0, 1.5, 0, 0, 0, 0, 1]);
+    const square = footprint('d6', [0, 0, 0, 1]);
+    const xz = new Float64Array([0, 0, 0, 0]);
+    separate(xz, [square, square], { minX: -4, maxX: 4, minZ: -4, maxZ: 4 });
+    const lower = flattenTail('d6', bottom, xz[0] ?? NaN, xz[1] ?? NaN);
+    const upper = flattenTail('d6', top, xz[2] ?? NaN, xz[3] ?? NaN);
+    expect(lower).not.toBeNull();
+    expect(upper).not.toBeNull();
+    if (lower === null || upper === null) return;
+    for (let k = 0; k < FLATTEN_STEPS; k++) {
+      const depth = penetration('d6', frameAt(lower, k), 'd6', frameAt(upper, k));
+      expect(depth, `frame ${k}`).toBeLessThanOrEqual(0.005);
+    }
+    const last = frameAt(upper, FLATTEN_STEPS - 1);
+    expect(last[1]).toBeCloseTo(0.5, 9);
+    expect(penetration('d6', frameAt(lower, FLATTEN_STEPS - 1), 'd6', last)).toBe(0);
   });
 
   it('leaves a die within 0.5° of flat alone', () => {
@@ -165,8 +185,31 @@ describe('simulate ends without overlap', () => {
       wide,
     ],
     ['B', Array<ShapeType>(30).fill('d6'), { minX: -8.25, maxX: 8.25, minZ: -4.75, maxZ: 4.75 }],
-    ['C', Array.from({ length: 24 }, (_, k) => CYCLE[k % 6] ?? 'd6'), wide],
+    [
+      'C',
+      Array.from({ length: 24 }, (_, k) => CYCLE[k % 6] ?? 'd6'),
+      // trayBounds(608 / 360, fitScale(2, 24, 608 / 360)): the auto-fitted tray for 24 dice.
+      { minX: -7.5, maxX: 7.5, minZ: -4.25, maxZ: 4.25 },
+    ],
   ];
+
+  it('9d6 seed 1 lifts die 6, cocked against die 1, over it instead of sliding through', () => {
+    // trayBounds(608 / 360, fitScale(2, 9, 608 / 360)); the plain two-phase tail reaches 0.144.
+    const bounds: TrayBounds = { minX: -4.75, maxX: 4.75, minZ: -2.5, maxZ: 2.5 };
+    const shapes = Array<ShapeType>(9).fill('d6');
+    const seed = (1).toString(16).padStart(32, '0');
+    const result = simulate({ seed, shapes, waves: shapes.map(() => 0), bounds });
+    const n = result.tracks[0]?.frames.length ?? 0;
+    for (let f = n / 7 - FLATTEN_STEPS; f < n / 7; f++) {
+      result.tracks.forEach((a, i) => {
+        result.tracks.forEach((b, j) => {
+          if (j <= i) return;
+          const depth = penetration('d6', frameAt(a.frames, f), 'd6', frameAt(b.frames, f));
+          expect(depth, `frame ${f} dice ${i},${j}`).toBeLessThanOrEqual(0.005);
+        });
+      });
+    }
+  });
 
   it('no two dice interpenetrate at the final frame of crowded rolls', () => {
     for (const [name, shapes, bounds] of cases) {

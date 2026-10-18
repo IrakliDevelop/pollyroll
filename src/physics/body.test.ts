@@ -62,6 +62,56 @@ describe('getBodyShape', () => {
     }
   });
 
+  it('d6 planes are the six axis normals at offset 0.5', () => {
+    const planes = Array.from(getBodyShape('d6').planes);
+    const rows = [];
+    for (let f = 0; f < planes.length; f += 4) rows.push(planes.slice(f, f + 4).join(','));
+    expect(rows.sort()).toEqual(
+      ['-1,0,0,0.5', '0,-1,0,0.5', '0,0,-1,0.5', '0,0,1,0.5', '0,1,0,0.5', '1,0,0,0.5'].sort(),
+    );
+  });
+
+  it('every hull vertex lies inside every face plane and on its own faces', () => {
+    for (const shape of SHAPES) {
+      const poly = getPolyhedron(shape);
+      const { planes } = getBodyShape(shape);
+      expect(planes.length, shape).toBe(poly.faces.length * 4);
+      poly.faces.forEach((face, f) => {
+        const [nx = 0, ny = 0, nz = 0, h = 0] = planes.subarray(f * 4, f * 4 + 4);
+        poly.vertices.forEach((v, k) => {
+          const s = nx * v[0] + ny * v[1] + nz * v[2] - h;
+          expect(s, `${shape} face ${f} vertex ${k}`).toBeLessThanOrEqual(1e-12);
+          if (face.includes(k))
+            expect(Math.abs(s), `${shape} face ${f} own ${k}`).toBeLessThan(1e-12);
+        });
+      });
+    }
+  });
+
+  it('every face edge (p, q) has side normal (q - p) x n pointing away from the face centre', () => {
+    for (const shape of SHAPES) {
+      const { faces, vertices, planes } = getBodyShape(shape);
+      faces.forEach((face, f) => {
+        const n = [planes[f * 4] ?? 0, planes[f * 4 + 1] ?? 0, planes[f * 4 + 2] ?? 0];
+        const point = (i: number): number[] =>
+          [0, 1, 2].map((c) => vertices[(face[i % face.length] ?? 0) * 3 + c] ?? 0);
+        const centre = [0, 1, 2].map(
+          (c) => face.reduce((sum, _, i) => sum + (point(i)[c] ?? 0), 0) / face.length,
+        );
+        face.forEach((_, i) => {
+          const [px = 0, py = 0, pz = 0] = point(i);
+          const [qx = 0, qy = 0, qz = 0] = point(i + 1);
+          const [ex, ey, ez] = [qx - px, qy - py, qz - pz];
+          const [nx = 0, ny = 0, nz = 0] = n;
+          const side = [ey * nz - ez * ny, ez * nx - ex * nz, ex * ny - ey * nx];
+          const toCentre = [(centre[0] ?? 0) - px, (centre[1] ?? 0) - py, (centre[2] ?? 0) - pz];
+          const dot = side.reduce((sum, v, c) => sum + v * (toCentre[c] ?? 0), 0);
+          expect(dot, `${shape} face ${f} edge ${i}`).toBeLessThan(-1e-9);
+        });
+      });
+    }
+  });
+
   it('caches per shape', () => {
     expect(getBodyShape('d8')).toBe(getBodyShape('d8'));
   });

@@ -5,6 +5,7 @@ import {
   FLATTEN_STEPS,
   flatOrientation,
   flattenTail,
+  liftTails,
   footprint,
   separate,
   upReadout,
@@ -51,7 +52,8 @@ const ANGULAR_SQ = SETTLE_ANGULAR * SETTLE_ANGULAR;
  * throw parameter comes from the sfc32 stream of `seed`. Tracks are returned in input order. Resting
  * centres are then pushed apart by the footprints of the flattened dice (see `separate`); when any
  * die rests cocked or moved, every track
- * gains a FLATTEN_STEPS tail (see `flattenTail`); other dice hold.
+ * gains a FLATTEN_STEPS tail (see `flattenTail`, lifted over dice it would hit by `liftTails`);
+ * other dice hold.
  */
 export function simulate(input: SimInput): SimResult {
   const { shapes, waves, bounds } = input;
@@ -143,12 +145,25 @@ export function simulate(input: SimInput): SimResult {
     thrown.map((b, k) => footprint(b.shape, flatOrientation(b.shape, poses[k] ?? []))),
     bounds,
   );
+  const tails = thrown.map((body, k) =>
+    flattenTail(
+      body.shape,
+      poses[k] ?? new Float64Array(FRAME),
+      xz[2 * k] ?? 0,
+      xz[2 * k + 1] ?? 0,
+    ),
+  );
+  liftTails(
+    thrown.map((b) => b.shape),
+    poses,
+    xz,
+    tails,
+  );
   const ends = bodies.map((body) => {
     const k = thrown.indexOf(body);
     const pose = poses[k];
     if (pose === undefined) return { up: 0, tail: null };
-    const tail = flattenTail(body.shape, pose, xz[2 * k] ?? 0, xz[2 * k + 1] ?? 0);
-    return { up: upReadout(body.shape, pose), tail };
+    return { up: upReadout(body.shape, pose), tail: tails[k] ?? null };
   });
   const extra = ends.some((e) => e.tail !== null) ? FLATTEN_STEPS : 0;
   const tracks = bodies.map((body, i): BodyTrack => {

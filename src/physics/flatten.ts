@@ -2,6 +2,7 @@ import { getPolyhedron } from '../geometry/polyhedra';
 import type { ShapeType } from '../geometry/polyhedra';
 import { quatMul, quatRotate } from '../geometry/vec';
 import type { Quat, Vec3 } from '../geometry/vec';
+import { penetrationAt } from './penetration';
 import type { TrayBounds } from './world';
 
 export const FLATTEN_STEPS = 24;
@@ -43,10 +44,11 @@ function span(f: Float64Array, cx: number, cz: number, nx: number, nz: number): 
 }
 
 /** Resting separation by Gauss–Seidel position relaxation: up to PASSES (64) sweeps over pairs
- *  i < j, stopping after a sweep that moves nothing. Each pair is tested on the outward edge normals
- *  of both footprints (separating axis theorem); unless some axis already shows a gap of GAP, both
- *  centres (`xz` interleaved) move apart along the axis of least overlap until GAP separates them,
- *  each clamped so its footprint stays inside `bounds`. */
+ *  i < j, stopping after a sweep that moves no centre by more than 1e-9. Each pair is tested on the
+ *  outward edge normals of both footprints (separating axis theorem); unless some axis already
+ *  shows a gap of GAP, both centres (`xz` interleaved) move apart along the axis of least overlap
+ *  until GAP separates them, each clamped so its footprint stays inside `bounds`; when the clamp
+ *  stops exactly one, the other takes the remaining push (clamped again). */
 export function separate(
   xz: Float64Array,
   footprints: readonly Float64Array[],
@@ -105,13 +107,39 @@ export function separate(
         if (apart) continue;
         const flip = (jx - ix) * bx + (jz - iz) * bz < 0 ? -1 : 1;
         const push = (flip * (best + GAP)) / 2;
-        xz[2 * i] = ix - bx * push;
-        xz[2 * i + 1] = iz - bz * push;
-        xz[2 * j] = jx + bx * push;
-        xz[2 * j + 1] = jz + bz * push;
+        const pix = ix - bx * push;
+        const piz = iz - bz * push;
+        const pjx = jx + bx * push;
+        const pjz = jz + bz * push;
+        xz[2 * i] = pix;
+        xz[2 * i + 1] = piz;
+        xz[2 * j] = pjx;
+        xz[2 * j + 1] = pjz;
         clamp(i);
         clamp(j);
-        moved = true;
+        const iClamped = xz[2 * i] !== pix || xz[2 * i + 1] !== piz;
+        const jClamped = xz[2 * j] !== pjx || xz[2 * j + 1] !== pjz;
+        if (iClamped !== jClamped) {
+          // A wall stopped one die: the free one takes the rest of the push.
+          const [iLo, iHi] = span(fi, xz[2 * i] ?? 0, xz[2 * i + 1] ?? 0, bx, bz);
+          const [jLo, jHi] = span(fj, xz[2 * j] ?? 0, xz[2 * j + 1] ?? 0, bx, bz);
+          const overlap = Math.min(iHi - jLo, jHi - iLo);
+          if (overlap > -GAP) {
+            const rest = flip * (overlap + GAP);
+            const k = iClamped ? j : i;
+            const dir = iClamped ? 1 : -1;
+            xz[2 * k] = (xz[2 * k] ?? 0) + dir * bx * rest;
+            xz[2 * k + 1] = (xz[2 * k + 1] ?? 0) + dir * bz * rest;
+            clamp(k);
+          }
+        }
+        const shift = Math.max(
+          Math.abs((xz[2 * i] ?? 0) - ix),
+          Math.abs((xz[2 * i + 1] ?? 0) - iz),
+          Math.abs((xz[2 * j] ?? 0) - jx),
+          Math.abs((xz[2 * j + 1] ?? 0) - jz),
+        );
+        if (shift > 1e-9) moved = true;
       }
     }
   }
@@ -157,13 +185,18 @@ export function footprint(shape: ShapeType, q: Quat): Float64Array {
   return new Float64Array(hull.flat());
 }
 
-/** Settle-to-flat tail: nlerp by the shortest arc taking the up readout to +Y while x and z move
- *  linearly to (x, z); null if within 0.5° and not moved. */
+/** Two-phase settle tail: slide and flatten above the starting bottom, then drop. Phase 1
+ *  (FLATTEN_STEPS / 2 steps) nlerps by the shortest arc taking the up readout to +Y while x and z
+ *  move linearly to (x, z), keeping the lowest vertex at the starting bottom height (clamped to
+ *  the floor); phase 2 lowers the flat die linearly onto the floor. With `lift`, phase 1 is
+ *  lift–slide: the die first rises unturned to bottom `lift` over RISE_STEPS, then turns and slides
+ *  at that height. null if within 0.5° and not moved. */
 export function flattenTail(
   shape: ShapeType,
   pose: Float64Array,
   x: number,
   z: number,
+  lift?: number,
 ): Float64Array | null {
   const [px = 0, py = 0, pz = 0, qx = 0, qy = 0, qz = 0, qw = 1] = pose;
   const poly = getPolyhedron(shape);
@@ -171,11 +204,16 @@ export function flattenTail(
   if (quatRotate([qx, qy, qz, qw], r)[1] >= COS_HALF_DEGREE && x === px && z === pz) return null;
   const [fx, fy, fz, fw] = flatOrientation(shape, pose);
   const low = lowestY(poly.vertices, fx, fy, fz, fw);
+  const bottom = Math.max(0, py + lowestY(poly.vertices, qx, qy, qz, qw));
+  const clear = lift === undefined ? bottom : Math.max(bottom, lift);
   const sign = qx * fx + qy * fy + qz * fz + qw * fw < 0 ? -1 : 1;
+  const half = FLATTEN_STEPS / 2;
+  const rise = lift === undefined ? 0 : RISE_STEPS;
   const out = new Float64Array(FLATTEN_STEPS * 7);
   for (let k = 1; k <= FLATTEN_STEPS; k++) {
-    const t = k / FLATTEN_STEPS;
+    const t = Math.min(Math.max((k - rise) / (half - rise), 0), 1);
     const s = 1 - t;
+    const up = k >= rise ? 1 : k / rise;
     const cx = s * qx + t * sign * fx;
     const cy = s * qy + t * sign * fy;
     const cz = s * qz + t * sign * fz;
@@ -183,11 +221,10 @@ export function flattenTail(
     const n = Math.sqrt(cx * cx + cy * cy + cz * cz + cw * cw);
     const i = (k - 1) * 7;
     out[i] = s * px + t * x;
-    // Resting height is concave in the tilt, so a linear y alone would sink mid-tail.
-    out[i + 1] = Math.max(
-      s * py - t * low,
-      -lowestY(poly.vertices, cx / n, cy / n, cz / n, cw / n),
-    );
+    out[i + 1] =
+      k <= half
+        ? bottom + (clear - bottom) * up - lowestY(poly.vertices, cx / n, cy / n, cz / n, cw / n)
+        : (1 - (k - half) / half) * clear - low;
     out[i + 2] = s * pz + t * z;
     out[i + 3] = cx / n;
     out[i + 4] = cy / n;
@@ -195,6 +232,70 @@ export function flattenTail(
     out[i + 6] = cw / n;
   }
   return out;
+}
+
+const RISE_STEPS = 4;
+const TAIL_DEPTH = 0.005;
+const CLEARANCE = 0.02;
+const LIFT_PASSES = 4;
+
+/** Collision-aware settle tails: up to LIFT_PASSES sweeps over the tailed dice in index order, each
+ *  checking the die against every other die (its current tail, or its held pose) at every tail frame
+ *  where their bounding spheres meet, by `penetrationAt`; past TAIL_DEPTH the tail is rebuilt as
+ *  lift–slide–drop, clearing by CLEARANCE the highest top the dice it hit reach during their tails
+ *  (clearances only grow). Stops after a sweep that rebuilds nothing. `tails` is updated in place. */
+export function liftTails(
+  shapes: readonly ShapeType[],
+  poses: readonly Float64Array[],
+  xz: Float64Array,
+  tails: (Float64Array | null)[],
+): void {
+  const clearance = new Float64Array(shapes.length).fill(-Infinity);
+  const framesOf = (k: number): Float64Array => tails[k] ?? poses[k] ?? new Float64Array(7);
+  const offset = (k: number, f: number): number => (tails[k] === null ? 0 : f * 7);
+  for (let pass = 0; pass < LIFT_PASSES; pass++) {
+    let rebuilt = false;
+    shapes.forEach((si, i) => {
+      const pose = poses[i];
+      if (tails[i] === null || pose === undefined) return;
+      let top = -Infinity;
+      shapes.forEach((sj, j) => {
+        if (j === i) return;
+        const reach = getPolyhedron(si).radius + getPolyhedron(sj).radius;
+        const a = framesOf(i);
+        const b = framesOf(j);
+        let hit = false;
+        for (let f = 0; f < FLATTEN_STEPS && !hit; f++) {
+          const oa = offset(i, f);
+          const ob = offset(j, f);
+          const dx = (a[oa] ?? 0) - (b[ob] ?? 0);
+          const dy = (a[oa + 1] ?? 0) - (b[ob + 1] ?? 0);
+          const dz = (a[oa + 2] ?? 0) - (b[ob + 2] ?? 0);
+          if (dx * dx + dy * dy + dz * dz >= reach * reach) continue;
+          hit = penetrationAt(si, a, oa, sj, b, ob) > TAIL_DEPTH;
+        }
+        if (!hit) return;
+        const vertices = getPolyhedron(sj).vertices;
+        for (let f = 0; f < FLATTEN_STEPS; f++) {
+          const o = offset(j, f);
+          const high = highestY(
+            vertices,
+            b[o + 3] ?? 0,
+            b[o + 4] ?? 0,
+            b[o + 5] ?? 0,
+            b[o + 6] ?? 1,
+          );
+          top = Math.max(top, (b[o + 1] ?? 0) + high);
+        }
+      });
+      const lift = top + CLEARANCE;
+      if (!(lift > (clearance[i] ?? -Infinity))) return;
+      clearance[i] = lift;
+      tails[i] = flattenTail(si, pose, xz[2 * i] ?? 0, xz[2 * i + 1] ?? 0, lift);
+      rebuilt = true;
+    });
+    if (!rebuilt) return;
+  }
 }
 
 /** Lowest world y of the vertices under unit quaternion (x, y, z, w), via its matrix's second row. */
@@ -205,4 +306,14 @@ function lowestY(vertices: readonly Vec3[], x: number, y: number, z: number, w: 
   let low = Infinity;
   for (const v of vertices) low = Math.min(low, r0 * v[0] + r1 * v[1] + r2 * v[2]);
   return low;
+}
+
+/** Highest world y of the vertices under unit quaternion (x, y, z, w), via its matrix's second row. */
+function highestY(vertices: readonly Vec3[], x: number, y: number, z: number, w: number): number {
+  const r0 = 2 * (x * y + z * w);
+  const r1 = 1 - 2 * (x * x + z * z);
+  const r2 = 2 * (y * z - x * w);
+  let high = -Infinity;
+  for (const v of vertices) high = Math.max(high, r0 * v[0] + r1 * v[1] + r2 * v[2]);
+  return high;
 }

@@ -6,6 +6,8 @@ import type { Vec3 } from '../geometry/vec';
 export interface BodyShape {
   shape: ShapeType;
   vertices: Float64Array; // 3 per hull vertex, body frame (centroid origin)
+  faces: readonly (readonly number[])[]; // vertex indexes, counter-clockwise seen from outside
+  planes: Float64Array; // 4 per face: outward unit normal, offset h = n·v of a face vertex
   radius: number; // bounding-sphere radius = circumradius
   invInertia: Float64Array; // 3: inverse principal moments (body frame diagonal), mass 1
 }
@@ -84,10 +86,15 @@ export function getBodyShape(shape: ShapeType): BodyShape {
     const poly = getPolyhedron(shape);
     const vertices = new Float64Array(poly.vertices.length * 3);
     poly.vertices.forEach((v, i) => vertices.set(v, i * 3));
+    const planes = new Float64Array(poly.faces.length * 4);
+    poly.normals.forEach((n, f) => {
+      const v = poly.vertices[poly.faces[f]?.[0] ?? 0] ?? n;
+      planes.set([n[0], n[1], n[2], dot(n, v)], f * 4);
+    });
     const [ixx = 0, , , , iyy = 0, , , , izz = 0] = inertiaTensor(shape);
     const inverse = (m: number): number => (m > 1e-12 ? 1 / m : 0);
     const invInertia = new Float64Array([inverse(ixx), inverse(iyy), inverse(izz)]);
-    body = { shape, vertices, radius: poly.radius, invInertia };
+    body = { shape, vertices, faces: poly.faces, planes, radius: poly.radius, invInertia };
     cache[shape] = body;
   }
   return body;
