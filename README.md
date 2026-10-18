@@ -290,7 +290,7 @@ hidden bug.
 - **Dice collide by their hulls, with face contacts only.** Die-to-die contacts use the real shapes
   (face-normal separating axis test with clipped face contacts). Edge-to-edge hits get a single
   approximate contact, so a die can glance off at a slightly wrong angle, and an impact can overlap
-  a neighbour by up to about 0.1 die units for one 1/120 s step.
+  a neighbour for one 1/120 s step (usually under 0.1 die units, at most about 0.3).
 - **The final settle is animated, not simulated.** For the last 0.3 s, tilted dice are rolled flat
   and dice that ended too close are slid apart. A die that rests on others first lifts above them
   (at most 1.5 die units) and then drops. In about 1 to 7 of 40 crowded rolls a lifting die still

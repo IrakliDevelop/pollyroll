@@ -96,7 +96,7 @@ interface RollEvent {
 - Totals, kept, and dropped dice are derived by `evaluate(event)` and never sent.
 - Throw parameters (positions, velocities, spins, wave timing) derive only from `seed`.
 - `redact(event)` returns a copy with every `value` set to `null` _(amended)_ and every explosion
-  die (wave ≥ 1) removed, so a hidden roll does not reveal a maximum. Playing a redacted event animates
+  _(amended, 0.2.0: and reroll)_ die (wave ≥ 1) removed, so a hidden roll does not reveal a maximum. Playing a redacted event animates
   dice with blank labels and resolves with `total: null`.
 
 ## 4. Core API (`pollyroll`)
@@ -294,8 +294,10 @@ Chromium uses SwiftShader (`--use-angle=swiftshader --enable-unsafe-swiftshader`
 - Settled dice are flat (0.5° rule, tested over 1,200 single-die and 100 mixed rolls).
 - No settled overlap: exact hull test, 60 seeds × 6 crowded roll types in fitted 608×360 trays,
   0% of rolls end with two dice interpenetrating more than 0.02 die units (0.1.0: 25–33% of mixed
-  d20/d12/d8 rolls). During the roll, penetration above 0.1 lasts at most one 1/120 s step.
-- Size budgets: core ≈ 3.73 kB / 4, render ≈ 24.8 kB / 30, react ≈ 0.50 kB / 1 (min+gzip).
+  d20/d12/d8 rolls). During the roll (before the settle tail), 40 seeds × 4 crowded roll types:
+  penetration never exceeds 0.3 die units and stays above 0.1 for at most one 1/120 s step.
+- Size budgets: core ≈ 3.73 kB / 4, render ≈ 24.9 kB / 30, react ≈ 0.50 kB / 1 (min+gzip).
+- 10-dice pre-simulation bench ≈ 4.8 ms mean (seed 0; 100-seed mean ≈ 4.35 ms; target ≤ 5 ms).
 - 60 fps during animation with 10, 18 and 30 dice at 1× and 4× Chrome CPU throttle on a desktop
   GPU (NVIDIA RTX 4060 Laptop, ANGLE GL; p95 ≤ 17.1 ms).
 - `redact` leaks no values (null values, explosion and reroll dice removed); `isRollEvent` rejects
@@ -320,7 +322,7 @@ The full consumer-facing list is in the README under **Known limits**.
 
 - Use as an installed package inside RollKeeper (Next.js app).
 - Mobile GPUs; WebKit locally (CI covers WebKit determinism).
-- Known small issues: the 10-dice bench is ≈ 5.2 ms (target 5, recorded, not gated); in 1–7 of 40
+- Known small issues: in 1–7 of 40
   crowded rolls a die lifting off a pile clips a neighbour for about 0.1 s during the settle tail;
   about 2 of 1,200 crowded rolls reach the 720-step cap (the tail still settles them flat); the
   pre-simulation runs on the main thread before the first frame (≈ 15 ms for 30 dice on a desktop).

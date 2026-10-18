@@ -47,6 +47,8 @@ All notable changes to this project are documented here. The format follows
 - An overlay tray no longer escapes an unpositioned host element.
 - Skin colours in `oklch()`, `lab()`, `color()` and `color-mix()` render correctly instead of black.
 - Labels pick up a web font that finishes loading after the tray was created.
+- Skin colours no longer depend on canvas readback for hex and `rgb()` colours, so privacy-hardened
+  browsers that block or randomize readback draw them correctly.
 - A `playRoll` that throws (invalid event) leaves the current roll animating instead of freezing it.
 - `createDiceTray` validates `dieScale`; `fadeAfterMs` above the timer limit or `Infinity` no longer
   fades immediately; `dispose()` clears a user canvas.
