@@ -630,6 +630,11 @@ export function createDiceTray(
     if (canvas.width !== w || canvas.height !== h) {
       canvas.width = w;
       canvas.height = h;
+      // CSS size follows the buffer attributes: pin it, or every resize would grow the canvas.
+      if (!own && (canvas.clientWidth !== cw || canvas.clientHeight !== ch)) {
+        canvas.style.width = `${cw}px`;
+        canvas.style.height = `${ch}px`;
+      }
     }
   }
 

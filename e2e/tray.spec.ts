@@ -361,6 +361,56 @@ test.describe('tray die scale', () => {
   });
 });
 
+test.describe('tray canvas sizing at devicePixelRatio 2', () => {
+  test.use({ deviceScaleFactor: 2 });
+
+  /** Opens the smoke page, then disposes its tray and drops its fixed canvas CSS. */
+  async function blank(page: Page): Promise<void> {
+    await page.goto('/smoke.html?reduced');
+    await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
+    await page.evaluate(() => {
+      window.__pollyrollTray.dispose();
+      document.querySelector('style')?.remove();
+    });
+  }
+
+  test('pins the CSS size of a canvas sized by its attributes instead of growing it', async ({
+    page,
+  }) => {
+    await blank(page);
+    const size = await page.evaluate(async () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 300;
+      canvas.height = 150;
+      document.body.append(canvas);
+      window.__pollyrollCreate(canvas);
+      await new Promise((r) => setTimeout(r, 600));
+      return { width: canvas.width, clientWidth: canvas.clientWidth };
+    });
+    expect(size).toEqual({ width: 600, clientWidth: 300 });
+  });
+
+  test('leaves a stylesheet-sized canvas responsive', async ({ page }) => {
+    await blank(page);
+    const size = await page.evaluate(async () => {
+      const style = document.createElement('style');
+      style.textContent = '.fill { width: 100%; }';
+      const box = document.createElement('div');
+      box.style.width = '400px';
+      const canvas = document.createElement('canvas');
+      canvas.className = 'fill';
+      box.append(canvas);
+      document.body.append(style, box);
+      window.__pollyrollCreate(canvas);
+      await new Promise((r) => setTimeout(r, 300));
+      box.style.width = '500px';
+      await new Promise((r) => setTimeout(r, 300));
+      return { width: canvas.width, inline: canvas.style.width };
+    });
+    expect(size).toEqual({ width: 1000, inline: '' });
+  });
+});
+
 test.describe('tray robustness', () => {
   test.skip(({ browserName }) => browserName !== 'chromium', 'pixel coverage checked in Chromium');
 
