@@ -38,6 +38,17 @@ h2 {
   padding: 4px 6px;
 }
 
+#examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+#examples button {
+  font-family: ui-monospace, monospace;
+}
+
 button,
 select {
   padding: 4px 10px;
