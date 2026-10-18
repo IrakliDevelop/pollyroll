@@ -36,6 +36,12 @@ const EVENT: RollEvent = {
   createdAt: 0,
 };
 
+const INVALID: RollEvent = {
+  ...EVENT,
+  notation: '1d6',
+  dice: [{ type: 'd6', value: 7, group: 0, wave: 0 }],
+};
+
 const BROKEN: Skin = {
   material: 'plastic',
   color: '#fff',
@@ -450,6 +456,22 @@ test.describe('tray robustness', () => {
     expect((await coverage(page)).ink).toBeGreaterThan(0.005);
   });
 
+  test('redraws the settled roll when a failing playRoll resized the drawing buffer', async ({
+    page,
+  }) => {
+    await open(page, '?reduced');
+    const error = await page.evaluate(async (invalid) => {
+      // A DPR change resizes the buffer in playRoll without a ResizeObserver callback.
+      Object.defineProperty(window, 'devicePixelRatio', { value: 2, configurable: true });
+      return window.__pollyrollTray.playRoll(invalid).then(
+        () => 'resolved',
+        (e: unknown) => (e instanceof Error ? e.name : String(e)),
+      );
+    }, INVALID);
+    expect(error).toBe('RangeError');
+    expect((await coverage(page)).ink).toBeGreaterThan(0.005);
+  });
+
   test('clears a user canvas on dispose', async ({ page }) => {
     await open(page, '?reduced');
     expect((await coverage(page)).ink).toBeGreaterThan(0.005);
@@ -461,11 +483,6 @@ test.describe('tray robustness', () => {
 test('a failing playRoll leaves the current roll animating and pending', async ({ page }) => {
   await page.goto('/smoke.html');
   await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
-  const bad: RollEvent = {
-    ...EVENT,
-    notation: '1d6',
-    dice: [{ type: 'd6', value: 7, group: 0, wave: 0 }],
-  };
   const result = await page.evaluate(
     async ([six, invalid]) => {
       const tray = window.__pollyrollTray;
@@ -480,7 +497,7 @@ test('a failing playRoll leaves the current roll animating and pending', async (
       );
       return { error, ...(await first) };
     },
-    [SIX, bad] as const,
+    [SIX, INVALID] as const,
   );
   expect(result.error).toBe('RangeError');
   expect(result.total).toBe(21);

@@ -689,7 +689,14 @@ export function createDiceTray(
       if (!lost) program(gl, skin.key, skin.fragment);
       fit();
       const scale = fitScale(dieScale, slots(event).length, aspect);
-      const plan = planRoll(event, trayBounds(aspect, scale));
+      let plan: RollPlan;
+      try {
+        plan = planRoll(event, trayBounds(aspect, scale));
+      } catch (e) {
+        // fit() may have resized, and so cleared, the buffer of a settled roll.
+        if (frame === 0) render();
+        throw e;
+      }
       const groups: Group[] = [];
       LABEL_SETS.forEach((set, row) => {
         const bodies = plan.bodies.filter((b) => b.labelSet === set);
