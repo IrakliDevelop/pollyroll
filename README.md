@@ -7,8 +7,8 @@ deterministic physics engine, and rolls are result-first, so it works for multip
   and a symmetry remap turns each settled die so its top face shows the value already chosen.
 - **Shared rolls.** A roll is a plain JSON `RollEvent`. Every client that plays the same event shows
   the same values. Clients whose trays have the same shape also see the same motion.
-- **Small.** About 3 kB for the DOM-free core, about 18.4 kB for the renderer, physics, geometry, and
-  shaders, and under 1 kB for the React binding (min+gzip). It ships no asset files: geometry,
+- **Small.** About 3.7 kB for the DOM-free core, about 25 kB for the renderer, physics, geometry,
+  and shaders, and about 0.5 kB for the React binding (min+gzip). It ships no asset files: geometry,
   labels, patterns, and lighting are all generated in code.
 
 ## Install
@@ -40,8 +40,8 @@ console.log(summary.total);
 ```
 
 If the target is an `HTMLElement`, the tray adds a transparent canvas inside it. The canvas is
-absolutely positioned and ignores pointer events, so give the element `position: relative` (or any
-positioning). You can also pass an existing `<canvas>`.
+absolutely positioned and ignores pointer events; an element with `position: static` gets
+`position: relative` so the canvas stays inside it. You can also pass an existing `<canvas>`.
 
 ## Core (`pollyroll`)
 
@@ -287,34 +287,39 @@ hidden bug.
 
 **Physics and layout**
 
-- **Dice collide as spheres with each other.** Contact with the floor and walls uses the exact
-  shape, but die-to-die contact uses bounding spheres. Dice therefore stop a little apart and never
-  stack or lean on each other's faces.
+- **Dice collide by their hulls, with face contacts only.** Die-to-die contacts use the real shapes
+  (face-normal separating axis test with clipped face contacts). Edge-to-edge hits get a single
+  approximate contact, so a die can glance off at a slightly wrong angle, and an impact can overlap
+  a neighbour by up to about 0.1 die units for one 1/120 s step.
+- **The final settle is animated, not simulated.** For the last 0.3 s, tilted dice are rolled flat
+  and dice that ended too close are slid apart. A die that rests on others first lifts above them
+  (at most 1.5 die units) and then drops. In about 1 to 7 of 40 crowded rolls a lifting die still
+  clips a neighbour for about 0.1 s.
 - **Large rolls get smaller dice.** Auto-fit shrinks a roll until its dice fit the tray (5 square
   die-units per die). With many dice in a small canvas the dice get small, down to a floor of
   0.5 × `dieScale`. Dice beyond 30 animated bodies are counted in the summary but not shown; a d100
   counts as two bodies.
-- **30-dice rolls can overlap.** About 3–5 % of 30-dice rolls end with two dice touching. Rolls of
-  4, 9 and 20 dice showed no overlap in 150 test rolls each.
-- **The final settle skips collision checks.** For the last 0.2 s, a die that rested tilted or too
-  close to a neighbour is moved flat and apart without collision checks. In crowded rolls it can
-  briefly pass through a neighbour.
+- **Crowded rolls can take longer.** About 2 in 1,200 crowded rolls (20–30 dice) jitter in a pile
+  until the 6 s step cap before the settle tail flattens them.
 - **Motion matches only between same-shape trays.** Two clients see identical motion when their
   trays have the same aspect ratio and the same `dieScale`. The values always match, because the
   remap runs on each client.
-- **Explosion waves add time.** Each wave is thrown after the previous one settles, so long
-  explosion chains (up to 10 waves) take several seconds.
+- **Explosion and reroll waves add time.** Each wave is thrown after the previous one settles, so
+  long chains (up to 10 waves) take several seconds.
+- **The simulation runs before the first frame.** `playRoll` simulates the whole roll on the main
+  thread first: about 5 ms for 10 dice and 15 ms for 30 dice on a desktop CPU, several times that on
+  slow phones.
 
 **Rendering**
 
 - **Camera:** the camera looks straight down (orthographic). There is no option for an angled view,
   and dice in the air do not grow as they approach; the shadow offset carries the height cue.
-- **Small labels:** d4 and d20 labels are the smallest because of their face shapes. Raise
-  `dieScale` if they are hard to read.
+- **Small labels:** d4 corner labels are still the smallest text. Raise `dieScale` if they are hard
+  to read.
 - **No images:** there are no image textures, and lighting is analytic.
 - **Shadows:** these are soft blobs, not shadow maps.
-- **What has been tested:** screenshot baselines come from SwiftShader in headless Chromium. Real
-  GPUs, mobile devices, and the 60 fps target under CPU throttling have not been measured yet.
+- **What has been tested:** screenshot baselines come from SwiftShader in headless Chromium. 60 fps
+  was measured on a desktop GPU (also under 4× CPU throttling); mobile GPUs have not been measured.
 - **WebGL2 is required:** without it, `playRoll` resolves with the summary and draws nothing.
 
 **Notation and wire format**
