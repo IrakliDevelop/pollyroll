@@ -3,7 +3,8 @@ import { getPolyhedron } from '../geometry/polyhedra';
 import type { ShapeType } from '../geometry/polyhedra';
 import { quatMul, quatRotate } from '../geometry/vec';
 import type { Quat } from '../geometry/vec';
-import { FLATTEN_STEPS, flattenTail, separate } from './flatten';
+import { FLATTEN_STEPS, flattenTail, footprint, separate } from './flatten';
+import { penetration } from './penetration';
 import { simulate } from './sim';
 import type { SimResult } from './sim';
 import type { TrayBounds } from './world';
@@ -100,19 +101,19 @@ describe('flattenTail', () => {
 });
 
 describe('separate', () => {
-  // d6 circumradius √3/2, so two d6 must end 0.8·√3 ≈ 1.3856 apart.
-  const GAP = 0.8 * Math.sqrt(3);
-  const R = Math.sqrt(3) / 2;
+  // Flat identity d6 footprints are squares ±0.5; pairs end GAP 0.05 apart, so centres 1.05.
+  const square = footprint('d6', [0, 0, 0, 1]);
   const bounds: TrayBounds = { minX: -3, maxX: 3, minZ: -2, maxZ: 2 };
 
   it('moves two overlapping flat d6 apart and tails them to the new centres', () => {
     const a = new Float64Array([0, 0.5, 0, 0, 0, 0, 1]);
-    const b = new Float64Array([0.4, 0.5, 0, 0, 0, 0, 1]);
-    const xz = new Float64Array([0, 0, 0.4, 0]);
-    separate(xz, [R, R], bounds);
-    // Each moves (1.3856 − 0.4) / 2 ≈ 0.4928 along x.
-    expect(xz[0]).toBeCloseTo(-0.4928, 4);
-    expect(xz[2]).toBeCloseTo(0.8928, 4);
+    const b = new Float64Array([0.6, 0.5, 0, 0, 0, 0, 1]);
+    const xz = new Float64Array([0, 0, 0.6, 0]);
+    separate(xz, [square, square], bounds);
+    // Overlap on x is 1 − 0.6 = 0.4; each moves (0.4 + 0.05) / 2 = 0.225.
+    expect(xz[0]).toBeCloseTo(-0.225, 12);
+    expect(xz[2]).toBeCloseTo(0.825, 12);
+    expect([xz[1], xz[3]]).toEqual([0, 0]);
     for (const [pose, k] of [
       [a, 0],
       [b, 2],
@@ -127,26 +128,63 @@ describe('separate', () => {
     }
   });
 
-  it('pushes coincident centres apart along +x', () => {
-    const xz = new Float64Array([1, -1, 1, -1]);
-    separate(xz, [R, R], bounds);
-    expect([xz[1], xz[3]]).toEqual([-1, -1]);
-    expect((xz[2] ?? NaN) - (xz[0] ?? NaN)).toBeCloseTo(GAP, 9);
+  it('pushes coincident centres 1.05 apart along one axis', () => {
+    const xz = new Float64Array([1, 0, 1, 0]);
+    separate(xz, [square, square], bounds);
+    const dx = Math.abs((xz[2] ?? NaN) - (xz[0] ?? NaN));
+    const dz = Math.abs((xz[3] ?? NaN) - (xz[1] ?? NaN));
+    expect(Math.min(dx, dz)).toBe(0);
+    expect(Math.max(dx, dz)).toBeCloseTo(1.05, 9);
   });
 
-  it('keeps moved centres inside the walls inset by 0.8·R', () => {
-    // Against the +x wall the right die is clamped to 3 − 0.6928; each pass halves the left gap.
+  it('keeps moved footprints inside the walls', () => {
+    // Against the +x wall the right die stops at 3 − 0.5; each pass halves the remaining overlap.
     const xz = new Float64Array([2, 0, 2.2, 0]);
-    separate(xz, [R, R], bounds);
-    expect(xz[2]).toBeCloseTo(3 - 0.8 * R, 9);
-    expect((xz[2] ?? NaN) - (xz[0] ?? NaN)).toBeGreaterThan(GAP - 0.01);
+    separate(xz, [square, square], bounds);
+    expect(xz[2]).toBe(2.5);
+    expect((xz[2] ?? NaN) - (xz[0] ?? NaN)).toBeGreaterThanOrEqual(1.05 - 0.01);
   });
 
-  it('leaves dice already far enough apart alone', () => {
-    const xz = new Float64Array([-1, 0, 1, 0]);
-    separate(xz, [R, R], bounds);
-    expect(Array.from(xz)).toEqual([-1, 0, 1, 0]);
+  it('leaves dice already 1.1 apart alone', () => {
+    const xz = new Float64Array([0, 0, 1.1, 0]);
+    separate(xz, [square, square], bounds);
+    expect(Array.from(xz)).toEqual([0, 0, 1.1, 0]);
   });
+});
+
+describe('simulate ends without overlap', () => {
+  const wide: TrayBounds = { minX: -6.5, maxX: 6.5, minZ: -3.5, maxZ: 3.5 };
+  const cases: [string, ShapeType[], TrayBounds][] = [
+    [
+      'A',
+      [
+        ...Array<ShapeType>(6).fill('d20'),
+        ...Array<ShapeType>(6).fill('d12'),
+        ...Array<ShapeType>(6).fill('d8'),
+      ],
+      wide,
+    ],
+    ['B', Array<ShapeType>(30).fill('d6'), { minX: -8.25, maxX: 8.25, minZ: -4.75, maxZ: 4.75 }],
+    ['C', Array.from({ length: 24 }, (_, k) => CYCLE[k % 6] ?? 'd6'), wide],
+  ];
+
+  it('no two dice interpenetrate at the final frame of crowded rolls', () => {
+    for (const [name, shapes, bounds] of cases) {
+      for (let i = 0; i < 30; i++) {
+        const seed = i.toString(16).padStart(32, '0');
+        const result = simulate({ seed, shapes, waves: shapes.map(() => 0), bounds });
+        const last = result.tracks.map((t) => frameAt(t.frames, t.frames.length / 7 - 1));
+        result.tracks.forEach((a, j) => {
+          for (let k = j + 1; k < result.tracks.length; k++) {
+            const b = result.tracks[k];
+            if (b === undefined) continue;
+            const depth = penetration(a.shape, last[j] ?? [], b.shape, last[k] ?? []);
+            expect(depth, `case ${name} seed ${i} dice ${j},${k}`).toBeLessThanOrEqual(0.005);
+          }
+        });
+      }
+    }
+  }, 300_000);
 });
 
 describe('simulate ends flat', () => {

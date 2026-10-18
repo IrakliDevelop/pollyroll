@@ -8,8 +8,8 @@ export const FLATTEN_STEPS = 24;
 const COS_HALF_DEGREE = 0.9999619230641713;
 
 /** Readout index whose world direction R·r has the largest y; ties go to the lowest index. */
-export function upReadout(shape: ShapeType, pose: Float64Array): number {
-  const [, , , x = 0, y = 0, z = 0, w = 1] = pose;
+export function upReadout(shape: ShapeType, pose: ArrayLike<number>): number {
+  const [x, y, z, w] = [pose[3] ?? 0, pose[4] ?? 0, pose[5] ?? 0, pose[6] ?? 1];
   // Second row of the rotation matrix of q.
   const r0 = 2 * (x * y + z * w);
   const r1 = 1 - 2 * (x * x + z * z);
@@ -26,38 +26,135 @@ export function upReadout(shape: ShapeType, pose: Float64Array): number {
   return best;
 }
 
-const SPACING = 0.8;
-const PASSES = 8;
+const GAP = 0.05;
+const PASSES = 64;
 
-/** Resting separation by Gauss–Seidel position relaxation: PASSES sweeps over pairs i < j push the
- *  horizontal centres (`xz` interleaved) to SPACING·(Ri + Rj) apart, clamping each moved centre
- *  into `bounds` inset by SPACING·R. Coincident centres separate along +x. */
-export function separate(xz: Float64Array, radii: readonly number[], bounds: TrayBounds): void {
+/** Interval of footprint `f` centred at (cx, cz) projected onto (nx, nz). */
+function span(f: Float64Array, cx: number, cz: number, nx: number, nz: number): [number, number] {
+  const c = cx * nx + cz * nz;
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let k = 0; k < f.length; k += 2) {
+    const d = c + (f[k] ?? 0) * nx + (f[k + 1] ?? 0) * nz;
+    lo = Math.min(lo, d);
+    hi = Math.max(hi, d);
+  }
+  return [lo, hi];
+}
+
+/** Resting separation by Gauss–Seidel position relaxation: up to PASSES (64) sweeps over pairs
+ *  i < j, stopping after a sweep that moves nothing. Each pair is tested on the outward edge normals
+ *  of both footprints (separating axis theorem); unless some axis already shows a gap of GAP, both
+ *  centres (`xz` interleaved) move apart along the axis of least overlap until GAP separates them,
+ *  each clamped so its footprint stays inside `bounds`. */
+export function separate(
+  xz: Float64Array,
+  footprints: readonly Float64Array[],
+  bounds: TrayBounds,
+): void {
   const clamp = (k: number): void => {
-    const m = SPACING * (radii[k] ?? 0);
-    xz[2 * k] = Math.min(Math.max(xz[2 * k] ?? 0, bounds.minX + m), bounds.maxX - m);
-    xz[2 * k + 1] = Math.min(Math.max(xz[2 * k + 1] ?? 0, bounds.minZ + m), bounds.maxZ - m);
+    const f = footprints[k] ?? new Float64Array(0);
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let z0 = Infinity;
+    let z1 = -Infinity;
+    for (let m = 0; m < f.length; m += 2) {
+      x0 = Math.min(x0, f[m] ?? 0);
+      x1 = Math.max(x1, f[m] ?? 0);
+      z0 = Math.min(z0, f[m + 1] ?? 0);
+      z1 = Math.max(z1, f[m + 1] ?? 0);
+    }
+    const into = (v: number, lo: number, hi: number): number =>
+      lo > hi ? (lo + hi) / 2 : Math.min(Math.max(v, lo), hi);
+    xz[2 * k] = into(xz[2 * k] ?? 0, bounds.minX - x0, bounds.maxX - x1);
+    xz[2 * k + 1] = into(xz[2 * k + 1] ?? 0, bounds.minZ - z0, bounds.maxZ - z1);
   };
-  for (let pass = 0; pass < PASSES; pass++) {
-    for (let i = 0; i < radii.length; i++) {
-      for (let j = i + 1; j < radii.length; j++) {
-        const dx = (xz[2 * j] ?? 0) - (xz[2 * i] ?? 0);
-        const dz = (xz[2 * j + 1] ?? 0) - (xz[2 * i + 1] ?? 0);
-        const want = SPACING * ((radii[i] ?? 0) + (radii[j] ?? 0));
-        const d = Math.sqrt(dx * dx + dz * dz);
-        if (d >= want) continue;
-        const nx = d < 1e-9 ? 1 : dx / d;
-        const nz = d < 1e-9 ? 0 : dz / d;
-        const push = (want - d) / 2;
-        xz[2 * i] = (xz[2 * i] ?? 0) - nx * push;
-        xz[2 * i + 1] = (xz[2 * i + 1] ?? 0) - nz * push;
-        xz[2 * j] = (xz[2 * j] ?? 0) + nx * push;
-        xz[2 * j + 1] = (xz[2 * j + 1] ?? 0) + nz * push;
+  let moved = true;
+  for (let pass = 0; pass < PASSES && moved; pass++) {
+    moved = false;
+    for (let i = 0; i < footprints.length; i++) {
+      for (let j = i + 1; j < footprints.length; j++) {
+        const fi = footprints[i] ?? new Float64Array(0);
+        const fj = footprints[j] ?? new Float64Array(0);
+        const ix = xz[2 * i] ?? 0;
+        const iz = xz[2 * i + 1] ?? 0;
+        const jx = xz[2 * j] ?? 0;
+        const jz = xz[2 * j + 1] ?? 0;
+        let best = Infinity;
+        let bx = 0;
+        let bz = 0;
+        let apart = false;
+        for (const f of [fi, fj]) {
+          for (let k = 0; k < f.length && !apart; k += 2) {
+            const ex = (f[(k + 2) % f.length] ?? 0) - (f[k] ?? 0);
+            const ez = (f[(k + 3) % f.length] ?? 0) - (f[k + 1] ?? 0);
+            const len = Math.sqrt(ex * ex + ez * ez);
+            const nx = ez / len;
+            const nz = -ex / len;
+            const [iLo, iHi] = span(fi, ix, iz, nx, nz);
+            const [jLo, jHi] = span(fj, jx, jz, nx, nz);
+            const overlap = Math.min(iHi - jLo, jHi - iLo);
+            if (overlap <= -GAP) apart = true;
+            else if (overlap < best) {
+              best = overlap;
+              bx = nx;
+              bz = nz;
+            }
+          }
+        }
+        if (apart) continue;
+        const flip = (jx - ix) * bx + (jz - iz) * bz < 0 ? -1 : 1;
+        const push = (flip * (best + GAP)) / 2;
+        xz[2 * i] = ix - bx * push;
+        xz[2 * i + 1] = iz - bz * push;
+        xz[2 * j] = jx + bx * push;
+        xz[2 * j + 1] = jz + bz * push;
         clamp(i);
         clamp(j);
+        moved = true;
       }
     }
   }
+}
+
+/** Orientation of `pose` (frame layout) pre-multiplied by the shortest arc taking its up readout
+ *  to +Y. */
+export function flatOrientation(shape: ShapeType, pose: ArrayLike<number>): Quat {
+  const q: Quat = [pose[3] ?? 0, pose[4] ?? 0, pose[5] ?? 0, pose[6] ?? 1];
+  const r = getPolyhedron(shape).readouts[upReadout(shape, pose)] ?? [0, 1, 0];
+  const [ux, uy, uz] = quatRotate(q, r);
+  // Shortest arc u → +Y: (u × Y, 1 + u·Y) normalized; uy > 0 for the top readout, so w > 1.
+  const aw = 1 + uy;
+  const an = Math.sqrt(uz * uz + ux * ux + aw * aw);
+  return quatMul([-uz / an, 0, ux / an, aw / an], q);
+}
+
+/** Horizontal convex hull of the hull vertices rotated by q, relative to the centre, as
+ *  interleaved x, z in counter-clockwise order (Andrew's monotone chain, collinear points dropped). */
+export function footprint(shape: ShapeType, q: Quat): Float64Array {
+  const points = getPolyhedron(shape).vertices.map((v) => {
+    const [x, , z] = quatRotate(q, v);
+    return [x, z] as const;
+  });
+  points.sort((a, b) => (a[0] !== b[0] ? a[0] - b[0] : a[1] - b[1]));
+  type P = readonly [number, number];
+  const turn = (o: P, a: P, b: P): number =>
+    (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const chain = (list: readonly P[]): P[] => {
+    const out: P[] = [];
+    for (const p of list) {
+      while (
+        out.length >= 2 &&
+        turn(out[out.length - 2] ?? p, out[out.length - 1] ?? p, p) <= 1e-12
+      )
+        out.pop();
+      out.push(p);
+    }
+    out.pop();
+    return out;
+  };
+  const hull = [...chain(points), ...chain([...points].reverse())];
+  return new Float64Array(hull.flat());
 }
 
 /** Settle-to-flat tail: nlerp by the shortest arc taking the up readout to +Y while x and z move
@@ -69,15 +166,10 @@ export function flattenTail(
   z: number,
 ): Float64Array | null {
   const [px = 0, py = 0, pz = 0, qx = 0, qy = 0, qz = 0, qw = 1] = pose;
-  const q: Quat = [qx, qy, qz, qw];
   const poly = getPolyhedron(shape);
   const r = poly.readouts[upReadout(shape, pose)] ?? [0, 1, 0];
-  const [ux, uy, uz] = quatRotate(q, r);
-  if (uy >= COS_HALF_DEGREE && x === px && z === pz) return null;
-  // Shortest arc u → +Y: (u × Y, 1 + u·Y) normalized; uy > 0 for the top readout, so w > 1.
-  const aw = 1 + uy;
-  const an = Math.sqrt(uz * uz + ux * ux + aw * aw);
-  const [fx, fy, fz, fw] = quatMul([-uz / an, 0, ux / an, aw / an], q);
+  if (quatRotate([qx, qy, qz, qw], r)[1] >= COS_HALF_DEGREE && x === px && z === pz) return null;
+  const [fx, fy, fz, fw] = flatOrientation(shape, pose);
   const low = lowestY(poly.vertices, fx, fy, fz, fw);
   const sign = qx * fx + qy * fy + qz * fz + qw * fw < 0 ? -1 : 1;
   const out = new Float64Array(FLATTEN_STEPS * 7);

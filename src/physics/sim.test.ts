@@ -88,15 +88,16 @@ describe('throwWave', () => {
     expect(state?.angularVelocity).toSatisfy((w: number[]) => near(w, [20, -19, 8]));
   });
 
-  it('rejects near-zero orientation draws and lays out a grid across the heading', () => {
-    // heading (0.5, 0.9) → (0, 0.8) → h = (0, 1), p = (−1, 0); speed 0.04 → 9.2. cols = 2,
-    // back 1.4: body 0 at across −0.65 → base (0.65, −1.4); body 1 at +0.65 → (−0.65, −1.4).
-    // body 0: jitter (0.6, 0.3) → (+0.03, −0.06) → x 0.68, z −1.46; y 0.85 → 2.71;
+  it('rejects near-zero orientation draws and lays out a block of columns along x', () => {
+    // heading (0.5, 0.9) → (0, 0.8) → h = (0, 1), p = (−1, 0); speed 0.04 → 9.2.
+    // rMax 0.5 → d = 1.5, m = 0.75; k = 2 → c = 2, r = 1; back 1.4 → centre (0, −1.4), which fits
+    //   (bx = 0.75 + 0.75 = 1.5, bz = 0.75): body 0 base (−0.75, −1.4), body 1 base (0.75, −1.4).
+    // body 0: jitter (0.6, 0.3) → (+0.03, −0.06) → x −0.72, z −1.46; y 0.85 → 2.71;
     //   orientation (0.5001, 0.4999, 0.5003, 0.4997) → |u|² = 8e-7 ≤ 1e-6, rejected;
     //   (0.54, 0.48, 0.58, 0.46) → (0.08, −0.04, 0.16, −0.08), |u| = 0.2 → (0.4, −0.2, 0.8, −0.4);
     //   factor 0.2 → along 9.2·0.91 = 8.372; lateral 0.7 → 0.6; v = (−0.6, ·, 8.372);
     //   vy 0.15 → −0.3; spin (0.96, 0.08, 0.66) → (23, −21, 8).
-    // body 1: jitter (0.1, 0.75) → (−0.12, +0.075) → x −0.77, z −1.325; y 0.05 → 2.23;
+    // body 1: jitter (0.1, 0.75) → (−0.12, +0.075) → x 0.63, z −1.325; y 0.05 → 2.23;
     //   orientation (0.55, 0.4, 0.625, 0.35) → (0.1, −0.2, 0.25, −0.3), |u| = 0.45
     //   → (2/9, −4/9, 5/9, −2/3); factor 0.8 → along 9.2·1.09 = 10.028; lateral 0.22 → −0.84;
     //   v = (0.84, ·, 10.028); vy 0.65 → −1.3; spin (0.24, 0.88, 0.32) → (−13, 19, −9).
@@ -108,11 +109,11 @@ describe('throwWave', () => {
     const [a, b, ...rest] = throwWave(rng, [0.5, 0.5], BOUNDS);
     expect(rest).toHaveLength(0);
     expect(rng.used()).toBe(33);
-    expect(a?.position).toSatisfy((p: number[]) => near(p, [0.68, 2.71, -1.46]));
+    expect(a?.position).toSatisfy((p: number[]) => near(p, [-0.72, 2.71, -1.46]));
     expect(a?.orientation).toSatisfy((q: number[]) => near(q, [0.4, -0.2, 0.8, -0.4]));
     expect(a?.velocity).toSatisfy((v: number[]) => near(v, [-0.6, -0.3, 8.372]));
     expect(a?.angularVelocity).toSatisfy((w: number[]) => near(w, [23, -21, 8]));
-    expect(b?.position).toSatisfy((p: number[]) => near(p, [-0.77, 2.23, -1.325]));
+    expect(b?.position).toSatisfy((p: number[]) => near(p, [0.63, 2.23, -1.325]));
     expect(b?.orientation).toSatisfy((q: number[]) => near(q, [2 / 9, -4 / 9, 5 / 9, -2 / 3]));
     expect(b?.velocity).toSatisfy((v: number[]) => near(v, [0.84, -1.3, 10.028]));
     expect(b?.angularVelocity).toSatisfy((w: number[]) => near(w, [-13, 19, -9]));
@@ -133,6 +134,51 @@ describe('throwWave', () => {
     for (const s of throwWave(createSeedRng('0123456789abcdef0123456789abcdef'), [0.8], narrow)) {
       expect(s.position[0]).toBe(0);
       expect(s.position[2]).toBe(0);
+    }
+  });
+
+  it('spawns every wave with no two bounding spheres overlapping, inside the walls', () => {
+    const trays: TrayBounds[] = [
+      { minX: -6, maxX: 6, minZ: -4, maxZ: 4 },
+      { minX: -4.25, maxX: 4.25, minZ: -3, maxZ: 3 },
+      { minX: -8.25, maxX: 8.25, minZ: -4.75, maxZ: 4.75 },
+      { minX: -6.25, maxX: 6.25, minZ: -6, maxZ: 6 },
+    ];
+    const mixed = [0.75, 0.8660254037844386, 0.75, 0.75, 0.72, 0.8];
+    const radiusLists = [
+      (): number => 0.8660254037844386,
+      (): number => 0.8,
+      (i: number): number => mixed[i % 6] ?? 0,
+    ];
+    const seeds = [
+      '0123456789abcdef0123456789abcdef',
+      'fedcba9876543210fedcba9876543210',
+      '9e3779b19e3779b19e3779b19e3779b1',
+    ];
+    for (const b of trays) {
+      for (const radiusOf of radiusLists) {
+        for (const seed of seeds) {
+          for (let count = 1; count <= 30; count++) {
+            const radii = Array.from({ length: count }, (_, i) => radiusOf(i));
+            const states = throwWave(createSeedRng(seed), radii, b);
+            states.forEach((s, i) => {
+              const ri = radii[i] ?? 0;
+              const [x, y, z] = s.position;
+              expect(x).toBeGreaterThanOrEqual(b.minX + ri);
+              expect(x).toBeLessThanOrEqual(b.maxX - ri);
+              expect(z).toBeGreaterThanOrEqual(b.minZ + ri);
+              expect(z).toBeLessThanOrEqual(b.maxZ - ri);
+              for (let j = 0; j < i; j++) {
+                const o = states[j]?.position ?? [NaN, NaN, NaN];
+                const dist = Math.hypot(x - o[0], y - o[1], z - o[2]);
+                expect(dist, `${seed} count ${count} bodies ${j},${i}`).toBeGreaterThanOrEqual(
+                  ri + (radii[j] ?? 0),
+                );
+              }
+            });
+          }
+        }
+      }
     }
   });
 

@@ -1,7 +1,14 @@
 import { createSeedRng } from '../core/rng';
 import type { ShapeType } from '../geometry/polyhedra';
 import { getBodyShape } from './body';
-import { FLATTEN_STEPS, flattenTail, separate, upReadout } from './flatten';
+import {
+  FLATTEN_STEPS,
+  flatOrientation,
+  flattenTail,
+  footprint,
+  separate,
+  upReadout,
+} from './flatten';
 import { throwWave } from './throw';
 import { createWorld } from './world';
 import type { TrayBounds } from './world';
@@ -42,7 +49,8 @@ const ANGULAR_SQ = SETTLE_ANGULAR * SETTLE_ANGULAR;
  * MAX_STEPS_PER_WAVE steps; earlier dice stay in the world. A wave is settled once every body in the
  * world has stayed below SETTLE_LINEAR and SETTLE_ANGULAR for SETTLE_STEPS consecutive steps. Every
  * throw parameter comes from the sfc32 stream of `seed`. Tracks are returned in input order. Resting
- * centres are then pushed apart (see `separate`); when any die rests cocked or moved, every track
+ * centres are then pushed apart by the footprints of the flattened dice (see `separate`); when any
+ * die rests cocked or moved, every track
  * gains a FLATTEN_STEPS tail (see `flattenTail`); other dice hold.
  */
 export function simulate(input: SimInput): SimResult {
@@ -132,7 +140,7 @@ export function simulate(input: SimInput): SimResult {
   const xz = new Float64Array(poses.flatMap((p) => [p[0] ?? 0, p[2] ?? 0]));
   separate(
     xz,
-    thrown.map((b) => getBodyShape(b.shape).radius),
+    thrown.map((b, k) => footprint(b.shape, flatOrientation(b.shape, poses[k] ?? []))),
     bounds,
   );
   const ends = bodies.map((body) => {
