@@ -2,13 +2,20 @@ import type { SkinRef } from '../skins/types';
 
 export type DieType = 'd4' | 'd6' | 'd8' | 'd10' | 'd12' | 'd20' | 'd100' | 'dF';
 export type KeepMode = 'kh' | 'kl' | 'dh' | 'dl';
+export type CompareOp = '=' | '<' | '<=' | '>' | '>=';
+export interface Compare {
+  op: CompareOp;
+  n: number;
+}
 export interface DiceTerm {
   kind: 'dice';
   sign: 1 | -1;
   count: number;
   die: DieType;
   keep: { mode: KeepMode; n: number } | null;
-  explode: boolean;
+  explode: Compare | null;
+  reroll: { on: Compare; once: boolean } | null;
+  success: Compare | null;
 }
 export interface ConstantTerm {
   kind: 'constant';

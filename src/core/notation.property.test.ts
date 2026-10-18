@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { parse, PollyrollSyntaxError } from './notation';
-import type { DieType, KeepMode, RollTerm } from './types';
+import type { Compare, CompareOp, DiceTerm, DieType, KeepMode, RollTerm } from './types';
 
 /** One generated term: the AST it must parse to and its notation text without the sign. */
 interface Piece {
@@ -23,16 +23,77 @@ const MAX_LENGTH = 256;
 const DIES: readonly DieType[] = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd100', 'dF'];
 const MODES: readonly KeepMode[] = ['kh', 'kl', 'dh', 'dl'];
 
+const OPS: readonly CompareOp[] = ['=', '<', '<=', '>', '>='];
+const MAX: Record<DieType, number> = {
+  d4: 4,
+  d6: 6,
+  d8: 8,
+  d10: 10,
+  d12: 12,
+  d20: 20,
+  d100: 100,
+  dF: 1,
+};
+
 const signArb = fc.constantFrom<1 | -1>(1, -1);
 
-/** Dice term with count in [1, maxCount], every die spelling, optional keep and explode, and the
- *  `k` (kh), `d` (dl), and `x` (!) aliases. */
+/** Explode or reroll comparison text and AST: none (the default), a bare `N` (`=N`), or `opN`.
+ *  N stays in [2, max - 1] so no comparison matches every face. */
+const fireArb = (max: number, fallback: number): fc.Arbitrary<[string, Compare]> =>
+  fc
+    .record({
+      form: fc.constantFrom('default', 'bare', 'op'),
+      op: fc.constantFrom(...OPS),
+      n: fc.integer({ min: 2, max: max - 1 }),
+    })
+    .map(({ form, op, n }): [string, Compare] => {
+      if (form === 'default') return ['', { op: '=', n: fallback }];
+      if (form === 'bare') return [String(n), { op: '=', n }];
+      return [op + String(n), { op, n }];
+    });
+
+type Mod = [string, Pick<DiceTerm, 'explode' | 'reroll'>];
+
+/** Explode (`!`/`x`), reroll (`r`/`ro`), or neither, with their AST fields. */
+const modArb = (die: DieType): fc.Arbitrary<Mod> => {
+  const none = fc.constant<Mod>(['', { explode: null, reroll: null }]);
+  if (die === 'dF') return none;
+  const max = MAX[die];
+  return fc.oneof(
+    none,
+    fc
+      .tuple(fc.constantFrom('!', 'x'), fireArb(max, max))
+      .map(([c, [text, on]]): Mod => [c + text, { explode: on, reroll: null }]),
+    fc
+      .tuple(fc.boolean(), fireArb(max, 1))
+      .map(([once, [text, on]]): Mod => [
+        (once ? 'ro' : 'r') + text,
+        { explode: null, reroll: { on, once } },
+      ]),
+  );
+};
+
+/** Optional success comparison with an explicit operator. */
+const successArb: fc.Arbitrary<[string, Compare | null]> = fc
+  .option(
+    fc
+      .record({ op: fc.constantFrom(...OPS), n: fc.integer({ min: 0, max: 999999 }) })
+      .map(({ op, n }): [string, Compare] => [op + String(n), { op, n }]),
+    { nil: null },
+  )
+  .map((s) => s ?? ['', null]);
+
+/** Dice term with count in [1, maxCount], every die spelling, optional keep, explode or reroll, and
+ *  success count, and the `k` (kh), `d` (dl), and `x` (!) aliases. The success comparison comes
+ *  first so a default explode or reroll never runs into it. */
 const dicePiece = (maxCount: number): fc.Arbitrary<Piece> =>
-  fc.integer({ min: 1, max: maxCount }).chain((count) =>
+  fc.tuple(fc.integer({ min: 1, max: maxCount }), fc.constantFrom(...DIES)).chain(([count, die]) =>
     fc
       .record({
         sign: signArb,
-        die: fc.constantFrom(...DIES),
+        die: fc.constant(die),
+        mod: modArb(die),
+        success: successArb,
         omitCount: fc.boolean(),
         percent: fc.boolean(),
         keep: fc.option(
@@ -41,12 +102,11 @@ const dicePiece = (maxCount: number): fc.Arbitrary<Piece> =>
         ),
         omitN: fc.boolean(),
         shortMode: fc.boolean(),
-        explode: fc.boolean(),
-        x: fc.boolean(),
-        explodeFirst: fc.boolean(),
+        modFirst: fc.boolean(),
       })
       .map((r): Piece => {
-        const explode = r.explode && r.die !== 'dF';
+        const [modText, mod] = r.mod;
+        const [successText, success] = r.success;
         const countText = count === 1 && r.omitCount ? '' : String(count);
         const dieText = r.die === 'dF' ? 'f' : r.die === 'd100' && r.percent ? '%' : r.die.slice(1);
         const mode = r.keep?.mode ?? '';
@@ -54,10 +114,10 @@ const dicePiece = (maxCount: number): fc.Arbitrary<Piece> =>
         const keepText = r.keep
           ? modeText + (r.keep.n === 1 && r.omitN ? '' : String(r.keep.n))
           : '';
-        const bang = explode ? (r.x ? 'x' : '!') : '';
+        const mods = r.modFirst ? modText + keepText : keepText + modText;
         return {
-          term: { kind: 'dice', sign: r.sign, count, die: r.die, keep: r.keep, explode },
-          text: `${countText}d${dieText}${r.explodeFirst ? bang + keepText : keepText + bang}`,
+          term: { kind: 'dice', sign: r.sign, count, die: r.die, keep: r.keep, ...mod, success },
+          text: `${countText}d${dieText}${successText}${mods}`,
         };
       }),
   );
@@ -72,7 +132,9 @@ const aliasPiece: fc.Arbitrary<Piece> = fc
       count: 2,
       die: 'd20',
       keep: { mode: word === 'adv' ? 'kh' : 'kl', n: 1 },
-      explode: false,
+      explode: null,
+      reroll: null,
+      success: null,
     },
     text: word,
   }));
@@ -143,11 +205,23 @@ function dice(
   count: number,
   die: DieType,
   keep: { mode: KeepMode; n: number } | null,
-  explode: boolean,
+  mods: Partial<Pick<DiceTerm, 'explode' | 'reroll' | 'success'>>,
   text: string,
 ): Piece {
-  return { term: { kind: 'dice', sign, count, die, keep, explode }, text };
+  const term: DiceTerm = {
+    kind: 'dice',
+    sign,
+    count,
+    die,
+    keep,
+    explode: null,
+    reroll: null,
+    success: null,
+  };
+  return { term: { ...term, ...mods }, text };
 }
+
+const eq = (n: number): Compare => ({ op: '=', n });
 
 function constant(sign: 1 | -1, value: number): Piece {
   return { term: { kind: 'constant', sign, value }, text: String(value) };
@@ -176,15 +250,15 @@ describe('notation properties', () => {
           // Exactly 200 dice, both d100 spellings, keep count equal to the dice count.
           [
             plain([
-              dice(1, 100, 'd100', { mode: 'kh', n: 100 }, true, '100d100kh100!'),
-              dice(-1, 100, 'd100', { mode: 'dl', n: 1 }, false, '100d%dl'),
+              dice(1, 100, 'd100', { mode: 'kh', n: 100 }, { explode: eq(100) }, '100d100kh100!'),
+              dice(-1, 100, 'd100', { mode: 'dl', n: 1 }, {}, '100d%dl'),
             ]),
           ],
           // Exactly 20 terms, upper case, leading minus alias, largest constant.
           [
             {
               pieces: [
-                dice(-1, 2, 'd20', { mode: 'kl', n: 1 }, false, 'dis'),
+                dice(-1, 2, 'd20', { mode: 'kl', n: 1 }, {}, 'dis'),
                 ...Array.from({ length: 19 }, () => constant(1, 999999)),
               ],
               leadingPlus: false,
@@ -195,19 +269,36 @@ describe('notation properties', () => {
           // Every alias, bare and with n.
           [
             plain([
-              dice(1, 4, 'd6', { mode: 'kh', n: 3 }, true, '4d6k3x'),
-              dice(1, 2, 'd20', { mode: 'kh', n: 1 }, false, '2d20k'),
-              dice(1, 4, 'd6', { mode: 'dl', n: 1 }, true, '4d6xd'),
-              dice(1, 4, 'd8', { mode: 'dl', n: 2 }, false, '4d8d2'),
+              dice(1, 4, 'd6', { mode: 'kh', n: 3 }, { explode: eq(6) }, '4d6k3x'),
+              dice(1, 2, 'd20', { mode: 'kh', n: 1 }, {}, '2d20k'),
+              dice(1, 4, 'd6', { mode: 'dl', n: 1 }, { explode: eq(6) }, '4d6xd'),
+              dice(1, 4, 'd8', { mode: 'dl', n: 2 }, {}, '4d8d2'),
+            ]),
+          ],
+          // Rerolls, explode thresholds, and success counts at their bounds.
+          [
+            plain([
+              dice(1, 4, 'd4', null, { reroll: { on: eq(1), once: true } }, '4d4ro'),
+              dice(1, 2, 'd4', null, { reroll: { on: { op: '<', n: 2 }, once: false } }, '2d4r<2'),
+              dice(1, 3, 'd100', null, { explode: { op: '>=', n: 99 } }, '3d100x>=99'),
+              dice(1, 5, 'd10', null, { explode: eq(7), success: { op: '>=', n: 0 } }, '5d10>=0!7'),
+              dice(
+                -1,
+                6,
+                'd6',
+                { mode: 'kh', n: 3 },
+                { success: { op: '<', n: 999999 } },
+                '6d6<999999k3',
+              ),
             ]),
           ],
           // Whitespace inside numbers, implicit count, explode before keep, fudge dice, zero.
           [
             {
               pieces: [
-                dice(1, 10, 'd10', null, false, '10d10'),
-                dice(1, 1, 'd4', { mode: 'dh', n: 1 }, true, 'd4!dh1'),
-                dice(-1, 3, 'dF', { mode: 'kh', n: 2 }, false, '3dfkh2'),
+                dice(1, 10, 'd10', null, {}, '10d10'),
+                dice(1, 1, 'd4', { mode: 'dh', n: 1 }, { explode: eq(4) }, 'd4!dh1'),
+                dice(-1, 3, 'dF', { mode: 'kh', n: 2 }, {}, '3dfkh2'),
                 constant(-1, 0),
               ],
               leadingPlus: true,

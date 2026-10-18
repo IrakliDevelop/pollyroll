@@ -77,6 +77,43 @@ describe('createRoll', () => {
     ]);
   });
 
+  it('explodes on a threshold', () => {
+    const event = createRoll('d6!>=5', { rng: seq(4, 5, 1), seed: S });
+    expect(brief(event.dice)).toEqual([
+      ['d6', 5, 0, 0],
+      ['d6', 6, 0, 1],
+      ['d6', 2, 0, 2],
+    ]);
+  });
+
+  it('rerolls matching dice into later waves while they match', () => {
+    const event = createRoll('4d6r1', { rng: seq(0, 3, 0, 5, 0, 2, 1), seed: S });
+    expect(brief(event.dice)).toEqual([
+      ['d6', 1, 0, 0],
+      ['d6', 4, 0, 0],
+      ['d6', 1, 0, 0],
+      ['d6', 6, 0, 0],
+      ['d6', 1, 0, 1],
+      ['d6', 3, 0, 1],
+      ['d6', 2, 0, 2],
+    ]);
+  });
+
+  it('rerolls once only in the first wave', () => {
+    const event = createRoll('2d20ro1', { rng: seq(0, 0, 0, 4), seed: S });
+    expect(brief(event.dice)).toEqual([
+      ['d20', 1, 0, 0],
+      ['d20', 1, 0, 0],
+      ['d20', 1, 0, 1],
+      ['d20', 5, 0, 1],
+    ]);
+  });
+
+  it('caps rerolls at wave 10', () => {
+    const event = createRoll('1d4r<3', { rng: () => 1 });
+    expect(event.dice.map((d) => d.wave)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  });
+
   it('does not explode terms without !', () => {
     const event = createRoll('1d6', { rng: seq(5) });
     expect(brief(event.dice)).toEqual([['d6', 6, 0, 0]]);

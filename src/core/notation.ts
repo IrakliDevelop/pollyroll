@@ -1,4 +1,5 @@
-import type { DieType, KeepMode, RollAst, RollTerm } from './types';
+import { dieRange, matches } from './dice';
+import type { Compare, CompareOp, DieType, KeepMode, RollAst, RollTerm } from './types';
 
 export class PollyrollSyntaxError extends Error {
   readonly index: number;
@@ -16,6 +17,7 @@ const MAX_COUNT = 100;
 const MAX_DICE = 200;
 const MAX_CONSTANT = 999999;
 const WHITESPACE = /\s/;
+const OPS: readonly CompareOp[] = ['<=', '>=', '<', '>', '='];
 const SIZES: Record<string, DieType> = {
   '4': 'd4',
   '6': 'd6',
@@ -69,6 +71,17 @@ export function parse(notation: string): RollAst {
     return s;
   };
 
+  // `>=N`, `<=N`, `>N`, `<N`, `=N`, or with `bare` a plain `N` meaning `=N`; errors point at `at`.
+  const compare = (at: number, bare: boolean): Compare | null => {
+    const op = OPS.find(word);
+    if (op) pos += op.length;
+    else if (!bare || !isDigit(peek())) return null;
+    const n = digits();
+    if (!n) throw fail('Expected a number', at);
+    if (Number(n) > MAX_CONSTANT) throw fail('Number is larger than 999999', at);
+    return { op: op ?? '=', n: Number(n) };
+  };
+
   const parseDie = (): DieType => {
     const c = peek();
     if (c === '%' || c === 'f') {
@@ -87,7 +100,16 @@ export function parse(notation: string): RollAst {
     if (word('adv') || word('dis')) {
       const mode: KeepMode = peek() === 'a' ? 'kh' : 'kl';
       pos += 3;
-      return { kind: 'dice', sign, count: 2, die: 'd20', keep: { mode, n: 1 }, explode: false };
+      return {
+        kind: 'dice',
+        sign,
+        count: 2,
+        die: 'd20',
+        keep: { mode, n: 1 },
+        explode: null,
+        reroll: null,
+        success: null,
+      };
     }
 
     let count = 1;
@@ -107,17 +129,34 @@ export function parse(notation: string): RollAst {
     }
     pos++;
     const die = parseDie();
+    const [min, max] = dieRange(die);
 
     let keep: { mode: KeepMode; n: number } | null = null;
-    let explode = false;
+    let explode: Compare | null = null;
+    let reroll: { on: Compare; once: boolean } | null = null;
+    let success: Compare | null = null;
     for (;;) {
+      const at = pos;
       const c = peek();
       const next = peek(1);
-      if (c === '!' || c === 'x') {
-        if (explode) throw fail('A term can explode only once', pos);
-        if (die === 'dF') throw fail('Fudge dice cannot explode', pos);
-        explode = true;
-        pos++;
+      if (c === '!' || c === 'x' || c === 'r') {
+        const r = c === 'r';
+        if (r ? reroll : explode) {
+          throw fail(r ? 'A term can reroll only once' : 'A term can explode only once', at);
+        }
+        if (die === 'dF') throw fail(`Fudge dice cannot ${r ? 'reroll' : 'explode'}`, at);
+        if (reroll || explode) throw fail('A term cannot both explode and reroll', at);
+        const once = r && next === 'o';
+        pos += once ? 2 : 1;
+        const on = compare(at, true) ?? { op: '=', n: r ? min : max };
+        if (matches(on, min) && matches(on, max)) {
+          throw fail(`${r ? 'Reroll' : 'Explosion'} matches every face`, at);
+        }
+        if (r) reroll = { on, once };
+        else explode = on;
+      } else if (c === '<' || c === '>' || c === '=') {
+        if (success) throw fail('A term can count successes only once', at);
+        success = compare(at, false);
       } else if (c === 'k' || c === 'd') {
         if (keep) throw fail('A term can have only one keep or drop', pos);
         // Bare `k` keeps the highest and bare `d` drops the lowest.
@@ -138,7 +177,7 @@ export function parse(notation: string): RollAst {
         break;
       }
     }
-    return { kind: 'dice', sign, count, die, keep, explode };
+    return { kind: 'dice', sign, count, die, keep, explode, reroll, success };
   };
 
   const terms: RollTerm[] = [];

@@ -1,4 +1,4 @@
-import { MAX_WAVE, dieRange } from './dice';
+import { MAX_WAVE, dieRange, fires } from './dice';
 import { parse } from './notation';
 import { cryptoInt, generateSeed, isSeed } from './rng';
 import type { CreateRollOptions, DiceTerm, RollEvent, RolledDie } from './types';
@@ -16,7 +16,7 @@ export function createRoll(notation: string, opts: CreateRollOptions = {}): Roll
     else modifier += term.sign * term.value;
   }
 
-  // Dice of the current wave that explode, in array order: [term, group].
+  // Dice of the current wave that explode or reroll, in array order: [term, group].
   type Spawn = [DiceTerm, number];
   const dice: RolledDie[] = [];
   const roll = (term: DiceTerm, group: number, wave: number, next: Spawn[]): void => {
@@ -28,7 +28,7 @@ export function createRoll(notation: string, opts: CreateRollOptions = {}): Roll
     }
     const value = r + min;
     dice.push({ type: term.die, value, group, wave });
-    if (term.explode && value === max) next.push([term, group]);
+    if (fires(term, value, wave)) next.push([term, group]);
   };
   let pending: Spawn[] = [];
   terms.forEach((term, group) => {

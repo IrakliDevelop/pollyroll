@@ -5,6 +5,8 @@ export { redact, isRollEvent } from './core/event';
 export type {
   DieType,
   KeepMode,
+  CompareOp,
+  Compare,
   DiceTerm,
   ConstantTerm,
   RollTerm,

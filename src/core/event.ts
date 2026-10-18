@@ -1,4 +1,4 @@
-import { MAX_WAVE, dieRange } from './dice';
+import { MAX_WAVE, dieRange, fires } from './dice';
 import { parse } from './notation';
 import { isSeed } from './rng';
 import type { DiceTerm, RollEvent } from './types';
@@ -43,6 +43,11 @@ const isSkin = (s: unknown): boolean =>
     : isStr(s, 1, 64);
 
 const isId = (x: unknown): boolean => isStr(x, 1, 128);
+
+const maxWave = (term: DiceTerm): number => {
+  if (term.reroll) return term.reroll.once ? 1 : MAX_WAVE;
+  return term.explode ? MAX_WAVE : 0;
+};
 
 const isAudience = (a: unknown): boolean =>
   Array.isArray(a) ? a.length <= 100 && all(a, isId) : oneOf(a, 'all dm');
@@ -95,10 +100,10 @@ function check(e: unknown): boolean {
     return false;
   }
 
-  // Per group g and wave w at index g * W + w: dice count and dice showing the max value.
+  // Per group g and wave w at index g * W + w: dice count and dice that explode or reroll.
   const W = MAX_WAVE + 1;
   const count: number[] = new Array<number>(terms.length * W).fill(0);
-  const maxed = count.slice();
+  const fired = count.slice();
   const hidden = terms.map(() => false);
   const get = (list: number[], i: number): number => list[i] ?? 0;
   let lastWave = 0;
@@ -107,24 +112,21 @@ function check(e: unknown): boolean {
     const { type, group, wave, value } = die;
     if (!isInt(group, 0, terms.length - 1)) return false;
     const term = terms[group];
-    if (!term || term.die !== type || !isInt(wave, lastWave, term.explode ? MAX_WAVE : 0)) {
-      return false;
-    }
+    if (!term || term.die !== type || !isInt(wave, lastWave, maxWave(term))) return false;
     lastWave = wave;
     const [min, max] = dieRange(term.die);
+    const k = group * W + wave;
     if (value === null) hidden[group] = true;
     else if (!isInt(value, min, max)) return false;
-    const k = group * W + wave;
+    else if (fires(term, value, wave)) fired[k] = get(fired, k) + 1;
     count[k] = get(count, k) + 1;
-    if (value === max) maxed[k] = get(maxed, k) + 1;
   }
 
   return terms.every((term, g) => {
     const at = (list: number[], w: number): number => get(list, g * W + w);
     if (at(count, 0) !== term.count) return false;
-    // Non-exploding terms were already limited to wave 0 above.
-    for (let w = 1; term.explode && w <= MAX_WAVE; w++) {
-      const limit = hidden[g] ? at(count, w - 1) : at(maxed, w - 1);
+    for (let w = 1; w <= maxWave(term); w++) {
+      const limit = hidden[g] ? at(count, w - 1) : at(fired, w - 1);
       if (hidden[g] ? at(count, w) > limit : at(count, w) !== limit) return false;
     }
     return true;
