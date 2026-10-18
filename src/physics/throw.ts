@@ -21,7 +21,7 @@ function clampInto(value: number, lo: number, hi: number): number {
  *
  * 1. Heading h = (hx, hz): repeat hx = 2f − 1, hz = 2f − 1 until 0.04 < hx² + hz² ≤ 1 (rejection
  *    sampling of the unit disc minus a small core), then normalize.
- * 2. Speed s = 9 + 5f.
+ * 2. Speed s = 5 + 3f.
  * 3. Per body, in index order: jitter x, jitter z, y, orientation (repeat 4 draws u = 2f − 1 until
  *    1e-6 < |u|² ≤ 1, normalized, as [x, y, z, w]: a uniform random rotation by rejection sampling
  *    of the 4-ball), speed factor, lateral, vy, ωx, ωy, ωz.
@@ -45,7 +45,7 @@ export function throwWave(
   const hLen = Math.sqrt(lenSq);
   hx /= hLen;
   hz /= hLen;
-  const speed = 9 + 5 * rng.float();
+  const speed = 5 + 3 * rng.float();
   const px = -hz;
   const pz = hx;
 

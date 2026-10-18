@@ -67,13 +67,13 @@ describe('throwWave', () => {
     // Every draw is distinct, so swapping any two draws changes an asserted component.
     // heading: (0.47, 0.53) → (−0.06, 0.06), |h|² = 0.0072 ≤ 0.04, rejected;
     //          (0.74, 0.18) → (0.48, −0.64), |h| = 0.8 → h = (0.6, −0.8), p = (−hz, hx) = (0.8, 0.6).
-    // speed: 0.62 → 9 + 5·0.62 = 12.1.
+    // speed: 0.62 → 5 + 3·0.62 = 6.86.
     // one body (cols 1, across 0, back 1.4): x = −0.6·1.4 + (2·0.95 − 1)·0.15 = −0.84 + 0.135
     //   = −0.705; z = 0.8·1.4 + (2·0.15 − 1)·0.15 = 1.12 − 0.105 = 1.015; y = 2.2 + 0.6·0.35 = 2.41.
     // orientation: (0.99, 0.01, 0.98, 0.02) → (0.98, −0.98, 0.96, −0.96), |u|² > 1, rejected;
     //   (0.6, 0.45, 0.7, 0.4) → (0.2, −0.1, 0.4, −0.2), |u| = 0.5 → (0.4, −0.2, 0.8, −0.4).
-    // speed factor 0.8 → along = 12.1·(0.85 + 0.24) = 13.189; lateral 0.3 → −0.4·1.5 = −0.6;
-    //   v = h·13.189 + p·(−0.6) = (7.9134 − 0.48, ·, −10.5512 − 0.36) = (7.4334, ·, −10.9112).
+    // speed factor 0.8 → along = 6.86·(0.85 + 0.24) = 7.4774; lateral 0.3 → −0.4·1.5 = −0.6;
+    //   v = h·7.4774 + p·(−0.6) = (4.48644 − 0.48, ·, −5.98192 − 0.36) = (4.00644, ·, −6.34192).
     // vy 0.25 → −0.5. spin (0.9, 0.12, 0.66) → (0.8, −0.76, 0.32)·25 = (20, −19, 8).
     const rng = scripted([
       0.47, 0.53, 0.74, 0.18, 0.62, 0.95, 0.15, 0.35, 0.99, 0.01, 0.98, 0.02, 0.6, 0.45, 0.7, 0.4,
@@ -84,23 +84,23 @@ describe('throwWave', () => {
     expect(rng.used()).toBe(22);
     expect(state?.position).toSatisfy((p: number[]) => near(p, [-0.705, 2.41, 1.015]));
     expect(state?.orientation).toSatisfy((q: number[]) => near(q, [0.4, -0.2, 0.8, -0.4]));
-    expect(state?.velocity).toSatisfy((v: number[]) => near(v, [7.4334, -0.5, -10.9112]));
+    expect(state?.velocity).toSatisfy((v: number[]) => near(v, [4.00644, -0.5, -6.34192]));
     expect(state?.angularVelocity).toSatisfy((w: number[]) => near(w, [20, -19, 8]));
   });
 
   it('rejects near-zero orientation draws and lays out a block of columns along x', () => {
-    // heading (0.5, 0.9) → (0, 0.8) → h = (0, 1), p = (−1, 0); speed 0.04 → 9.2.
+    // heading (0.5, 0.9) → (0, 0.8) → h = (0, 1), p = (−1, 0); speed 0.04 → 5 + 3·0.04 = 5.12.
     // rMax 0.5 → d = 1.5, m = 0.75; k = 2 → c = 2, r = 1; back 1.4 → centre (0, −1.4), which fits
     //   (bx = 0.75 + 0.75 = 1.5, bz = 0.75): body 0 base (−0.75, −1.4), body 1 base (0.75, −1.4).
     // body 0: jitter (0.6, 0.3) → (+0.03, −0.06) → x −0.72, z −1.46; y 0.85 → 2.71;
     //   orientation (0.5001, 0.4999, 0.5003, 0.4997) → |u|² = 8e-7 ≤ 1e-6, rejected;
     //   (0.54, 0.48, 0.58, 0.46) → (0.08, −0.04, 0.16, −0.08), |u| = 0.2 → (0.4, −0.2, 0.8, −0.4);
-    //   factor 0.2 → along 9.2·0.91 = 8.372; lateral 0.7 → 0.6; v = (−0.6, ·, 8.372);
+    //   factor 0.2 → along 5.12·0.91 = 4.6592; lateral 0.7 → 0.6; v = (−0.6, ·, 4.6592);
     //   vy 0.15 → −0.3; spin (0.96, 0.08, 0.66) → (23, −21, 8).
     // body 1: jitter (0.1, 0.75) → (−0.12, +0.075) → x 0.63, z −1.325; y 0.05 → 2.23;
     //   orientation (0.55, 0.4, 0.625, 0.35) → (0.1, −0.2, 0.25, −0.3), |u| = 0.45
-    //   → (2/9, −4/9, 5/9, −2/3); factor 0.8 → along 9.2·1.09 = 10.028; lateral 0.22 → −0.84;
-    //   v = (0.84, ·, 10.028); vy 0.65 → −1.3; spin (0.24, 0.88, 0.32) → (−13, 19, −9).
+    //   → (2/9, −4/9, 5/9, −2/3); factor 0.8 → along 5.12·1.09 = 5.5808; lateral 0.22 → −0.84;
+    //   v = (0.84, ·, 5.5808); vy 0.65 → −1.3; spin (0.24, 0.88, 0.32) → (−13, 19, −9).
     const rng = scripted([
       0.5, 0.9, 0.04, 0.6, 0.3, 0.85, 0.5001, 0.4999, 0.5003, 0.4997, 0.54, 0.48, 0.58, 0.46, 0.2,
       0.7, 0.15, 0.96, 0.08, 0.66, 0.1, 0.75, 0.05, 0.55, 0.4, 0.625, 0.35, 0.8, 0.22, 0.65, 0.24,
@@ -111,11 +111,11 @@ describe('throwWave', () => {
     expect(rng.used()).toBe(33);
     expect(a?.position).toSatisfy((p: number[]) => near(p, [-0.72, 2.71, -1.46]));
     expect(a?.orientation).toSatisfy((q: number[]) => near(q, [0.4, -0.2, 0.8, -0.4]));
-    expect(a?.velocity).toSatisfy((v: number[]) => near(v, [-0.6, -0.3, 8.372]));
+    expect(a?.velocity).toSatisfy((v: number[]) => near(v, [-0.6, -0.3, 4.6592]));
     expect(a?.angularVelocity).toSatisfy((w: number[]) => near(w, [23, -21, 8]));
     expect(b?.position).toSatisfy((p: number[]) => near(p, [0.63, 2.23, -1.325]));
     expect(b?.orientation).toSatisfy((q: number[]) => near(q, [2 / 9, -4 / 9, 5 / 9, -2 / 3]));
-    expect(b?.velocity).toSatisfy((v: number[]) => near(v, [0.84, -1.3, 10.028]));
+    expect(b?.velocity).toSatisfy((v: number[]) => near(v, [0.84, -1.3, 5.5808]));
     expect(b?.angularVelocity).toSatisfy((w: number[]) => near(w, [-13, 19, -9]));
   });
 
