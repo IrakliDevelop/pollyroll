@@ -162,6 +162,29 @@ describe('useDiceTray', () => {
     expect(disposeSecond).toHaveBeenCalledTimes(1);
     expect(disposeFirst).toHaveBeenCalledTimes(1);
   });
+
+  it('keeps one live tray for an element target under StrictMode and disposes every tray it created', () => {
+    // Each tray asks its own canvas for webgl2 once and removes that canvas on dispose.
+    const getContext = vi.mocked(HTMLCanvasElement.prototype.getContext);
+    getContext.mockClear();
+    const remove = vi.spyOn(HTMLCanvasElement.prototype, 'remove');
+    const created = (): number => getContext.mock.calls.filter(([id]) => id === 'webgl2').length;
+    function Host() {
+      const [el, setEl] = useState<HTMLElement | null>(null);
+      useDiceTray(el);
+      return createElement('div', { id: 'host', ref: setEl });
+    }
+    const view = render(createElement(StrictMode, null, createElement(Host)));
+    const host = document.getElementById('host');
+    assert.isNotNull(host);
+    expect(host.querySelectorAll('canvas')).toHaveLength(1);
+    expect(created()).toBeGreaterThanOrEqual(1);
+    expect(remove).toHaveBeenCalledTimes(created() - 1);
+    view.unmount();
+    expect(host.querySelectorAll('canvas')).toHaveLength(0);
+    expect(remove).toHaveBeenCalledTimes(created());
+    remove.mockRestore();
+  });
 });
 
 describe('skinChanged', () => {
