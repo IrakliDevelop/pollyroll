@@ -36,12 +36,12 @@ const EXPECTED: Record<
   ShapeType,
   { faces: number; vertices: number; radius: number; sides: number }
 > = {
-  d4: { faces: 4, vertices: 4, radius: 0.75, sides: 3 },
+  d4: { faces: 4, vertices: 4, radius: 0.95, sides: 3 },
   d6: { faces: 6, vertices: 8, radius: Math.sqrt(3) / 2, sides: 4 },
   d8: { faces: 8, vertices: 6, radius: 0.75, sides: 3 },
   d10: { faces: 10, vertices: 12, radius: 0.75, sides: 4 },
   d12: { faces: 12, vertices: 20, radius: 0.72, sides: 5 },
-  d20: { faces: 20, vertices: 12, radius: 0.8, sides: 3 },
+  d20: { faces: 20, vertices: 12, radius: 0.85, sides: 3 },
 };
 
 describe('vec', () => {
@@ -163,7 +163,7 @@ describe('polyhedra', () => {
         if (type === 'd4') {
           expect(p.readouts.length).toBe(4);
           p.readouts.forEach((r, i) => {
-            expectVecClose(r, scale(at(p.vertices, i), 1 / 0.75), 1e-12);
+            expectVecClose(r, scale(at(p.vertices, i), 1 / 0.95), 1e-12);
           });
         } else {
           expect(p.readouts).toEqual(p.normals);
@@ -186,7 +186,7 @@ describe('polyhedra', () => {
   });
 
   it('builds a d4 from the listed raw vertices in order', () => {
-    const s = 0.75 / Math.sqrt(3);
+    const s = 0.95 / Math.sqrt(3);
     const raw: Vec3[] = [
       [1, 1, 1],
       [1, -1, -1],

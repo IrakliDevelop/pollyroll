@@ -144,10 +144,10 @@ describe('throwWave', () => {
       { minX: -8.25, maxX: 8.25, minZ: -4.75, maxZ: 4.75 },
       { minX: -6.25, maxX: 6.25, minZ: -6, maxZ: 6 },
     ];
-    const mixed = [0.75, 0.8660254037844386, 0.75, 0.75, 0.72, 0.8];
+    const mixed = [0.95, 0.8660254037844386, 0.75, 0.75, 0.72, 0.85];
     const radiusLists = [
       (): number => 0.8660254037844386,
-      (): number => 0.8,
+      (): number => 0.85,
       (i: number): number => mixed[i % 6] ?? 0,
     ];
     const seeds = [

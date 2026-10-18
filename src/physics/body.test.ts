@@ -5,13 +5,14 @@ import { getBodyShape, inertiaTensor } from './body';
 
 /** Principal moments for a uniform solid of mass 1, from the closed forms in terms of the edge a
  *  (tetrahedron a²/20, cube a²/6, octahedron a²/10, dodecahedron (39φ + 28)a²/150, icosahedron
- *  φ²a²/10) with a derived from each die's circumradius. */
+ *  φ²a²/10) with a derived from each die's circumradius: d4 R 0.95 → a² = 8R²/3 = 2.406667,
+ *  I = 0.120333; d20 R 0.85 → a² = 16R²/(10 + 2√5) = 11.56/14.472136 = 0.798776, I = 0.209122. */
 const MOMENTS: Partial<Record<ShapeType, number>> = {
-  d4: 0.075,
+  d4: 0.120333,
   d6: 1 / 6,
   d8: 0.1125,
   d12: 0.160351,
-  d20: 0.185243,
+  d20: 0.209122,
 };
 
 describe('getBodyShape', () => {

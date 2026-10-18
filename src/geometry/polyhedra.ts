@@ -93,12 +93,12 @@ function rawVertices(type: ShapeType): Vec3[] {
 }
 
 const TARGET_RADIUS: Record<ShapeType, number> = {
-  d4: 0.75,
+  d4: 0.95,
   d6: Math.sqrt(3) / 2,
   d8: 0.75,
   d10: 0.75,
   d12: 0.72,
-  d20: 0.8,
+  d20: 0.85,
 };
 
 function vertexAt(vertices: readonly Vec3[], i: number): Vec3 {
