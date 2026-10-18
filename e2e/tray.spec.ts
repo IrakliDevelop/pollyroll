@@ -511,12 +511,15 @@ test.describe('dropped dice', () => {
   );
 
   test('fades the dropped die after settle and leaves kept dice unchanged', async ({ page }) => {
-    await open(page, '?reduced&event=all');
-    const all = (await page.locator('#tray').screenshot()).toString('base64');
-    await open(page, '?reduced&event=adv');
-    const adv = (await page.locator('#tray').screenshot()).toString('base64');
+    const shot = async (query: string): Promise<string> => {
+      await open(page, `?reduced&event=${query}`);
+      return (await page.locator('#tray').screenshot()).toString('base64');
+    };
+    const all = await shot('all');
+    const adv = await shot('adv');
+    const dis = await shot('dis');
     const diff = await page.evaluate(
-      async ([a, b]) => {
+      async (shots) => {
         const pixels = async (b64: string): Promise<Uint8ClampedArray> => {
           const img = new Image();
           img.src = `data:image/png;base64,${b64}`;
@@ -529,26 +532,38 @@ test.describe('dropped dice', () => {
           ctx.drawImage(img, 0, 0);
           return ctx.getImageData(0, 0, c.width, c.height).data;
         };
-        const pa = await pixels(a);
-        const pb = await pixels(b);
-        let changed = 0;
-        let lighter = 0;
-        for (let i = 0; i < pa.length; i += 4) {
-          const sa = (pa[i] ?? 0) + (pa[i + 1] ?? 0) + (pa[i + 2] ?? 0);
-          const sb = (pb[i] ?? 0) + (pb[i + 1] ?? 0) + (pb[i + 2] ?? 0);
-          if (Math.abs(sb - sa) <= 30) continue;
-          changed++;
-          if (sb > sa) lighter++;
-        }
+        const [pa, pb, pc] = await Promise.all(shots.map(pixels));
+        if (pa === undefined || pb === undefined || pc === undefined) throw new Error('no pixels');
+        const n = pa.length / 4;
+        const masks = [pb, pc].map((p) => {
+          const mask = new Uint8Array(n);
+          let lighter = 0;
+          for (let i = 0; i < n; i++) {
+            const sa = (pa[4 * i] ?? 0) + (pa[4 * i + 1] ?? 0) + (pa[4 * i + 2] ?? 0);
+            const sb = (p[4 * i] ?? 0) + (p[4 * i + 1] ?? 0) + (p[4 * i + 2] ?? 0);
+            if (Math.abs(sb - sa) <= 30) continue;
+            mask[i] = 1;
+            if (sb > sa) lighter++;
+          }
+          const changed = mask.reduce((sum, m) => sum + m, 0);
+          return { mask, changed, lighter: changed === 0 ? 0 : lighter / changed };
+        });
+        const [adv, dis] = masks;
+        if (adv === undefined || dis === undefined) throw new Error('no masks');
+        let both = 0;
+        for (let i = 0; i < n; i++) both += (adv.mask[i] ?? 0) & (dis.mask[i] ?? 0);
         return {
-          changed: changed / (pa.length / 4),
-          lighter: changed === 0 ? 0 : lighter / changed,
+          changed: [adv.changed / n, dis.changed / n],
+          lighter: [adv.lighter, dis.lighter],
+          overlap: both / Math.max(1, Math.min(adv.changed, dis.changed)),
         };
       },
-      [all, adv] as const,
+      [all, adv, dis],
     );
-    expect(diff.changed).toBeGreaterThan(0.003);
-    expect(diff.lighter).toBeGreaterThan(0.95);
+    for (const changed of diff.changed) expect(changed).toBeGreaterThan(0.003);
+    for (const lighter of diff.lighter) expect(lighter).toBeGreaterThan(0.95);
+    // adv and dis fade different dice, so their changed pixels barely meet.
+    expect(diff.overlap).toBeLessThan(0.2);
   });
 });
 

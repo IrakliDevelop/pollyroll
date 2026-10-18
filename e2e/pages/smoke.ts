@@ -38,7 +38,7 @@ const event: RollEvent = {
   createdAt: 0,
 };
 
-// ?event=adv drops the 4; ?event=all rolls the same dice and seed with nothing dropped.
+// ?event=adv drops the 4, ?event=dis the 15; ?event=all rolls the same dice and seed, none dropped.
 const pair = (notation: string): RollEvent => ({
   v: 1,
   id: 'smoke-adv',
@@ -76,10 +76,9 @@ window.__pollyrollTray = tray;
 window.__pollyrollCreate = createDiceTray;
 state.supported = tray.supported;
 const start = performance.now();
-const which = params.get('event');
-const done = tray.playRoll(
-  which === 'adv' ? pair('2d20kh1') : which === 'all' ? pair('2d20') : event,
-);
+const pairs: Partial<Record<string, string>> = { adv: '2d20kh1', dis: '2d20kl1', all: '2d20' };
+const notation = pairs[params.get('event') ?? ''];
+const done = tray.playRoll(notation === undefined ? event : pair(notation));
 state.ready = true;
 void done.then((summary) => {
   state.elapsedMs = performance.now() - start;
