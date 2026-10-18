@@ -88,7 +88,8 @@ export function getBodyShape(shape: ShapeType): BodyShape {
     poly.vertices.forEach((v, i) => vertices.set(v, i * 3));
     const planes = new Float64Array(poly.faces.length * 4);
     poly.normals.forEach((n, f) => {
-      const v = poly.vertices[poly.faces[f]?.[0] ?? 0] ?? n;
+      const v = poly.vertices[poly.faces[f]?.[0] ?? 0];
+      if (v === undefined) throw new RangeError(`face ${f} has no vertex`);
       planes.set([n[0], n[1], n[2], dot(n, v)], f * 4);
     });
     const [ixx = 0, , , , iyy = 0, , , , izz = 0] = inertiaTensor(shape);

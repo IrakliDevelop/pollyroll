@@ -5,7 +5,7 @@ import type { Quat, Vec3 } from '../geometry/vec';
 import { penetrationAt } from './penetration';
 import type { TrayBounds } from './world';
 
-export const FLATTEN_STEPS = 24;
+export const FLATTEN_STEPS = 36;
 const COS_HALF_DEGREE = 0.9999619230641713;
 
 /** Readout index whose world direction R·r has the largest y; ties go to the lowest index. */
@@ -234,25 +234,50 @@ export function flattenTail(
   return out;
 }
 
-const RISE_STEPS = 4;
+const RISE_STEPS = 6;
 const TAIL_DEPTH = 0.005;
 const CLEARANCE = 0.02;
+const MAX_RISE = 1.5;
 const LIFT_PASSES = 4;
 
 /** Collision-aware settle tails: up to LIFT_PASSES sweeps over the tailed dice in index order, each
  *  checking the die against every other die (its current tail, or its held pose) at every tail frame
- *  where their bounding spheres meet, by `penetrationAt`; past TAIL_DEPTH the tail is rebuilt as
- *  lift–slide–drop, clearing by CLEARANCE the highest top the dice it hit reach during their tails
- *  (clearances only grow). Stops after a sweep that rebuilds nothing. `tails` is updated in place. */
+ *  where their bounding spheres meet, by `penetrationAt`. Of a pair past TAIL_DEPTH only the die with
+ *  the higher starting bottom b0 lifts (ties: the one moving farther in xz, then the lower index):
+ *  its tail is rebuilt as lift–slide–drop with bottom max(b0, top) + CLEARANCE, at most
+ *  b0 + MAX_RISE, where top is the highest top the dice it hit reach in their plain tails over the
+ *  frames they penetrate (clearances only grow). Stops after a sweep that rebuilds nothing; pairs
+ *  still penetrating are left. `tails` holds the plain tails on entry and is updated in place. */
 export function liftTails(
   shapes: readonly ShapeType[],
   poses: readonly Float64Array[],
   xz: Float64Array,
   tails: (Float64Array | null)[],
 ): void {
+  const plain = tails.slice();
+  const bottoms = poses.map((pose, k) => {
+    const [, py = 0, , qx = 0, qy = 0, qz = 0, qw = 1] = pose;
+    const vertices = getPolyhedron(shapes[k] ?? 'd6').vertices;
+    return Math.max(0, py + lowestY(vertices, qx, qy, qz, qw));
+  });
+  const moves = poses.map((pose, k) => {
+    const dx = (xz[2 * k] ?? 0) - (pose[0] ?? 0);
+    const dz = (xz[2 * k + 1] ?? 0) - (pose[2] ?? 0);
+    return dx * dx + dz * dz;
+  });
+  const lifts = (i: number, j: number): boolean => {
+    const bi = bottoms[i] ?? 0;
+    const bj = bottoms[j] ?? 0;
+    if (bi !== bj) return bi > bj;
+    const mi = moves[i] ?? 0;
+    const mj = moves[j] ?? 0;
+    return mi !== mj ? mi > mj : i < j;
+  };
   const clearance = new Float64Array(shapes.length).fill(-Infinity);
-  const framesOf = (k: number): Float64Array => tails[k] ?? poses[k] ?? new Float64Array(7);
-  const offset = (k: number, f: number): number => (tails[k] === null ? 0 : f * 7);
+  const framesOf = (t: (Float64Array | null)[], k: number): Float64Array =>
+    t[k] ?? poses[k] ?? new Float64Array(7);
+  const offset = (t: (Float64Array | null)[], k: number, f: number): number =>
+    t[k] === null ? 0 : f * 7;
   for (let pass = 0; pass < LIFT_PASSES; pass++) {
     let rebuilt = false;
     shapes.forEach((si, i) => {
@@ -260,35 +285,34 @@ export function liftTails(
       if (tails[i] === null || pose === undefined) return;
       let top = -Infinity;
       shapes.forEach((sj, j) => {
-        if (j === i) return;
+        if (j === i || !lifts(i, j)) return;
         const reach = getPolyhedron(si).radius + getPolyhedron(sj).radius;
-        const a = framesOf(i);
-        const b = framesOf(j);
-        let hit = false;
-        for (let f = 0; f < FLATTEN_STEPS && !hit; f++) {
-          const oa = offset(i, f);
-          const ob = offset(j, f);
+        const vertices = getPolyhedron(sj).vertices;
+        const a = framesOf(tails, i);
+        const b = framesOf(tails, j);
+        const p = framesOf(plain, j);
+        for (let f = 0; f < FLATTEN_STEPS; f++) {
+          const oa = offset(tails, i, f);
+          const ob = offset(tails, j, f);
           const dx = (a[oa] ?? 0) - (b[ob] ?? 0);
           const dy = (a[oa + 1] ?? 0) - (b[ob + 1] ?? 0);
           const dz = (a[oa + 2] ?? 0) - (b[ob + 2] ?? 0);
           if (dx * dx + dy * dy + dz * dz >= reach * reach) continue;
-          hit = penetrationAt(si, a, oa, sj, b, ob) > TAIL_DEPTH;
-        }
-        if (!hit) return;
-        const vertices = getPolyhedron(sj).vertices;
-        for (let f = 0; f < FLATTEN_STEPS; f++) {
-          const o = offset(j, f);
+          if (!(penetrationAt(si, a, oa, sj, b, ob) > TAIL_DEPTH)) continue;
+          const o = offset(plain, j, f);
           const high = highestY(
             vertices,
-            b[o + 3] ?? 0,
-            b[o + 4] ?? 0,
-            b[o + 5] ?? 0,
-            b[o + 6] ?? 1,
+            p[o + 3] ?? 0,
+            p[o + 4] ?? 0,
+            p[o + 5] ?? 0,
+            p[o + 6] ?? 1,
           );
-          top = Math.max(top, (b[o + 1] ?? 0) + high);
+          top = Math.max(top, (p[o + 1] ?? 0) + high);
         }
       });
-      const lift = top + CLEARANCE;
+      if (top === -Infinity) return;
+      const b0 = bottoms[i] ?? 0;
+      const lift = Math.min(Math.max(b0, top) + CLEARANCE, b0 + MAX_RISE);
       if (!(lift > (clearance[i] ?? -Infinity))) return;
       clearance[i] = lift;
       tails[i] = flattenTail(si, pose, xz[2 * i] ?? 0, xz[2 * i + 1] ?? 0, lift);

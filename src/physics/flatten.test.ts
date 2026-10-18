@@ -3,7 +3,14 @@ import { getPolyhedron } from '../geometry/polyhedra';
 import type { ShapeType } from '../geometry/polyhedra';
 import { quatMul, quatRotate } from '../geometry/vec';
 import type { Quat } from '../geometry/vec';
-import { FLATTEN_STEPS, flattenTail, footprint, separate } from './flatten';
+import {
+  FLATTEN_STEPS,
+  flatOrientation,
+  flattenTail,
+  footprint,
+  liftTails,
+  separate,
+} from './flatten';
 import { penetration } from './penetration';
 import { simulate } from './sim';
 import type { SimResult } from './sim';
@@ -61,7 +68,7 @@ describe('flattenTail', () => {
     expect(Math.abs(top[2])).toBeLessThan(1e-6);
     expect(Math.abs((last[1] ?? NaN) - 0.5)).toBeLessThan(1e-3);
     expect([last[0], last[2]]).toEqual([1.5, -2]);
-    // Halfway through the 12-step flatten phase the tilt about Z halves to 10°, so the die rests at
+    // Halfway through the 18-step flatten phase the tilt about Z halves to 10°, so the die rests at
     // 0.5·(cos10° + sin10°) ≈ 0.5792, above the linear 0.5704.
     const mid = frameAt(tail, FLATTEN_STEPS / 4 - 1);
     expect(Math.abs((mid[1] ?? NaN) - 0.5792)).toBeLessThan(1e-3);
@@ -193,21 +200,44 @@ describe('simulate ends without overlap', () => {
     ],
   ];
 
-  it('9d6 seed 1 lifts die 6, cocked against die 1, over it instead of sliding through', () => {
-    // trayBounds(608 / 360, fitScale(2, 9, 608 / 360)); the plain two-phase tail reaches 0.144.
-    const bounds: TrayBounds = { minX: -4.75, maxX: 4.75, minZ: -2.5, maxZ: 2.5 };
-    const shapes = Array<ShapeType>(9).fill('d6');
-    const seed = (1).toString(16).padStart(32, '0');
-    const result = simulate({ seed, shapes, waves: shapes.map(() => 0), bounds });
-    const n = result.tracks[0]?.frames.length ?? 0;
-    for (let f = n / 7 - FLATTEN_STEPS; f < n / 7; f++) {
-      result.tracks.forEach((a, i) => {
-        result.tracks.forEach((b, j) => {
-          if (j <= i) return;
-          const depth = penetration('d6', frameAt(a.frames, f), 'd6', frameAt(b.frames, f));
-          expect(depth, `frame ${f} dice ${i},${j}`).toBeLessThanOrEqual(0.005);
-        });
-      });
+  it('lifts a d6 cocked on the edge of a flat d6 over it by at most 1.5', () => {
+    // B is turned −30° about z with its bottom face on A's top edge (0.5, 1) at face point
+    // (−0.2, −0.5): centre (0.5, 1) − R(−0.2, −0.5) = (0.5 + 0.4232, 1 + 0.3333); its lowest vertex
+    // R(0.5, −0.5) = (0.183, −0.683) sits at y 0.650, beside A. Flattened in place it would sink
+    // into A, and separate() pushes A too, so both have tails.
+    const a = new Float64Array([0, 0.5, 0, 0, 0, 0, 1]);
+    const half = (-15 * Math.PI) / 180;
+    const b = new Float64Array([0.9232, 1.3333, 0, 0, 0, Math.sin(half), Math.cos(half)]);
+    const xz = new Float64Array([0, 0, 0.9232, 0]);
+    const bounds: TrayBounds = { minX: -4, maxX: 4, minZ: -4, maxZ: 4 };
+    separate(
+      xz,
+      [footprint('d6', [0, 0, 0, 1]), footprint('d6', flatOrientation('d6', b))],
+      bounds,
+    );
+    const tails = [
+      flattenTail('d6', a, xz[0] ?? NaN, xz[1] ?? NaN),
+      flattenTail('d6', b, xz[2] ?? NaN, xz[3] ?? NaN),
+    ];
+    const plain = tails[1];
+    expect(plain).not.toBeNull();
+    if (plain === null || plain === undefined) return;
+    const sunk = Math.max(
+      ...Array.from({ length: FLATTEN_STEPS }, (_, k) =>
+        penetration('d6', frameAt(tails[0] ?? a, k), 'd6', frameAt(plain, k)),
+      ),
+    );
+    expect(sunk).toBeGreaterThan(0.005);
+    liftTails(['d6', 'd6'], [a, b], xz, tails);
+    const [ta, tb] = tails;
+    expect(ta).not.toBeNull();
+    expect(tb).not.toBeNull();
+    if (!ta || !tb) return;
+    for (let k = 0; k < FLATTEN_STEPS; k++) {
+      const depth = penetration('d6', frameAt(ta, k), 'd6', frameAt(tb, k));
+      expect(depth, `frame ${k}`).toBeLessThanOrEqual(0.005);
+      expect((ta[k * 7 + 1] ?? NaN) - 0.5, `A frame ${k}`).toBeLessThanOrEqual(1.5);
+      expect((tb[k * 7 + 1] ?? NaN) - 1.3333, `B frame ${k}`).toBeLessThanOrEqual(1.5);
     }
   });
 

@@ -158,8 +158,20 @@ describe('world: edge cases', () => {
   });
 
   it('checkHull throws RangeError for a hull with more than 20 vertices', () => {
-    expect(() => checkHull(new Float64Array(21 * 3))).toThrow(RangeError);
-    expect(() => checkHull(new Float64Array(20 * 3))).not.toThrow();
+    const d6 = getBodyShape('d6');
+    expect(() => checkHull({ ...d6, vertices: new Float64Array(21 * 3) })).toThrow(RangeError);
+    expect(() => checkHull({ ...d6, vertices: new Float64Array(20 * 3) })).not.toThrow();
+  });
+
+  it('checkHull throws RangeError for more than 20 faces, 30 edges, or 5 edges per face', () => {
+    const d6 = getBodyShape('d6');
+    expect(() => checkHull({ ...d6, planes: new Float64Array(21 * 4) })).toThrow(RangeError);
+    expect(() => checkHull({ ...d6, planes: new Float64Array(20 * 4) })).not.toThrow();
+    // A closed hull has one edge per two face sides: 16 quads give 32 edges, 15 give 30.
+    expect(() => checkHull({ ...d6, faces: Array(16).fill([0, 1, 2, 3]) })).toThrow(RangeError);
+    expect(() => checkHull({ ...d6, faces: Array(15).fill([0, 1, 2, 3]) })).not.toThrow();
+    expect(() => checkHull({ ...d6, faces: [[0, 1, 2, 3, 4, 5]] })).toThrow(RangeError);
+    expect(() => checkHull({ ...d6, faces: [[0, 1, 2, 3, 4]] })).not.toThrow();
   });
 
   it('a zero-velocity body sitting on the floor stays finite', () => {

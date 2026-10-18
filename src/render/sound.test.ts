@@ -71,9 +71,10 @@ describe('impacts', () => {
   });
 
   it.each([
-    [34, [34]],
-    [35, []],
-  ])('ignores a kick at frame %i of 60 only inside the last 25 frames', (frame, steps) => {
+    // The last FLATTEN_STEPS + 1 = 37 frames are the tail: 60 − 37 = 23 is the first ignored frame.
+    [22, [22]],
+    [23, []],
+  ])('ignores a kick at frame %i of 60 only inside the last 37 frames', (frame, steps) => {
     const found = pairs(impacts([kicked(60, (k) => (k > frame ? 5 : 0))]));
     expect(found.map((p) => p[0])).toEqual(steps);
   });

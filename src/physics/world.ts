@@ -52,6 +52,8 @@ export interface World {
 const MAX_BODIES = 30;
 const MAX_VERTICES = 20;
 const MAX_FACES = 20;
+const MAX_EDGES = 30; // hull edges the penetration.ts scratch buffers hold
+const FACE_EDGES = 5; // edges per face: bounds the clip polygon and the warm-start feature keys
 const PLANES = 5;
 const PAIR_CONTACTS = MAX_BODIES * 8;
 const PAIR_KEEP = 4;
@@ -73,9 +75,13 @@ const C_MASS = 13; // effective masses: normal, tangent 1, tangent 2
 const C_ROWS = 16; // per row (normal, t1, t2): rA×d, IA⁻¹(rA×d), rB×d, IB⁻¹(rB×d)
 const ROW = 12;
 const STRIDE = C_ROWS + 3 * ROW;
-// Warm-start slots: one per (body, plane, vertex), then PAIR_KEEP per body pair (i, j).
+// Warm-start slots: one per (body, plane, vertex), then PAIR_SLOTS per body pair (i, j), keyed by the
+// clip feature: FACE_EDGES incident vertices + 2·FACE_EDGES (edge label) × FACE_EDGES (reference
+// edge) intersections + 1 fallback.
 const PLANE_SLOTS = MAX_BODIES * PLANES * MAX_VERTICES;
-const SLOTS = PLANE_SLOTS + MAX_BODIES * MAX_BODIES * PAIR_KEEP;
+const PAIR_SLOTS = FACE_EDGES + 2 * FACE_EDGES * FACE_EDGES + 1;
+const SLOTS = PLANE_SLOTS + MAX_BODIES * MAX_BODIES * PAIR_SLOTS;
+const MARGIN = 0.01; // clipped points up to this far above the reference plane are speculative
 
 /** Element i of a preallocated buffer (indexes are in range by construction). */
 function at(a: Float64Array, i: number): number {
@@ -89,11 +95,19 @@ function atInt(a: Int32Array, i: number): number {
   return v === undefined ? 0 : v;
 }
 
-/** Throws RangeError when a hull has more vertices than the contact buffers hold. */
-export function checkHull(vertices: Float64Array): void {
-  if (vertices.length > MAX_VERTICES * 3) {
+/** Throws RangeError when a hull has more vertices, faces, or edges than the contact buffers hold. */
+export function checkHull(body: BodyShape): void {
+  if (body.vertices.length > MAX_VERTICES * 3) {
     throw new RangeError(`at most ${MAX_VERTICES} hull vertices per body`);
   }
+  if (body.planes.length > MAX_FACES * 4)
+    throw new RangeError(`at most ${MAX_FACES} faces per body`);
+  let sides = 0;
+  for (const face of body.faces) {
+    if (face.length > FACE_EDGES) throw new RangeError(`at most ${FACE_EDGES} edges per face`);
+    sides += face.length;
+  }
+  if (sides > MAX_EDGES * 2) throw new RangeError(`at most ${MAX_EDGES} edges per body`);
 }
 
 function clampNumber(value: number, min: number, max: number): number {
@@ -138,6 +152,10 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
   const queryFace = new Int32Array(2); // argmax face of the last face query, per side
   const clipA = new Float64Array(MAX_CLIP * 3); // Sutherland–Hodgman ping-pong polygons
   const clipB = new Float64Array(MAX_CLIP * 3);
+  const keyA = new Int32Array(MAX_CLIP); // feature key of each clip point
+  const keyB = new Int32Array(MAX_CLIP);
+  const labelA = new Int32Array(MAX_CLIP); // edge label of the edge leaving each clip point
+  const labelB = new Int32Array(MAX_CLIP);
   const clipDepth = new Float64Array(MAX_CLIP);
   const clipKept = new Uint8Array(MAX_CLIP);
 
@@ -317,7 +335,8 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
     const approach = rowVelocity(c, 0);
     const bias = depth > SLOP ? biasRate * (depth - SLOP) : 0;
     const bounce = approach < -RESTITUTION_THRESHOLD ? -restitution * approach : 0;
-    contacts[base + C_TARGET] = bias > bounce ? bias : bounce;
+    // A speculative contact (gap -depth) only stops approaches that would close the gap this step.
+    contacts[base + C_TARGET] = depth < 0 ? depth / DT : bias > bounce ? bias : bounce;
   }
 
   /** Face query of the face-normal SAT: max over `ref` faces of min over `inc` vertices of n·v − d,
@@ -383,8 +402,9 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
    * Hull contacts of pair a < b: face-normal SAT (edge–edge axes are not tested, so edge–edge
    * separations may report a small early contact), then the incident face (most antiparallel to the
    * reference normal) is clipped against the reference face's side planes (Sutherland–Hodgman).
-   * Clipped points below the reference plane are contacts, reduced to PAIR_KEEP (deepest, then
-   * farthest from those kept); an empty clip falls back to Inc's deepest vertex.
+   * Clipped points less than MARGIN above the reference plane are contacts (speculative above it),
+   * reduced to PAIR_KEEP (deepest, then farthest from those kept), each warm-started from the slot of
+   * the clip feature that produced it; an empty clip falls back to Inc's deepest vertex.
    */
   function collidePair(a: number, b: number): void {
     const sepA = faceQuery(a, b, 0);
@@ -404,7 +424,7 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
     const nz = at(worldPlanes, pl + 2);
     const d = at(worldPlanes, pl + 3);
     const sign = flip ? -1 : 1;
-    const slotBase = PLANE_SLOTS + (a * MAX_BODIES + b) * PAIR_KEEP;
+    const slotBase = PLANE_SLOTS + (a * MAX_BODIES + b) * PAIR_SLOTS;
 
     let incFace = 0;
     let minDot = Infinity;
@@ -419,6 +439,10 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
     }
     let src = clipA;
     let dst = clipB;
+    let srcKey = keyA;
+    let dstKey = keyB;
+    let srcLabel = labelA;
+    let dstLabel = labelB;
     const incPoly = incShape.faces[incFace] ?? [];
     let points = incPoly.length;
     for (let k = 0; k < points; k++) {
@@ -426,6 +450,8 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
       src[k * 3] = at(worldVerts, w);
       src[k * 3 + 1] = at(worldVerts, w + 1);
       src[k * 3 + 2] = at(worldVerts, w + 2);
+      srcKey[k] = k;
+      srcLabel[k] = k;
     }
     const refPoly = refShape.faces[refFace] ?? [];
     for (let e = 0; e < refPoly.length && points > 0; e++) {
@@ -451,10 +477,14 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
         const cz = at(src, c + 2);
         const da = sx * cx + sy * cy + sz * cz - limit;
         const db = sx * at(src, n) + sy * at(src, n + 1) + sz * at(src, n + 2) - limit;
+        // Edge labels: incident edge k is k, the part of side plane e is FACE_EDGES + e.
+        const label = atInt(srcLabel, k);
         if (da <= 0) {
           dst[out * 3] = cx;
           dst[out * 3 + 1] = cy;
           dst[out * 3 + 2] = cz;
+          dstKey[out] = atInt(srcKey, k);
+          dstLabel[out] = da === 0 && db > 0 ? FACE_EDGES + e : label;
           out++;
         }
         if ((da < 0 && db > 0) || (da > 0 && db < 0)) {
@@ -462,12 +492,20 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
           dst[out * 3] = cx + (at(src, n) - cx) * t;
           dst[out * 3 + 1] = cy + (at(src, n + 1) - cy) * t;
           dst[out * 3 + 2] = cz + (at(src, n + 2) - cz) * t;
+          dstKey[out] = FACE_EDGES + label * FACE_EDGES + e;
+          dstLabel[out] = da < 0 ? FACE_EDGES + e : label;
           out++;
         }
       }
       const swap = src;
       src = dst;
       dst = swap;
+      const swapKey = srcKey;
+      srcKey = dstKey;
+      dstKey = swapKey;
+      const swapLabel = srcLabel;
+      srcLabel = dstLabel;
+      dstLabel = swapLabel;
       points = out;
     }
 
@@ -477,10 +515,11 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
       const y = at(src, k * 3 + 1);
       const z = at(src, k * 3 + 2);
       const depth = d - (nx * x + ny * y + nz * z);
-      if (!(depth > 0)) continue;
+      if (!(depth > -MARGIN)) continue;
       src[below * 3] = x;
       src[below * 3 + 1] = y;
       src[below * 3 + 2] = z;
+      srcKey[below] = atInt(srcKey, k);
       clipDepth[below] = depth;
       below++;
     }
@@ -508,7 +547,7 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
         at(worldVerts, deepest + 1),
         at(worldVerts, deepest + 2),
         depth,
-        slotBase,
+        slotBase + PAIR_SLOTS - 1,
       );
       return;
     }
@@ -540,7 +579,6 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
         clipKept[pick] = 1;
       }
     }
-    let rank = 0;
     for (let k = 0; k < below; k++) {
       if (clipKept[k] !== 1) continue;
       pairContact(
@@ -553,9 +591,8 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
         at(src, k * 3 + 1),
         at(src, k * 3 + 2),
         at(clipDepth, k),
-        slotBase + rank,
+        slotBase + atInt(srcKey, k),
       );
-      rank++;
     }
   }
 
@@ -781,7 +818,7 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
       if (count >= MAX_BODIES) throw new RangeError(`at most ${MAX_BODIES} bodies per world`);
       const i = count;
       const body = getBodyShape(shape);
-      checkHull(body.vertices);
+      checkHull(body);
       shapes.push(body);
       bodyInvInertia.set(body.invInertia, i * 3);
       bodyRadius[i] = body.radius;

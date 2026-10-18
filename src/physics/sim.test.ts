@@ -354,6 +354,19 @@ describe('settle acceptance', () => {
     expect(settled).toBe(50);
     expect(median).toBeLessThanOrEqual(400);
   }, 60_000);
+
+  it.each([
+    [30, 53, { minX: -8.25, maxX: 8.25, minZ: -4.75, maxZ: 4.75 }],
+    [30, 98, { minX: -8.25, maxX: 8.25, minZ: -4.75, maxZ: 4.75 }],
+    [30, 161, { minX: -8.25, maxX: 8.25, minZ: -4.75, maxZ: 4.75 }],
+    [20, 79, { minX: -6.75, maxX: 6.75, minZ: -3.75, maxZ: 3.75 }],
+    [20, 183, { minX: -6.75, maxX: 6.75, minZ: -3.75, maxZ: 3.75 }],
+  ])('settles %id6 seed %i in its fit-scale tray', (count, i, bounds) => {
+    // Pins trajectories that jittered to the step cap before feature-keyed warm-start slots.
+    const shapes = Array<ShapeType>(count).fill('d6');
+    const seed = i.toString(16).padStart(32, '0');
+    expect(simulate({ seed, shapes, waves: shapes.map(() => 0), bounds }).settled).toBe(true);
+  });
 });
 
 describe('static guard', () => {
