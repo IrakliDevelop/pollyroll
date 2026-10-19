@@ -116,6 +116,14 @@ const cases: Case[] = [
     [1.4 * D20_N[0], 0, 1.4 * D20_N[2], 0, 0, 0, 1],
     0,
   ],
+  [
+    'an identity coin at y = 1.05 on a d6 off the origin sinks 1 − (1.05 − 0.1) into its top',
+    'd6',
+    [3, 0.5, 0, 0, 0, 0, 1],
+    'coin',
+    [3, 1.05, 0, 0, 0, 0, 1],
+    0.05,
+  ],
 ];
 
 describe('penetration', () => {

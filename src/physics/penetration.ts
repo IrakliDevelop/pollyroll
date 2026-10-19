@@ -2,9 +2,9 @@ import { getPolyhedron } from '../geometry/polyhedra';
 import type { ShapeType } from '../geometry/polyhedra';
 import { getBodyShape } from './body';
 
-const MAX_VERTICES = 20;
+const MAX_VERTICES = 32;
 const MAX_FACES = 20;
-const MAX_EDGES = 30;
+const MAX_EDGES = 48;
 
 // Scratch buffers: world vertices, world face normals, world edge vectors of each hull.
 const vertsA = new Float64Array(MAX_VERTICES * 3);
