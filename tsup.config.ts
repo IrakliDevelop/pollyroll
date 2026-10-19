@@ -9,6 +9,7 @@ export default defineConfig({
     index: 'src/index.ts',
     render: 'src/render/index.ts',
     react: 'src/react/index.ts',
+    format: 'src/format/index.ts',
   },
   format: ['esm', 'cjs'],
   dts: true,

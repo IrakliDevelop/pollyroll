@@ -26,6 +26,7 @@ npm install pollyroll
 | `pollyroll`        | Notation parser, `createRoll`, `evaluate`, `redact`, `isRollEvent` | Node, browsers |
 | `pollyroll/render` | `createDiceTray`, skins and presets                                | Browsers       |
 | `pollyroll/react`  | `useDiceTray` hook and `<DiceTray />` overlay                      | React          |
+| `pollyroll/format` | `formatRoll(event, summary)`: one-line plain-text result           | Node, browsers |
 
 ## Quick start
 
@@ -108,6 +109,24 @@ explosion dice included, and ties go to the lower index.
 The event never carries totals or kept/dropped dice; `evaluate(event)` derives them. `group` is the
 index of the dice term (constants are not counted). `wave` is 0 for the initial throw and 1 or more
 for explosions and rerolls.
+
+## Format (`pollyroll/format`)
+
+```ts
+formatRoll(event: RollEvent, summary: RollSummary): string;
+```
+
+```ts
+import { evaluate } from 'pollyroll';
+import { formatRoll } from 'pollyroll/format';
+
+formatRoll(event, evaluate(event));
+// 2d20kh1+5 rolling [7, 15]:     '2d20kh1+5: [(7), 15] + 5 = 20'
+// 1d20-1d4+2 rolling [12], [4]:  '1d20-1d4+2: [12] - [4] + 2 = 10'
+```
+
+Dropped dice are in parentheses and redacted values are `?`. The result is plain text: set it with
+`textContent`, not as HTML, since `notation` may come from another client.
 
 ## Renderer (`pollyroll/render`)
 
