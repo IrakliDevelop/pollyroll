@@ -33,13 +33,19 @@ export const GOLDEN_CASES: readonly SimInput[] = [
     waves: [0, 0, 0, 0, 0, 0, 0, 0, 0],
     bounds: CROWDED,
   },
+  {
+    seed: 'c010000000000000000000000000001d',
+    shapes: ['coin', 'coin', 'd20'],
+    waves: [0, 0, 0],
+    bounds: BOUNDS,
+  },
 ];
 
 /** goldenHash() of the final implementation. Changing it requires an explanation of the intended
  *  change in motion. */
-export const GOLDEN_HASH = '90088985';
+export const GOLDEN_HASH = '5ec7f203';
 
-/** trackHash of each golden case, the five 8-char strings joined, then FNV-1a 32-bit over that
+/** trackHash of each golden case, the six 8-char strings joined, then FNV-1a 32-bit over that
  *  string's char codes; 8 lowercase hex chars. */
 export function goldenHash(): string {
   const joined = GOLDEN_CASES.map((input) => trackHash(simulate(input))).join('');

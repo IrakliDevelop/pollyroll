@@ -438,7 +438,7 @@ describe('determinism', () => {
   });
 
   it('matches the golden trajectory hash', () => {
-    expect(GOLDEN_CASES).toHaveLength(5);
+    expect(GOLDEN_CASES).toHaveLength(6);
     expect(goldenHash()).toBe(GOLDEN_HASH);
     expect(GOLDEN_HASH).toMatch(/^[0-9a-f]{8}$/);
   });

@@ -110,7 +110,7 @@ describe('impacts', () => {
     expect(found[0]?.[1]).toBeCloseTo(Math.sqrt(25 + 0.0625), 5);
   });
 
-  it('keeps the impact list of a fixed 3d6 plan from 0.5.0', () => {
+  it('keeps the 3d6 impact list unchanged for dice-only rolls', () => {
     const plan = planRoll(
       {
         v: 1,
@@ -123,7 +123,7 @@ describe('impacts', () => {
       },
       trayBounds(4 / 3, 2),
     );
-    // Recorded from impacts() at 83fdaf3.
+    // Recorded from impacts() for this seed; dice-only impacts must not change.
     const before = [
       [23, 6.5515],
       [26, 8.4184],
