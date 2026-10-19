@@ -13,16 +13,3 @@ export const diceClacks: ClackSet = {
     [361.1, 56],
   ],
 };
-
-/** Six coin clinks recorded by Kenney (kenney.nl, CC0 1.0): one 16 kHz mono MP3, low-passed at 3 kHz. */
-export const coinClinks: ClackSet = {
-  audio: '//MoxAALAAFoAUIQAAwD4WBA5////5yH3Cd4g8QB8EDgPg4XB8oGPLqDBcP+Uh9QIPEDgff//l4g//8PyNr756GT72V6FL/b//MoxA8LKWr4AYEQAFPy6/2yEbCgMqe/KUrkhD/+Iw6AXTv+Xg+B/PCEsv////7/0+5Y7+1lyIrHp05W17NdVvIyp4qDo8Hh//MoxB0UewLsAYBQAX1NNIREks5jOs9GMHxGSMPCNyYoTEp9EocclUqeecSEj/4kjIVwlBciJJHOW3kA9C5LMeK7///////6//MoxAYNWw7wAYA4AP/////dV9B8cDRZy+co1NNrvZ2oZQi5ynHGnFDSh3qn7OZPMZTP6XSXIDjW+njxqv/////+yfT+59Gt//MoxAsOkibwAYA4AJxpEin2cxhuNz9lOJGmCgsjKhRweA4APJGE3fUxjD3eSRSxpEexQZDDyjnf7f+A6v///////6ng8LH9//MoxAsP2pboAYA4ABn97QkGoyJCKQNOQUgDkyxpujjUdm1PPPQ97GqacXZnnTf+2jFyBh70bdfjju/boOMEAIUV//////SS//MoxAYNkp7oAYA4AIWIa535zAWcSqY6lP83Ybi5ixDnTTUT/icXCphIGhpMueQZzZw2RzdP//pQ91HmetVMQU1FNC4wVVVV//MoxAoAAANIAcAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV',
-  clacks: [
-    [-0.1, 25],
-    [29.9, 25],
-    [59.9, 25],
-    [89.9, 25],
-    [119.9, 25],
-    [149.9, 25],
-  ],
-};
