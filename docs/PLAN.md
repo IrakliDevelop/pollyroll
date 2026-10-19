@@ -31,11 +31,12 @@ built for shared (multiplayer) rolls from day one. Independent of Fieldnotes and
 
 ### Budgets (min+gzip, hard limits in `size-limit`)
 
-| Entry                                                                       | Limit |
-| --------------------------------------------------------------------------- | ----- |
-| `pollyroll` (core)                                                          | 4 KB  |
-| `pollyroll/render` (renderer + physics + geometry + shaders + skin presets) | 30 KB |
-| `pollyroll/react` (excluding react)                                         | 1 KB  |
+| Entry                                                                       | Limit  |
+| --------------------------------------------------------------------------- | ------ |
+| `pollyroll` (core)                                                          | 4 KB   |
+| `pollyroll/render` (renderer + physics + geometry + shaders + skin presets) | 30 KB  |
+| `pollyroll/react` (excluding react)                                         | 1 KB   |
+| `pollyroll/format` _(amended, 0.3.0)_                                       | 0.5 KB |
 
 Baseline being replaced: dice-box JS plus 2.1 MB of `public/assets` (ammo.js + themes).
 
