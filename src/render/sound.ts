@@ -1,6 +1,12 @@
 import type { PlannedBody } from '../physics/plan';
 import { DEFAULT_CONFIG, DT } from '../physics/world';
 
+/** Recorded clacks: base64 audio and, per clack, [start ms relative to the clip's first sound, length ms]. */
+export interface ClackSet {
+  readonly audio: string;
+  readonly clacks: readonly (readonly [number, number])[];
+}
+
 const MIN_STRENGTH = 2; // units/s
 const COOLDOWN = 6; // steps between two impacts of one body
 const MAX_IMPACTS = 48;

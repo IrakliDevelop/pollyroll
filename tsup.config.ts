@@ -10,6 +10,7 @@ export default defineConfig({
     render: 'src/render/index.ts',
     react: 'src/react/index.ts',
     format: 'src/format/index.ts',
+    sounds: 'src/sounds/index.ts',
   },
   format: ['esm', 'cjs'],
   dts: true,

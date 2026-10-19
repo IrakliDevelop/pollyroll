@@ -35,6 +35,9 @@
       ],
       "format": [
         "./dist/format.d.ts"
+      ],
+      "sounds": [
+        "./dist/sounds.d.ts"
       ]
     }
   },
@@ -77,6 +80,16 @@
       "require": {
         "types": "./dist/format.d.cts",
         "default": "./dist/format.cjs"
+      }
+    },
+    "./sounds": {
+      "import": {
+        "types": "./dist/sounds.d.ts",
+        "default": "./dist/sounds.js"
+      },
+      "require": {
+        "types": "./dist/sounds.d.cts",
+        "default": "./dist/sounds.cjs"
       }
     },
     "./package.json": "./package.json"

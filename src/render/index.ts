@@ -1,6 +1,7 @@
 export { createDiceTray, materialPresets } from './tray';
 export type { DiceTray, TrayOptions } from './tray';
 export type { LabelSet } from '../geometry/labels';
+export type { ClackSet } from './sound';
 export { PollyrollShaderError } from './gl';
 export {
   classic,

@@ -6,3 +6,4 @@ playwright-report
 e2e/**/*-snapshots
 .work
 .claude/worktrees
+src/sounds/index.ts
