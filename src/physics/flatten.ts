@@ -187,12 +187,9 @@ export function footprint(shape: ShapeType, q: Quat): Float64Array {
   return new Float64Array(hull.flat());
 }
 
-/** Two-phase settle tail: slide and flatten above the starting bottom, then drop. Phase 1
- *  (FLATTEN_STEPS / 2 steps) nlerps by the shortest arc taking the up readout to +Y while x and z
- *  move linearly to (x, z), keeping the lowest vertex at the starting bottom height (clamped to
- *  the floor); phase 2 lowers the flat die linearly onto the floor. With `lift`, phase 1 is
- *  lift–slide: the die first rises unturned to bottom `lift` over RISE_STEPS, then turns and slides
- *  at that height. null if within 0.5° and not moved. */
+/** Two-phase settle tail: slide and flatten above the starting bottom (lift–slide: first rise to
+ *  `lift` on a smoothstep), then drop in free fall. A turn eases in as t² and a floor topple rocks
+ *  6% past flat once; a slide alone is a smoothstep. null if within 0.5° and not moved. */
 export function flattenTail(
   shape: ShapeType,
   pose: Float64Array,
@@ -203,31 +200,38 @@ export function flattenTail(
   const [px = 0, , pz = 0, qx = 0, qy = 0, qz = 0, qw = 1] = pose;
   const poly = getPolyhedron(shape);
   const r = poly.readouts[upReadout(shape, pose)] ?? [0, 1, 0];
-  if (quatRotate([qx, qy, qz, qw], r)[1] >= COS_HALF_DEGREE && x === px && z === pz) return null;
+  const turning = quatRotate([qx, qy, qz, qw], r)[1] < COS_HALF_DEGREE;
+  if (!turning && x === px && z === pz) return null;
   const [fx, fy, fz, fw] = flatOrientation(shape, pose);
   const low = lowestY(poly.vertices, fx, fy, fz, fw);
   const bottom = bottomOf(shape, pose);
   const clear = lift === undefined ? bottom : Math.max(bottom, lift);
+  // A lift always clears the floor by CLEARANCE, so only unlifted floor topples rock.
+  const rocks = turning && clear < 0.001;
   const sign = qx * fx + qy * fy + qz * fz + qw * fw < 0 ? -1 : 1;
   const half = FLATTEN_STEPS / 2;
   const rise = lift === undefined ? 0 : RISE_STEPS;
   const out = new Float64Array(FLATTEN_STEPS * 7);
   for (let k = 1; k <= FLATTEN_STEPS; k++) {
     const t = Math.min(Math.max((k - rise) / (half - rise), 0), 1);
-    const s = 1 - t;
-    const up = k >= rise ? 1 : k / rise;
-    const cx = s * qx + t * sign * fx;
-    const cy = s * qy + t * sign * fy;
-    const cz = s * qz + t * sign * fz;
-    const cw = s * qw + t * sign * fw;
+    const e = turning ? t * t : t * t * (3 - 2 * t);
+    const w = (k - half) / ROCK_STEPS;
+    const p = rocks && w > 0 && w < 1 ? e + 4 * ROCK * w * (1 - w) : e;
+    const u = k >= rise ? 1 : k / rise;
+    const up = u * u * (3 - 2 * u);
+    const d = (k - half) / half;
+    const cx = (1 - p) * qx + p * sign * fx;
+    const cy = (1 - p) * qy + p * sign * fy;
+    const cz = (1 - p) * qz + p * sign * fz;
+    const cw = (1 - p) * qw + p * sign * fw;
     const n = Math.sqrt(cx * cx + cy * cy + cz * cz + cw * cw);
+    const base = k <= half ? bottom + (clear - bottom) * up : (1 - d * d) * clear;
+    const under =
+      k > half && p === 1 ? low : lowestY(poly.vertices, cx / n, cy / n, cz / n, cw / n);
     const i = (k - 1) * 7;
-    out[i] = s * px + t * x;
-    out[i + 1] =
-      k <= half
-        ? bottom + (clear - bottom) * up - lowestY(poly.vertices, cx / n, cy / n, cz / n, cw / n)
-        : (1 - (k - half) / half) * clear - low;
-    out[i + 2] = s * pz + t * z;
+    out[i] = (1 - e) * px + e * x;
+    out[i + 1] = base - under;
+    out[i + 2] = (1 - e) * pz + e * z;
     out[i + 3] = cx / n;
     out[i + 4] = cy / n;
     out[i + 5] = cz / n;
@@ -237,6 +241,8 @@ export function flattenTail(
 }
 
 const RISE_STEPS = 6;
+const ROCK_STEPS = 6;
+const ROCK = 0.06;
 const TAIL_DEPTH = 0.005;
 const CLEARANCE = 0.02;
 const MAX_RISE = 1.5;

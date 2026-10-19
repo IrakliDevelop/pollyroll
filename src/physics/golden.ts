@@ -37,7 +37,7 @@ export const GOLDEN_CASES: readonly SimInput[] = [
 
 /** goldenHash() of the final implementation. Changing it requires an explanation of the intended
  *  change in motion. */
-export const GOLDEN_HASH = '46cf0f16';
+export const GOLDEN_HASH = '90088985';
 
 /** trackHash of each golden case, the five 8-char strings joined, then FNV-1a 32-bit over that
  *  string's char codes; 8 lowercase hex chars. */

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { getPolyhedron } from '../geometry/polyhedra';
 import type { ShapeType } from '../geometry/polyhedra';
 import { quatMul, quatRotate } from '../geometry/vec';
-import type { Quat } from '../geometry/vec';
+import type { Quat, Vec3 } from '../geometry/vec';
 import {
   FLATTEN_STEPS,
   flatOrientation,
@@ -68,11 +68,11 @@ describe('flattenTail', () => {
     expect(Math.abs(top[2])).toBeLessThan(1e-6);
     expect(Math.abs((last[1] ?? NaN) - 0.5)).toBeLessThan(1e-3);
     expect([last[0], last[2]]).toEqual([1.5, -2]);
-    // Halfway through the 18-step flatten phase the tilt about Z halves to 10°, so the die rests at
-    // 0.5·(cos10° + sin10°) ≈ 0.5792, above the linear 0.5704.
+    // Halfway through the 18-step flatten phase the t² turn is a quarter done, about 15° of tilt
+    // left, so the die rests at 0.5·(cos15° + sin15°) ≈ 0.6124, above the linear 0.6056.
     const mid = frameAt(tail, FLATTEN_STEPS / 4 - 1);
-    expect(Math.abs((mid[1] ?? NaN) - 0.5792)).toBeLessThan(1e-3);
-    expect(quatRotate(quatOf(mid), [0, 1, 0])[1]).toBeCloseTo(Math.cos(half), 3);
+    expect(Math.abs((mid[1] ?? NaN) - 0.6124)).toBeLessThan(1e-3);
+    expect(quatRotate(quatOf(mid), [0, 1, 0])[1]).toBeCloseTo(Math.cos((15 * Math.PI) / 180), 3);
     expectAboveFloor('d6', tail);
   });
 
@@ -124,6 +124,83 @@ describe('flattenTail', () => {
     const quarter = (0.2 * Math.PI) / 180;
     const pose = new Float64Array([0, 0.5, 0, Math.sin(quarter), 0, 0, Math.cos(quarter)]);
     expect(flattenTail('d6', pose, 0, 0)).toBeNull();
+  });
+});
+
+describe('flattenTail timing', () => {
+  const tilt = (30 * Math.PI) / 180;
+  // Tilted 30° about Z the lowest vertex sits 0.5·(cos30° + sin30°) below the centre.
+  const tilted = new Float64Array([
+    0,
+    0.5 * (Math.cos(tilt) + Math.sin(tilt)),
+    0,
+    0,
+    0,
+    Math.sin(tilt / 2),
+    Math.cos(tilt / 2),
+  ]);
+  const upOf = (f: readonly number[]): Vec3 =>
+    getPolyhedron('d6')
+      .readouts.map((r) => quatRotate(quatOf(f), r))
+      .reduce((a, b) => (b[1] > a[1] ? b : a));
+  const tiltOf = (f: readonly number[]): number => Math.acos(Math.min(upOf(f)[1], 1));
+
+  it('turns a 30° d6 under 15% of the way by step 6 and lies flat at step 18', () => {
+    const tail = flattenTail('d6', tilted, 0, 0);
+    expect(tail).not.toBeNull();
+    if (tail === null) return;
+    expect(tilt - tiltOf(frameAt(tail, 5))).toBeLessThan(0.15 * tilt);
+    expect(upOf(frameAt(tail, 17))[1]).toBeCloseTo(1, 12);
+  });
+
+  it('rocks a 30° d6 once past flat by at most 3° above the floor, then rests exactly flat', () => {
+    const tail = flattenTail('d6', tilted, 0, 0);
+    expect(tail).not.toBeNull();
+    if (tail === null) return;
+    // The die leans toward −x; a rock tips its top toward +x.
+    const rocks = [18, 19, 20, 21, 22, 23]
+      .map((k) => frameAt(tail, k))
+      .filter((f) => upOf(f)[0] > 0)
+      .map(tiltOf);
+    expect(rocks.length).toBeGreaterThan(0);
+    expect(Math.max(...rocks)).toBeGreaterThan(0);
+    expect(Math.max(...rocks)).toBeLessThanOrEqual((3 * Math.PI) / 180);
+    for (let k = 0; k < FLATTEN_STEPS; k++)
+      expect(restOf('d6', frameAt(tail, k)).lowY, `frame ${k}`).toBeGreaterThanOrEqual(-1e-9);
+    const last = frameAt(tail, FLATTEN_STEPS - 1);
+    for (let k = 24; k < FLATTEN_STEPS; k++) expect(frameAt(tail, k), `frame ${k}`).toEqual(last);
+  });
+
+  it('drops a d6 stacked on another faster each step, without a rock', () => {
+    const top = new Float64Array([0, 1.5, 0, 0, 0, 0, 1]);
+    const square = footprint('d6', [0, 0, 0, 1]);
+    const xz = new Float64Array([0, 0, 0, 0]);
+    separate(xz, [square, square], { minX: -4, maxX: 4, minZ: -4, maxZ: 4 });
+    const upper = flattenTail('d6', top, xz[2] ?? NaN, xz[3] ?? NaN);
+    expect(upper).not.toBeNull();
+    if (upper === null) return;
+    const y = (k: number): number => upper[k * 7 + 1] ?? NaN;
+    expect(Math.abs(y(35) - y(34))).toBeGreaterThan(Math.abs(y(18) - y(17)));
+    const last = quatOf(frameAt(upper, FLATTEN_STEPS - 1));
+    for (let k = 17; k < FLATTEN_STEPS; k++) expect(quatOf(frameAt(upper, k))).toEqual(last);
+  });
+
+  it('eases a lift–slide rise in: under 10% of the rise after one step', () => {
+    const tail = flattenTail('d6', new Float64Array([0, 0.5, 0, 0, 0, 0, 1]), 1.5, 0, 1);
+    expect(tail).not.toBeNull();
+    if (tail === null) return;
+    // Rising from bottom 0 to bottom 1 over 6 steps; linear would be 1/6 after one step.
+    expect((tail[1] ?? NaN) - 0.5).toBeLessThan(0.1);
+    expect(tail[2 * 7 + 1]).toBeCloseTo(1, 12);
+  });
+
+  it('slides an already flat d6 on a smoothstep: under 10% by step 3, half way at step 9', () => {
+    // separate() moves the left of two flat d6 0.6 apart to x = −0.225.
+    const tail = flattenTail('d6', new Float64Array([0, 0.5, 0, 0, 0, 0, 1]), -0.225, 0);
+    expect(tail).not.toBeNull();
+    if (tail === null) return;
+    expect((tail[2 * 7] ?? NaN) / -0.225).toBeLessThan(0.1);
+    expect(Math.abs((tail[8 * 7] ?? NaN) / -0.225 - 0.5)).toBeLessThanOrEqual(0.01);
   });
 });
 
