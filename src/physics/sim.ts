@@ -58,7 +58,7 @@ const ANGULAR_SQ = SETTLE_ANGULAR * SETTLE_ANGULAR;
  * the world has stayed below SETTLE_LINEAR and SETTLE_ANGULAR for SETTLE_STEPS consecutive steps.
  * Every throw parameter comes from the sfc32 stream of `seed`. Tracks are returned in input order.
  * A roll ending with any die's bottom above STACK_HEIGHT is thrown again from scratch, continuing the
- * stream, up to MAX_ATTEMPTS times; the last attempt is kept.
+ * stream, up to MAX_ATTEMPTS attempts in total; the last attempt is kept.
  * Resting centres are then pushed apart by the footprints of the flattened dice (see `separate`);
  * when any die rests cocked or moved, every track gains a FLATTEN_STEPS tail (see `flattenTail`,
  * lifted over dice it would hit by `liftTails`); other dice hold.

@@ -330,8 +330,9 @@ describe('world: collision', () => {
     };
     // Reduced mass 1/2: Jn ≤ (1 + 0.35)·5/2 = 3.375, so μ = 0.1 keeps vz ≥ 3 − 0.3375.
     expect(vzAfterPair({})).toBeGreaterThanOrEqual(3 - 0.3375 - 1e-6);
-    // μ = 0.6 allows Δvz up to 0.6·3.375 ≈ 2; Δvz > 0.4 is beyond μ = 0.1.
-    expect(vzAfterPair({ pairFriction: 0.6 })).toBeLessThan(2.6);
+    // Sticking caps Δvz at 3/(1 + 1 + 1.5 + 1.5) = 0.6 (r²/I = 1.5 per d6), so vz ≈ 2.4 at μ = 0.6;
+    // Δvz > 0.45 is beyond μ = 0.1.
+    expect(vzAfterPair({ pairFriction: 0.6 })).toBeLessThan(2.55);
   });
 
   it('walls keep a fast die inside the tray', () => {

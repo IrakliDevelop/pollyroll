@@ -52,7 +52,7 @@ export function noiseBuffer(ctx: AudioContext): AudioBuffer {
   return buffer;
 }
 
-/** Schedules one band-passed `noise` burst per impact at `start + step · DT / rate`; returns the sources. */
+/** Schedules a band-passed `noise` burst per impact at `start + step · DT / rate`; returns them. */
 export function playImpacts(
   ctx: AudioContext,
   noise: AudioBuffer,

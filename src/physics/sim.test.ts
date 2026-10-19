@@ -134,6 +134,8 @@ describe('throwWave', () => {
     expect(x).toBeGreaterThan(4.5);
     expect(z).toBeLessThan(-2.5);
     expect(Math.hypot(vx, vz)).toBeLessThanOrEqual(0.4 * (8 * 1.15 + 1.5));
+    // A full-speed throw moves at least 5·0.85 along its heading.
+    expect(Math.hypot(vx, vz)).toBeLessThan(5 * 0.85);
   });
 
   it('clamps spawn points inside the walls', () => {

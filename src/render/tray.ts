@@ -611,7 +611,7 @@ export function createDiceTray(
   function settle(r: Roll): void {
     r.step = r.plan.totalSteps;
     r.done = true;
-    // Impacts end ≥ 25 steps before settle; a suspended context must not play them on resume.
+    // Impacts end before the 24-step calm window; a suspended context must not play them on resume.
     silence();
     render();
     show(r.text);
