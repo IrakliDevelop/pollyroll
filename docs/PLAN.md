@@ -47,6 +47,8 @@ Baseline being replaced: dice-box JS plus 2.1 MB of `public/assets` (ammo.js + t
 - 60 fps with 10 dice under Chrome 4× CPU throttle (manual check in the demo; record result).
 - One instanced draw call per die type plus one shadow pass. Device pixel ratio capped at 2.
 - Render-on-demand: the frame loop stops once every die has settled. Idle cost is zero.
+- _(amended, 0.4.0)_ Playback: the 120 Hz track plays at 1.5× real time from the first drawn
+  frame (≈ 2.25× gravity along the same paths); impact sounds use the same clock.
 - Maximum 30 animated bodies per tray; dice beyond 30 are included in the summary but not animated.
 
 ## 2. Dice set
@@ -137,6 +139,7 @@ isRollEvent(input: unknown): input is RollEvent;  // validates untrusted input, 
   die by hull: bounding spheres as broad phase, face-normal SAT, reference-face clipping (up to 4
   points, one normal), feature-keyed warm starts, 0.01 speculative margin; edge–edge pairs get one
   fallback contact. Sequential impulses with restitution 0.35, friction 0.6, linear and angular damping.
+  _(amended, 0.4.0)_ Friction 0.6 against the floor, 0.1 against walls and between dice.
   _(amended)_ Contacts are warm-started from the previous step's impulses.
 - Settle: every body below 0.05 units/s linear and 0.1 rad/s angular speed for 24 consecutive steps.
 - Determinism rule from AGENTS.md: only `+ - * /` and `Math.sqrt` in the step; quaternion
@@ -157,7 +160,9 @@ isRollEvent(input: unknown): input is RollEvent;  // validates untrusted input, 
   _(amended, 0.2.0)_ 36-step tail that rolls it onto its up face and rests it on the floor (dice can
   come to rest cocked against walls, neighbours, or balanced on an edge): slide and flatten without
   lowering the die's bottom, then drop; a die whose tail would pass through a neighbour lifts above
-  it first (rise ≤ 1.5 die units). Before the tails, resting dice are pushed apart by their exact
+  it first (rise ≤ 1.5 die units). _(amended, 0.4.0)_ Tail timing follows gravity: turn and slide
+  accelerate (t²), a turned die rocks 6% past flat once, rises ease in and out, drops fall freely.
+  Before the tails, resting dice are pushed apart by their exact
   horizontal footprints (SAT, 0.05 gap, up to 64 passes, clamped to the walls).
 - _(amended)_ Auto-fit: a roll uses the largest scale ≤ `dieScale` on a 0.05 grid whose tray area
   holds 5 die-units² per animated body, so large rolls shrink instead of overlapping.
