@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [0.6.0] - Unreleased
+## [0.6.0] - 2026-10-19
 
 ### Added
 
@@ -22,7 +22,7 @@ All notable changes to this project are documented here. The format follows
 - Physics buffers hold hulls of up to 32 vertices and 16-edge faces; slot tables grow with the
   bodies in a roll. Dice-only rolls move exactly as in 0.5.0.
 
-## [0.5.0] - Unreleased
+## [0.5.0] - 2026-10-19
 
 ### Added
 
@@ -34,7 +34,7 @@ All notable changes to this project are documented here. The format follows
   created. The demo uses it.
 - Demo: a notation key under the examples lists every modifier with a one-click example.
 
-## [0.4.0] - Unreleased
+## [0.4.0] - 2026-10-19
 
 ### Changed
 
@@ -59,7 +59,7 @@ All notable changes to this project are documented here. The format follows
 - The same `RollEvent` animates differently than in 0.3.0 (values are identical), so clients of a
   shared roll should run the same minor version to see the same motion.
 
-## [0.3.0] - Unreleased
+## [0.3.0] - 2026-10-19
 
 ### Added
 
