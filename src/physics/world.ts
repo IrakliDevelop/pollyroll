@@ -18,6 +18,8 @@ export interface WorldConfig {
   pairFriction: number; // die against die: low so dice slide off neighbours
   linearDamping: number; // per second, applied as v *= 1 / (1 + c·DT)
   angularDamping: number; // per second, applied as ω *= 1 / (1 + c·DT)
+  coinLinearDamping: number; // coins: per second, as linearDamping
+  coinAngularDamping: number; // coins: per second, as angularDamping
   iterations: number;
 }
 
@@ -33,6 +35,8 @@ export const DEFAULT_CONFIG: WorldConfig = {
   // rate in the allowed ranges with a median of about 250 steps.
   linearDamping: 0.6,
   angularDamping: 2,
+  coinLinearDamping: 0.6,
+  coinAngularDamping: 2,
   iterations: 10,
 };
 
@@ -47,6 +51,8 @@ export interface World {
     angularVelocity: Vec3,
   ): number;
   step(): void;
+  /** Wall and die contacts of body i in the last step (floor contacts excluded). */
+  propped(i: number): number;
   /** Writes px,py,pz,qx,qy,qz,qw of body i into out at offset. */
   read(i: number, out: Float32Array | Float64Array, offset: number): void;
   linearSpeedSq(i: number): number;
@@ -61,8 +67,8 @@ const FACE_EDGES = 16; // edges per face: bounds the clip polygon and the warm-s
 const PLANES = 5;
 const PAIR_CONTACTS = MAX_BODIES * 8;
 const PAIR_KEEP = 4;
-// Sutherland–Hodgman: each side plane adds at most one vertex to a convex polygon.
-const MAX_CLIP = FACE_EDGES + FACE_EDGES;
+// Sutherland–Hodgman adds a vertex per side plane to a convex polygon; rounding can add more.
+const MAX_CLIP = 4 * FACE_EDGES;
 const REFERENCE_BIAS = 0.005; // prefer A's face unless B's separates clearly more (frame coherence)
 const MAX_CONTACTS = MAX_BODIES * PLANES * MAX_VERTICES + PAIR_CONTACTS;
 const BAUMGARTE = 0.2;
@@ -134,8 +140,9 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
   const friction = clampNumber(cfg.friction, 0, Infinity);
   const wallFriction = clampNumber(cfg.wallFriction, 0, Infinity);
   const pairFriction = clampNumber(cfg.pairFriction, 0, Infinity);
-  const linearFactor = 1 / (1 + clampNumber(cfg.linearDamping, 0, Infinity) * DT);
-  const angularFactor = 1 / (1 + clampNumber(cfg.angularDamping, 0, Infinity) * DT);
+  const factor = (damping: number): number => 1 / (1 + clampNumber(damping, 0, Infinity) * DT);
+  const dieDamping = [factor(cfg.linearDamping), factor(cfg.angularDamping)] as const;
+  const coinDamping = [factor(cfg.coinLinearDamping), factor(cfg.coinAngularDamping)] as const;
   const biasRate = BAUMGARTE / DT;
 
   // Planes in contact order: floor, x >= minX, x <= maxX, z >= minZ, z <= maxZ.
@@ -151,6 +158,9 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
   const omega = new Float64Array(MAX_BODIES * 3);
   const rot = new Float64Array(MAX_BODIES * 9); // row-major rotation matrix
   const invI = new Float64Array(MAX_BODIES * 9); // world inverse inertia R·diag·Rᵀ
+  const linearFactor = new Float64Array(MAX_BODIES);
+  const angularFactor = new Float64Array(MAX_BODIES);
+  const proppedCount = new Int32Array(MAX_BODIES); // wall and die contacts in the last step
   const vertexCount = new Int32Array(MAX_BODIES);
   const faceEdges = new Int32Array(MAX_BODIES); // most edges on one face
   const pairSlot = new Int32Array(MAX_BODIES * MAX_BODIES); // first slot of pair (i, j), i < j
@@ -175,6 +185,7 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
   // Sized to the pairs added so far: a coin's 16-edge caps need ~9× the slots of a die pair.
   let slotLambda = new Float64Array(PLANE_SLOTS * 3); // accumulated impulses of each slot's last contact
   let slotStep = new Int32Array(PLANE_SLOTS); // stepNumber + 1 of the step that wrote slotLambda
+  let slotCount = PLANE_SLOTS; // slots in use; capacity grows by doubling
   let stepNumber = 1;
   let contactCount = 0;
   let count = 0;
@@ -393,6 +404,8 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
   ): void {
     const pa = a * 3;
     const pb = b * 3;
+    proppedCount[a] = atInt(proppedCount, a) + 1;
+    proppedCount[b] = atInt(proppedCount, b) + 1;
     addContact(
       a,
       b,
@@ -495,7 +508,7 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
         const db = sx * at(src, n) + sy * at(src, n + 1) + sz * at(src, n + 2) - limit;
         // Edge labels: incident edge k is k, the part of side plane e is edges + e.
         const label = atInt(srcLabel, k);
-        if (da <= 0) {
+        if (da <= 0 && out < MAX_CLIP) {
           dst[out * 3] = cx;
           dst[out * 3 + 1] = cy;
           dst[out * 3 + 2] = cz;
@@ -503,7 +516,7 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
           dstLabel[out] = da === 0 && db > 0 ? edges + e : label;
           out++;
         }
-        if ((da < 0 && db > 0) || (da > 0 && db < 0)) {
+        if (((da < 0 && db > 0) || (da > 0 && db < 0)) && out < MAX_CLIP) {
           const t = da / (da - db);
           dst[out * 3] = cx + (at(src, n) - cx) * t;
           dst[out * 3 + 1] = cy + (at(src, n + 1) - cy) * t;
@@ -619,6 +632,7 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
    */
   function collide(): void {
     contactCount = 0;
+    proppedCount.fill(0);
     for (let i = 0; i < count; i++) {
       const shape = shapes[i];
       if (shape === undefined) continue;
@@ -673,6 +687,7 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
           const wz = at(worldVerts, w + 2);
           const separation = nx * wx + ny * wy + nz * wz - offset;
           if (separation < 0) {
+            if (p > 0) proppedCount[i] = atInt(proppedCount, i) + 1;
             const slot = (i * PLANES + p) * MAX_VERTICES + k;
             addContact(
               -1,
@@ -854,21 +869,24 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
       shapes.push(body);
       bodyInvInertia.set(body.invInertia, i * 3);
       bodyRadius[i] = body.radius;
+      [linearFactor[i], angularFactor[i]] = shape === 'coin' ? coinDamping : dieDamping;
       vertexCount[i] = body.vertices.length / 3;
       faceCount[i] = body.planes.length / 4;
       for (const face of body.faces) faceEdges[i] = Math.max(atInt(faceEdges, i), face.length);
-      let slots = slotStep.length;
       for (let j = 0; j < i; j++) {
         const e = Math.max(atInt(faceEdges, j), atInt(faceEdges, i));
-        pairSlot[j * MAX_BODIES + i] = slots;
-        slots += e + 2 * e * e + 1;
+        pairSlot[j * MAX_BODIES + i] = slotCount;
+        slotCount += e + 2 * e * e + 1;
       }
-      const lambda = new Float64Array(slots * 3);
-      lambda.set(slotLambda);
-      slotLambda = lambda;
-      const step = new Int32Array(slots);
-      step.set(slotStep);
-      slotStep = step;
+      if (slotCount > slotStep.length) {
+        const capacity = Math.max(slotCount, 2 * slotStep.length);
+        const lambda = new Float64Array(capacity * 3);
+        lambda.set(slotLambda);
+        slotLambda = lambda;
+        const step = new Int32Array(capacity);
+        step.set(slotStep);
+        slotStep = step;
+      }
       pos.set(position, i * 3);
       vel.set(velocity, i * 3);
       omega.set(angularVelocity, i * 3);
@@ -887,10 +905,12 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
       const gdt = gravity * DT;
       for (let i = 0; i < count; i++) {
         const v = i * 3;
+        const linear = at(linearFactor, i);
+        const angular = at(angularFactor, i);
         vel[v + 1] = at(vel, v + 1) + gdt;
         for (let k = 0; k < 3; k++) {
-          vel[v + k] = at(vel, v + k) * linearFactor;
-          omega[v + k] = at(omega, v + k) * angularFactor;
+          vel[v + k] = at(vel, v + k) * linear;
+          omega[v + k] = at(omega, v + k) * angular;
         }
         updateInertia(i);
       }
@@ -928,6 +948,11 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
           quat[q + 3] = 1;
         }
       }
+    },
+
+    propped(i): number {
+      checkIndex(i);
+      return atInt(proppedCount, i);
     },
 
     read(i, out, offset): void {

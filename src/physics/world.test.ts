@@ -410,6 +410,34 @@ describe('world: hull contacts', () => {
     expect(Math.abs(lowestY(world, 1, 'd6') - 1)).toBeLessThan(0.02);
   });
 
+  it('damps coins by the coin damping and dice by the dice damping', () => {
+    const world = createWorld(BOUNDS, {
+      gravity: 0,
+      linearDamping: 0,
+      angularDamping: 0,
+      coinLinearDamping: 12,
+      coinAngularDamping: 6,
+    });
+    world.add('coin', [-3, 3, 0], ID, [1, 0, 0], [0, 10, 0]);
+    world.add('d6', [3, 3, 0], ID, [1, 0, 0], [0, 10, 0]);
+    world.step();
+    // One step multiplies by 1 / (1 + c·DT): 1 / 1.1 for v, 10 / 1.05 for ω about the coin's axis.
+    expect(Math.sqrt(world.linearSpeedSq(0))).toBeCloseTo(1 / 1.1, 12);
+    expect(Math.sqrt(world.angularSpeedSq(0))).toBeCloseTo(10 / 1.05, 12);
+    expect(Math.sqrt(world.linearSpeedSq(1))).toBeCloseTo(1, 12);
+    expect(Math.sqrt(world.angularSpeedSq(1))).toBeCloseTo(10, 12);
+  });
+
+  it('counts wall and die contacts as propping, floor contacts not', () => {
+    const world = createWorld(BOUNDS);
+    world.add('d6', [0, 0.49, -2], ID, ZERO, ZERO); // floor only
+    world.add('d6', [-5.51, 0.49, 0], ID, ZERO, ZERO); // its 4 −x corners 0.01 into the wall
+    world.add('d6', [2, 0.49, 2], ID, ZERO, ZERO); // faces 0.01 into each other
+    world.add('d6', [2.99, 0.49, 2], ID, ZERO, ZERO);
+    world.step();
+    expect([0, 1, 2, 3].map((i) => world.propped(i))).toEqual([0, 4, 4, 4]);
+  });
+
   it('accepts the coin hull: 32 vertices, 18 faces, 48 edges, 16-edge caps', () => {
     expect(() => checkHull(getBodyShape('coin'))).not.toThrow();
   });

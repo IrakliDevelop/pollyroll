@@ -54,7 +54,11 @@ const SINGLE: [DieType, number[], (v: number) => string][] = [
   ['d12', Array.from({ length: 12 }, (_, i) => i + 1), String],
   ['d20', Array.from({ length: 20 }, (_, i) => i + 1), String],
   ['dF', [-1, 0, 1], (v) => (v === -1 ? '−' : v === 0 ? '' : '+')],
+  ['d2', [1, 2], String],
+  ['dc', [0, 1], (v) => (v === 0 ? 'T' : 'H')],
 ];
+
+const SHAPE: Partial<Record<DieType, string>> = { dF: 'd6', d2: 'coin', dc: 'coin' };
 
 describe('planRoll remap', () => {
   SINGLE.forEach(([type, values, expected], t) => {
@@ -68,7 +72,7 @@ describe('planRoll remap', () => {
         expect(body.value).toBe(value);
         expect(body.die).toBe(0);
         expect(body.labelSet).toBe(type);
-        expect(body.shape).toBe(type === 'dF' ? 'd6' : type);
+        expect(body.shape).toBe(SHAPE[type] ?? type);
         expect(shownText(body)).toBe(expected(value));
         ups.add(body.upReadout);
       }
@@ -136,6 +140,23 @@ describe('planRoll bodies', () => {
       expect(body.value).toBeNull();
       expect(body.remap).toEqual(IDENTITY);
     }
+  });
+
+  it('plans coins: dc and d2 bodies on the coin shape show their values', () => {
+    const plan = planRoll(
+      event(
+        '2dc+2d2',
+        [die('dc', 0), die('dc', 1), die('d2', 1, 0, 1), die('d2', 2, 0, 1)],
+        seedFor(8, 5),
+      ),
+      BOUNDS,
+    );
+    expect(plan.bodies.map((b) => [b.labelSet, b.shape, b.value, shownText(b)])).toEqual([
+      ['dc', 'coin', 0, 'T'],
+      ['dc', 'coin', 1, 'H'],
+      ['d2', 'coin', 1, '1'],
+      ['d2', 'coin', 2, '2'],
+    ]);
   });
 
   it('caps at MAX_BODIES bodies', () => {

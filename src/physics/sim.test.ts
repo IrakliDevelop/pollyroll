@@ -92,6 +92,27 @@ describe('throwWave', () => {
     expect(state?.angularVelocity).toSatisfy((w: number[]) => near(w, [20, -19, 8]));
   });
 
+  it('tosses a coin: 0.3× drift, upward launch, then a horizontal spin axis, spin, and own spin', () => {
+    // Heading (0.74, 0.18) → h = (0.6, −0.8); speed 6.86; position (−0.705, 2.41, 1.015) and
+    //   orientation (0.4, −0.2, 0.8, −0.4) as in the first throw test (rMax 0.65 fits the same block).
+    // A die's horizontal velocity would be (4.00644, ·, −6.34192), so the coin gets 0.3× that:
+    //   (1.201932, ·, −1.902576). vy 0.25 → 6 + 0.5 = 6.5.
+    // Axis (0.5, 0.52) → (0, 0.04), |a|² = 0.0016 ≤ 0.04, rejected; (0.65, 0.3) → (0.3, −0.4),
+    //   |a| = 0.5 → (0.6, −0.8); spin 0.6 → 34 → (20.4, 0, −27.2).
+    // Own spin 0.7 → 2 about the cap axis R·(0, 1, 0) = (0.48, −0.6, −0.64) → (0.96, −1.2, −1.28).
+    const rng = scripted([
+      0.74, 0.18, 0.62, 0.95, 0.15, 0.35, 0.6, 0.45, 0.7, 0.4, 0.8, 0.3, 0.25, 0.5, 0.52, 0.65, 0.3,
+      0.6, 0.7,
+    ]);
+    const [state, ...rest] = throwWave(rng, [0.65], BOUNDS, [], [true]);
+    expect(rest).toHaveLength(0);
+    expect(rng.used()).toBe(19);
+    expect(state?.position).toSatisfy((p: number[]) => near(p, [-0.705, 2.41, 1.015]));
+    expect(state?.orientation).toSatisfy((q: number[]) => near(q, [0.4, -0.2, 0.8, -0.4]));
+    expect(state?.velocity).toSatisfy((v: number[]) => near(v, [1.201932, 6.5, -1.902576]));
+    expect(state?.angularVelocity).toSatisfy((w: number[]) => near(w, [21.36, -1.2, -28.48]));
+  });
+
   it('rejects near-zero orientation draws and lays out a block of columns along x', () => {
     // heading (0.5, 0.9) → (0, 0.8) → h = (0, 1), p = (−1, 0); speed 0.04 → 5 + 3·0.04 = 5.12.
     // rMax 0.5 → d = 1.5, m = 0.75; k = 2 → c = 2, r = 1; back 1.4 → centre (0, −1.4), which fits
@@ -498,6 +519,57 @@ describe('settle acceptance', () => {
     const seed = i.toString(16).padStart(32, '0');
     expect(simulate({ seed, shapes, waves: shapes.map(() => 0), bounds }).settled).toBe(true);
   });
+});
+
+describe('coin rolls', () => {
+  const coins = (n: number): ShapeType[] => Array<ShapeType>(n).fill('coin');
+  // Fitted trays: trayBounds(608 / 360, fitScale(2, radii, 608 / 360)) for each roll.
+  const SMALL: TrayBounds = { minX: -3.5, maxX: 3.5, minZ: -1.75, maxZ: 1.75 };
+  it.each<[string, ShapeType[], TrayBounds, number]>([
+    ['1dc', coins(1), SMALL, 0],
+    ['3dc', coins(3), SMALL, 0],
+    ['1d20+3dc', ['d20', ...coins(3)], { minX: -4.25, maxX: 4.25, minZ: -2.25, maxZ: 2.25 }, 0],
+    [
+      '5d6+2dc',
+      [...Array<ShapeType>(5).fill('d6'), ...coins(2)],
+      { minX: -4.5, maxX: 4.5, minZ: -2.25, maxZ: 2.25 },
+      0,
+    ],
+    ['10dc', coins(10), { minX: -5, maxX: 5, minZ: -2.75, maxZ: 2.75 }, 4],
+  ])(
+    '%s over 200 seeds: every roll settles, 9 in 10 coins flip, coins end flat, few stack',
+    (_, shapes, bounds, maxStacked) => {
+      const capY = (f: Float32Array, at: number): number => {
+        const x = f[at + 3] ?? 0;
+        const z = f[at + 5] ?? 0;
+        return 1 - 2 * (x * x + z * z);
+      };
+      let stacked = 0;
+      let tossed = 0;
+      let flipped = 0;
+      for (let i = 0; i < 200; i++) {
+        const seed = i.toString(16).padStart(32, '0');
+        const result = simulate({ seed, shapes, waves: shapes.map(() => 0), bounds });
+        expect(result.settled, `seed ${i}`).toBe(true);
+        if (result.stacked) stacked++;
+        for (const t of result.tracks) {
+          if (t.shape !== 'coin') continue;
+          const f = t.frames;
+          const last = f.length - 7;
+          expect(Math.abs(capY(f, last)), `seed ${i}`).toBeGreaterThan(Math.cos(Math.PI / 360));
+          const rest = last - result.tailSteps * 7;
+          const start = capY(f, 0) > 0;
+          let flips = false;
+          for (let at = 7; at <= rest && !flips; at += 7) flips = capY(f, at) > 0 !== start;
+          tossed++;
+          if (flips) flipped++;
+        }
+      }
+      expect(stacked).toBeLessThanOrEqual(maxStacked);
+      expect(flipped / tossed).toBeGreaterThanOrEqual(0.9);
+    },
+    120_000,
+  );
 });
 
 describe('static guard', () => {

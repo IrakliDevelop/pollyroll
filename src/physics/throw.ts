@@ -16,6 +16,7 @@ export function clampInto(value: number, lo: number, hi: number): number {
 }
 
 const LATE_SPEED = 0.4;
+const TOSS_DRIFT = 0.3;
 
 function fitAcross(span: number, m: number): number {
   return Math.max(1, Math.floor((span - 2 * m) / (2 * m)) + 1);
@@ -36,7 +37,10 @@ export function spawnCapacity(rMax: number, bounds: TrayBounds): number {
  * 2. Speed s = 5 + 3f.
  * 3. Per body, in index order: jitter x, jitter z, y, orientation (repeat 4 draws u = 2f − 1 until
  *    1e-6 < |u|² ≤ 1, normalized, as [x, y, z, w]: a uniform random rotation by rejection sampling
- *    of the 4-ball), speed factor, lateral, vy, ωx, ωy, ωz.
+ *    of the 4-ball), speed factor, lateral, vy, ωx, ωy, ωz. A body marked in `tossed` (a coin)
+ *    draws, after lateral: vy = 6 + 2f upward, a horizontal spin axis (repeat ax = 2f − 1,
+ *    az = 2f − 1 until 0.04 < ax² + az² ≤ 1, normalized), spin 25 + 15f about it, then ±5f about
+ *    its own cap axis; its horizontal velocity is TOSS_DRIFT times a die's.
  *
  * Bodies sit in an axis-aligned block behind the tray centre, spaced 2·rMax + 0.5, filling the tray
  * width before adding a row, and stacked in layers only when the floor grid is full, so no bounding
@@ -49,6 +53,7 @@ export function throwWave(
   radii: readonly number[],
   bounds: TrayBounds,
   resting: readonly number[] = [],
+  tossed: readonly boolean[] = [],
 ): ThrowState[] {
   let hx = 0;
   let hz = 0;
@@ -135,19 +140,43 @@ export function throwWave(
     const uLen = Math.sqrt(uSq);
     const along = late * speed * (0.85 + 0.3 * rng.float());
     const lateral = late * (2 * rng.float() - 1) * 1.5;
+    const position: Vec3 = [
+      clampInto(x, bounds.minX + radius, bounds.maxX - radius),
+      y,
+      clampInto(z, bounds.minZ + radius, bounds.maxZ - radius),
+    ];
+    const orientation: Quat = [ux / uLen, uy / uLen, uz / uLen, uw / uLen];
+    const vx = hx * along + px * lateral;
+    const vz = hz * along + pz * lateral;
+    if (tossed[i] === true) {
+      // A coin toss: vertical launch, end-over-end spin about a horizontal axis.
+      const vy = 6 + 2 * rng.float();
+      let ax = 0;
+      let az = 0;
+      let aSq = 0;
+      do {
+        ax = 2 * rng.float() - 1;
+        az = 2 * rng.float() - 1;
+        aSq = ax * ax + az * az;
+      } while (!(aSq > 0.04 && aSq <= 1));
+      const spin = (25 + 15 * rng.float()) / Math.sqrt(aSq);
+      const own = (2 * rng.float() - 1) * 5;
+      const [qx, qy, qz, qw] = orientation;
+      // Cap axis: second column of the rotation matrix of the orientation.
+      const cx = 2 * (qx * qy - qz * qw);
+      const cy = 1 - 2 * (qx * qx + qz * qz);
+      const cz = 2 * (qy * qz + qx * qw);
+      return {
+        position,
+        orientation,
+        velocity: [TOSS_DRIFT * vx, vy, TOSS_DRIFT * vz],
+        angularVelocity: [ax * spin + cx * own, cy * own, az * spin + cz * own],
+      };
+    }
     const vy = -2 * rng.float();
     const wx = (2 * rng.float() - 1) * 25;
     const wy = (2 * rng.float() - 1) * 25;
     const wz = (2 * rng.float() - 1) * 25;
-    return {
-      position: [
-        clampInto(x, bounds.minX + radius, bounds.maxX - radius),
-        y,
-        clampInto(z, bounds.minZ + radius, bounds.maxZ - radius),
-      ],
-      orientation: [ux / uLen, uy / uLen, uz / uLen, uw / uLen],
-      velocity: [hx * along + px * lateral, vy, hz * along + pz * lateral],
-      angularVelocity: [wx, wy, wz],
-    };
+    return { position, orientation, velocity: [vx, vy, vz], angularVelocity: [wx, wy, wz] };
   });
 }
