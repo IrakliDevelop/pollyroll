@@ -4,7 +4,7 @@ Approved specification for the initial build. Decisions here are fixed; an agent
 genuine gap records its choice in [DECISIONS.md](DECISIONS.md) and continues (see
 [agents/delegation.md](agents/delegation.md) § Autonomous run).
 
-> **Amended 2026-10-06 by the owner after the 0.1.0 build, 2026-10-19 for 0.2.0, 2026-10-19 for 0.3.0, 2026-10-19 for 0.4.0, and 2026-10-19 for 0.5.0.** Sections below describe the shipped
+> **Amended 2026-10-06 by the owner after the 0.1.0 build, 2026-10-19 for 0.2.0, 2026-10-19 for 0.3.0, 2026-10-19 for 0.4.0, 2026-10-19 for 0.5.0, and 2026-10-19 for 0.6.0.** Sections below describe the shipped
 > behavior; lines marked _(amended)_ replace the original text, and the reason for each is in
 > [DECISIONS.md](DECISIONS.md). § 12 separates what is verified from what was decided and what is
 > still unverified.
@@ -38,7 +38,7 @@ built for shared (multiplayer) rolls from day one. Independent of Fieldnotes and
 | `pollyroll/render` (renderer + physics + geometry + shaders + skin presets) | 30 KB  |
 | `pollyroll/react` (excluding react)                                         | 1 KB   |
 | `pollyroll/format` _(amended, 0.3.0)_                                       | 0.5 KB |
-| `pollyroll/sounds` _(amended, 0.5.0)_                                       | 1.5 KB |
+| `pollyroll/sounds` `diceClacks` _(amended, 0.5.0; per export, 0.6.0)_       | 1.5 KB |
 
 Baseline being replaced: dice-box JS plus 2.1 MB of `public/assets` (ammo.js + themes).
 
@@ -65,6 +65,8 @@ Baseline being replaced: dice-box JS plus 2.1 MB of `public/assets` (ammo.js + t
 | `d20`  | 20      | 1–20      | opposite faces sum to 21                                                                           |
 | `d100` | 2 × d10 | 1–100     | one event entry; rendered as a tens d10 (`00`–`90`) and a ones d10 (`0`–`9`); `00` + `0` = 100     |
 | `dF`   | 6       | −1, 0, +1 | d6 geometry labeled `−`, `−`, blank, blank, `+`, `+`                                               |
+| `d2`   | 2       | 1–2       | _(amended, 0.6.0)_ coin geometry labeled `1`, `2`                                                  |
+| `dc`   | 2       | 0, 1      | _(amended, 0.6.0)_ coin: 0 = tails `T`, 1 = heads `H` (Foundry VTT's `dc`)                         |
 
 - `6` and `9` carry an underline on d10, d12, d20, and the d100 ones die.
 - Rotation groups (transitive on faces, so every value is reachable): d4 T (12), d6 and d8 O (24),
@@ -77,7 +79,7 @@ Baseline being replaced: dice-box JS plus 2.1 MB of `public/assets` (ammo.js + t
 ## 3. `RollEvent` (wire contract, v1)
 
 ```ts
-type DieType = 'd4' | 'd6' | 'd8' | 'd10' | 'd12' | 'd20' | 'd100' | 'dF';
+type DieType = 'd4' | 'd6' | 'd8' | 'd10' | 'd12' | 'd20' | 'd100' | 'dF' | 'd2' | 'dc'; // d2, dc: amended, 0.6.0
 
 interface RollEvent {
   v: 1;
@@ -131,7 +133,10 @@ isRollEvent(input: unknown): input is RollEvent;  // validates untrusted input, 
   comparison with an explicit operator counts successes among kept dice (`5d10>=7`). Rerolls reuse
   later waves; replaced dice are listed in `dropped`. `RollEvent` stays v1; the `DiceTerm` AST type
   changes (`explode: Compare | null`, new `reroll`, `success`).
-- Out of scope: compounding, crit ranges, failures.
+- _(amended, 0.6.0)_ `d2` (X = 2) and `dc` (coin) join the die sizes; every modifier applies to them
+  (`3dc=1` counts heads). `RollEvent` stays v1: the `type` enum widens, so a receiver on 0.5.0 or
+  older rejects an event with a coin in `isRollEvent` (fails closed).
+- Out of scope: compounding, crit ranges, failures, a coin "call" modifier.
 
 ## 5. Physics (`src/physics/`, internal, DOM-free)
 
@@ -144,6 +149,13 @@ isRollEvent(input: unknown): input is RollEvent;  // validates untrusted input, 
   _(amended, 0.4.0)_ Friction 0.6 against the floor, 0.1 against walls and between dice.
   _(amended)_ Contacts are warm-started from the previous step's impulses.
 - Settle: every body below 0.05 units/s linear and 0.1 rad/s angular speed for 24 consecutive steps.
+- _(amended, 0.6.0)_ Coin: physics hull a 16-sided prism, circumradius 0.65, thickness 0.2
+  (vertices from half-angle square roots, no trigonometry); readouts are the two caps only; hull
+  buffers hold 32 vertices, 48 edges, 16 edges per face. Coins are tossed, not flung: launched
+  upward at 6–8 units/s with 0.3× a die's horizontal speed and 25–40 rad/s of spin about a
+  seed-drawn horizontal axis (±5 about their own axis); dice-only rolls draw the seed stream as
+  before. Coins use the dice damping and settle rule; their simulated wobble is short (≈ 0.17 s),
+  accepted by the owner for this iteration. Design: [designs/coin.md](designs/coin.md).
 - Determinism rule from AGENTS.md: only `+ - * /` and `Math.sqrt` in the step; quaternion
   integration with a first-order update and explicit renormalization.
 - Tray: floor at y = 0; walls at the visible floor bounds (from canvas aspect and the fixed camera)
@@ -202,6 +214,9 @@ interface DiceTray {
   dice draw at 35% opacity; _(amended, 0.3.0)_ a rerolled die drops to 35% when its replacement
   wave is thrown. An unpositioned host element gets `position: relative`.
 - An `HTMLElement` target gets an absolutely positioned, transparent, pointer-events-none canvas.
+- _(amended, 0.6.0)_ Coins are silent; dice keep their sound. A coin sound was built and judged not
+  good enough by the owner; the research and the removed code's commits are in
+  [research/sound.md](research/sound.md).
 - Forward pass, GGX PBR (base color, metalness, roughness, clearcoat). _(amended)_ Fixed
   orthographic camera looking straight down (visible half height 5.1 world units at every aspect),
   so every die's up face is seen face-on; walls inset 0.6 die units; blob shadows offset away from
@@ -303,7 +318,7 @@ Chromium uses SwiftShader (`--use-angle=swiftshader --enable-unsafe-swiftshader`
   not coalesced under rapid sends.
 - Notation v2, image-texture skins, real shadow maps, persistent roll log.
 
-## 12. Status (2026-10-19, 0.5.0 branch)
+## 12. Status (2026-10-19, 0.6.0 branch)
 
 ### Verified (with evidence)
 
@@ -311,6 +326,16 @@ Chromium uses SwiftShader (`--use-angle=swiftshader --enable-unsafe-swiftshader`
 - 0.2.0 on `master` and npm (2026-10-19); 0.3.0 and 0.4.0 on `master`. 0.5.0 branch, locally: `pnpm verify`
   passes; e2e passes in Chromium and Firefox, including the cross-browser determinism hash. WebKit could not launch on the build machine (missing system
   libraries); CI runs it.
+- 0.5.0 on `master` and npm. 0.6.0 branch, locally: `pnpm verify` steps pass; e2e passes in Chromium
+  and Firefox (Firefox skips its WebGL tests on the build machine); WebKit runs in CI.
+- 0.6.0 coins (`d2`, `dc`): every value shows on top after remap (plan and property tests). Over 200
+  seeds per roll type: 100% of coins flip in the air; coins end on the rim before the tail in
+  4.5–8% of coin-only rolls and 13–34% when mixed with dice (leaning on them); `10dc` ends stacked
+  in 2% of rolls after re-simulation, smaller coin rolls in none; no 720-step cap hits. `10dc`
+  pre-simulates in ≈ 18 ms. Dice motion unchanged (the five dice golden cases hash as before); the golden hash, now with a
+  `2dc + 1d20` case, is `5ec7f203`; 10-dice bench ≈ 4.5 ms.
+  Sizes: core 3.79 kB, render 27.48 kB, `diceClacks` 1.18 kB. Coins are silent (sound built and
+  removed; docs/research/coin-sound.patch).
 - Every die × every value shows the rolled value on top after remap (unit tests + property tests).
 - Settled dice are flat (0.5° rule, tested over 1,200 single-die and 100 mixed rolls).
 - No die rests on another at settle (lowest hull point > 0.1 above the floor before the tail):

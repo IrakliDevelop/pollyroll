@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { BEVEL, MESH_STRIDE, getDieMesh } from './mesh';
 import type { DieMesh } from './mesh';
 import { SHAPES, getPolyhedron } from './polyhedra';
-import { add, cross, dot, length, scale, sub } from './vec';
+import { getRotationGroup } from './symmetry';
+import { add, cross, dot, length, quatRotate, scale, sub } from './vec';
 import type { Vec3 } from './vec';
+
+// Bevelled polyhedra; the coin is a round disc with its own checks.
+const DICE = SHAPES.filter((s) => s !== 'coin');
 
 interface MeshVertex {
   p: Vec3;
@@ -42,6 +46,7 @@ function uvArea(t: readonly [MeshVertex, MeshVertex, MeshVertex]): number {
 function labelSquare(t: readonly [MeshVertex, MeshVertex, MeshVertex]): {
   side: number;
   center: Vec3;
+  up: Vec3;
 } {
   const [a, b, c] = t;
   const e1 = sub(b.p, a.p);
@@ -54,7 +59,7 @@ function labelSquare(t: readonly [MeshVertex, MeshVertex, MeshVertex]): {
   const pu = scale(sub(scale(e1, dv2), scale(e2, dv1)), 1 / det);
   const pv = scale(sub(scale(e2, du1), scale(e1, du2)), 1 / det);
   const center = add(a.p, add(scale(pu, 0.5 - a.uv[0]), scale(pv, 0.5 - a.uv[1])));
-  return { side: length(pu), center };
+  return { side: length(pu), center, up: scale(pv, 1 / length(pv)) };
 }
 
 /** Distance from p to the line through a and b. */
@@ -163,7 +168,7 @@ describe('getDieMesh', () => {
     });
   });
 
-  it.each(SHAPES.filter((s) => s !== 'd4'))(
+  it.each(DICE.filter((s) => s !== 'd4'))(
     '%s: label square side is 1.45 × the inset face inradius; its glyph circle fits the face',
     (shape) => {
       const byCell = new Map<number, [MeshVertex, MeshVertex, MeshVertex][]>();
@@ -234,11 +239,118 @@ describe('getDieMesh', () => {
     }
   });
 
-  it.each(SHAPES)('%s: corners are cut (no vertex within 0.02 of a hull vertex)', (shape) => {
+  it.each(DICE)('%s: corners are cut (no vertex within 0.02 of a hull vertex)', (shape) => {
     const hull = getPolyhedron(shape).vertices;
     for (const v of vertices(getDieMesh(shape))) {
       for (const h of hull) expect(length(sub(v.p, h))).toBeGreaterThanOrEqual(0.02);
     }
+  });
+
+  describe('coin', () => {
+    const mesh = getDieMesh('coin');
+    const tris = triangles(mesh);
+    const [hullCorner = [0, 0, 0]] = getPolyhedron('coin').vertices;
+    const capRadius = Math.hypot(hullCorner[0], hullCorner[2]);
+    const key = (p: Vec3): string => p.map((x) => x.toFixed(5)).join(',');
+    const points = [...new Map(vertices(mesh).map((v) => [key(v.p), v.p])).values()];
+    const flat = (n: Vec3, y: number): boolean => length(sub(n, [0, y, 0])) < 1e-6;
+
+    it('is closed: every edge is shared by exactly one triangle in each direction', () => {
+      const edges = new Map<string, number>();
+      for (const t of tris) {
+        t.forEach((a, k) => {
+          const b = t[(k + 1) % 3] ?? a;
+          const e = `${key(a.p)}>${key(b.p)}`;
+          edges.set(e, (edges.get(e) ?? 0) + 1);
+        });
+      }
+      for (const [e, count] of edges) {
+        const [a = '', b = ''] = e.split('>');
+        expect(count).toBe(1);
+        expect(edges.get(`${b}>${a}`)).toBe(1);
+      }
+    });
+
+    it('matches the hull: cap radius 0.642 and half-thickness 0.1', () => {
+      expect(capRadius).toBeCloseTo(0.642, 3);
+      const radius = Math.max(...points.map((p) => Math.hypot(p[0], p[2])));
+      const half = Math.max(...points.map((p) => Math.abs(p[1])));
+      expect(Math.abs(radius - capRadius)).toBeLessThan(0.02);
+      expect(Math.abs(half - 0.1)).toBeLessThan(0.02);
+    });
+
+    it('sweeps 48 segments from angle 0', () => {
+      const step = 360 / 48;
+      const angles = new Set<number>();
+      for (const p of points) {
+        if (Math.hypot(p[0], p[2]) < 1e-6) continue;
+        const deg = (Math.atan2(-p[2], p[0]) * 180) / Math.PI;
+        const k = Math.round(deg / step);
+        expect(Math.abs(deg - k * step)).toBeLessThan(1e-4);
+        angles.add((k + 48) % 48);
+      }
+      expect(angles.size).toBe(48);
+      expect(angles.has(0)).toBe(true);
+    });
+
+    it('rounds its edges with radius 0.04: every point is 0.04 out along its normal from the inner cylinder', () => {
+      const rIn = capRadius - 0.04;
+      const hIn = 0.1 - 0.04;
+      let arc = 0;
+      for (const v of vertices(mesh)) {
+        const q = sub(v.p, scale(v.n, 0.04));
+        const r = Math.hypot(q[0], q[2]);
+        expect(r).toBeLessThanOrEqual(rIn + 1e-6);
+        expect(Math.abs(q[1])).toBeLessThanOrEqual(hIn + 1e-6);
+        expect(Math.abs(r - rIn) < 1e-6 || Math.abs(Math.abs(q[1]) - hIn) < 1e-6).toBe(true);
+        if (Math.abs(v.n[1]) > 0.1 && Math.abs(v.n[1]) < 0.9) arc++;
+      }
+      expect(arc).toBeGreaterThan(0);
+    });
+
+    it('labels the top cap with cell 0, the bottom cap with cell 1, and nothing else', () => {
+      const cells = { top: 0, bottom: 0, rim: 0 };
+      for (const t of tris) {
+        const cell = t[0].cell;
+        if (t.every((v) => flat(v.n, 1))) {
+          expect(cell).toBe(0);
+          cells.top++;
+        } else if (t.every((v) => flat(v.n, -1))) {
+          expect(cell).toBe(1);
+          cells.bottom++;
+        } else {
+          expect(cell).toBe(-1);
+          cells.rim++;
+        }
+      }
+      expect(cells.top).toBeGreaterThan(0);
+      expect(cells.bottom).toBeGreaterThan(0);
+      expect(cells.rim).toBeGreaterThan(0);
+    });
+
+    it.each([
+      [0, 0.1],
+      [1, -0.1],
+    ])('cap %i label: side 1.0, centred on the cap, reading up along +X', (cell, y) => {
+      for (const t of tris.filter((tri) => tri[0].cell === cell)) {
+        const { side, center, up } = labelSquare(t);
+        expect(side).toBeCloseTo(1, 5);
+        expect(length(sub(center, [0, y, 0]))).toBeLessThan(1e-5);
+        expect(length(sub(up, [1, 0, 0]))).toBeLessThan(1e-5);
+      }
+    });
+
+    it('every rotation of the coin group maps the mesh vertex set onto itself', () => {
+      // Float32 vertex data: 1e-6 is a few ulps at unit scale.
+      const group = getRotationGroup('coin');
+      expect(group.length).toBe(32);
+      for (const g of group) {
+        for (const p of points) {
+          const r = quatRotate(g, p);
+          expect(points.some((o) => length(sub(o, r)) < 1e-6)).toBe(true);
+        }
+      }
+    });
   });
 
   it('caches per shape', () => {

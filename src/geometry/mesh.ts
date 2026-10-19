@@ -13,6 +13,9 @@ export interface DieMesh {
 }
 
 const EPS = 1e-9;
+const COIN_SEGMENTS = 48;
+const COIN_ROUND = 0.04;
+const COIN_ARC = 4; // steps per quarter-round edge
 
 /** Label frame on a face plane: square center, side, right and up unit vectors, readout cell. */
 interface Label {
@@ -78,10 +81,70 @@ function faceUp(c: Vec3, pts: readonly Vec3[]): Vec3 {
   return sub(at(pts, k), c);
 }
 
+type Emit = (p: Vec3, n: Vec3, label: Label | null) => void;
+
+/** cos and sin of k · 7.5° by half angles from 30° and repeated rotation, without trigonometry. */
+function circle(): [number, number][] {
+  const c15 = Math.sqrt((1 + Math.sqrt(3) / 2) / 2);
+  const c = Math.sqrt((1 + c15) / 2);
+  const s = Math.sqrt((1 - c15) / 2);
+  const out: [number, number][] = [];
+  let p: [number, number] = [1, 0];
+  for (let k = 0; k < COIN_SEGMENTS; k++) {
+    out.push(p);
+    p = [p[0] * c - p[1] * s, p[0] * s + p[1] * c];
+  }
+  return out;
+}
+
+/** Disc swept about Y from angle 0: flat caps joined to the rim band by quarter-round edges. */
+function coin(poly: Polyhedron, emit: Emit): void {
+  const [r, h] = at(poly.vertices, 0);
+  const ring = circle();
+  // Profile from the top cap edge to the bottom one: radial, y, normal radial, normal y.
+  const profile: [number, number, number, number][] = [];
+  const arcStep = COIN_SEGMENTS / 4 / COIN_ARC;
+  for (let i = 0; i <= 2 * COIN_ARC + 1; i++) {
+    const top = i <= COIN_ARC;
+    const [c, s] = at(ring, arcStep * (top ? COIN_ARC - i : COIN_ARC + 1 - i));
+    const y = (top ? 1 : -1) * (h - COIN_ROUND) + COIN_ROUND * s;
+    profile.push([r - COIN_ROUND + COIN_ROUND * c, y, c, s]);
+  }
+  const point = (i: number, j: number): [Vec3, Vec3] => {
+    const [pr, py, nr, ny] = at(profile, i);
+    const [x, z] = at(ring, j);
+    return [
+      [pr * x, py, -pr * z],
+      [nr * x, ny, -nr * z],
+    ];
+  };
+  const up: Vec3 = [0, 1, 0];
+  const down: Vec3 = [0, -1, 0];
+  // Hull vertices 0 and 16, first on each cap, sit at angle 0 (+X).
+  const topLabel = labelFrame([0, h, 0], 1, [1, 0, 0], up, 0);
+  const bottomLabel = labelFrame([0, -h, 0], 1, [1, 0, 0], down, 1);
+  const last = profile.length - 1;
+  ring.forEach((_, j) => {
+    emit([0, h, 0], up, topLabel);
+    emit(point(0, j)[0], up, topLabel);
+    emit(point(0, j + 1)[0], up, topLabel);
+    emit([0, -h, 0], down, bottomLabel);
+    emit(point(last, j + 1)[0], down, bottomLabel);
+    emit(point(last, j)[0], down, bottomLabel);
+    for (let i = 0; i < last; i++) {
+      const a = point(i, j);
+      const b = point(i + 1, j);
+      const c = point(i + 1, j + 1);
+      const d = point(i, j + 1);
+      for (const [p, n] of [a, b, c, a, c, d]) emit(p, n, null);
+    }
+  });
+}
+
 function build(shape: ShapeType): DieMesh {
   const poly = getPolyhedron(shape);
   const out: number[] = [];
-  const emit = (p: Vec3, n: Vec3, label: Label | null): void => {
+  const emit: Emit = (p, n, label) => {
     out.push(p[0], p[1], p[2], n[0], n[1], n[2]);
     if (label === null) {
       out.push(-1, -1, -1);
@@ -99,6 +162,11 @@ function build(shape: ShapeType): DieMesh {
     emit(b, n, label);
     emit(c, n, label);
   };
+
+  if (shape === 'coin') {
+    coin(poly, emit);
+    return { shape, data: new Float32Array(out), vertexCount: out.length / MESH_STRIDE };
+  }
 
   const insets = poly.faces.map((_, f) => insetFace(poly, f));
 

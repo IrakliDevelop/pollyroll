@@ -1,6 +1,6 @@
 import type { SkinRef } from '../skins/types';
 
-export type DieType = 'd4' | 'd6' | 'd8' | 'd10' | 'd12' | 'd20' | 'd100' | 'dF';
+export type DieType = 'd4' | 'd6' | 'd8' | 'd10' | 'd12' | 'd20' | 'd100' | 'dF' | 'd2' | 'dc';
 export type KeepMode = 'kh' | 'kl' | 'dh' | 'dl';
 export type CompareOp = '=' | '<' | '<=' | '>' | '>=';
 export interface Compare {

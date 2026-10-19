@@ -125,6 +125,9 @@ for (const notation of [
   'd6!>=5',
   'd%+d10',
   '4dF',
+  'dc',
+  '3dc=1',
+  '2d2',
   '30d6',
 ]) {
   const button = document.createElement('button');

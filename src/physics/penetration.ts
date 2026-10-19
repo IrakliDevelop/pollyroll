@@ -2,9 +2,9 @@ import { getPolyhedron } from '../geometry/polyhedra';
 import type { ShapeType } from '../geometry/polyhedra';
 import { getBodyShape } from './body';
 
-const MAX_VERTICES = 20;
+const MAX_VERTICES = 32;
 const MAX_FACES = 20;
-const MAX_EDGES = 30;
+const MAX_EDGES = 48;
 
 // Scratch buffers: world vertices, world face normals, world edge vectors of each hull.
 const vertsA = new Float64Array(MAX_VERTICES * 3);
@@ -16,18 +16,27 @@ const edgesB = new Float64Array(MAX_EDGES * 3);
 
 const edgeCache: Partial<Record<ShapeType, Int32Array>> = {};
 
-/** Unique hull edges of `shape` as vertex index pairs, cached. */
+/** Hull edges of `shape` as vertex index pairs, one per direction (parallel edges share axes). */
 function edgeIndexes(shape: ShapeType): Int32Array {
   let cached = edgeCache[shape];
   if (cached === undefined) {
+    const { faces, vertices } = getPolyhedron(shape);
     const pairs: number[] = [];
-    const seen: string[] = [];
-    for (const face of getPolyhedron(shape).faces) {
+    const dirs: [number, number, number][] = [];
+    for (const face of faces) {
       face.forEach((a, k) => {
         const b = face[(k + 1) % face.length] ?? a;
-        const key = a < b ? `${a},${b}` : `${b},${a}`;
-        if (seen.includes(key)) return;
-        seen.push(key);
+        const p = vertices[a] ?? [0, 0, 0];
+        const q = vertices[b] ?? [0, 0, 0];
+        const d: [number, number, number] = [q[0] - p[0], q[1] - p[1], q[2] - p[2]];
+        const parallel = dirs.some((u) => {
+          const cx = u[1] * d[2] - u[2] * d[1];
+          const cy = u[2] * d[0] - u[0] * d[2];
+          const cz = u[0] * d[1] - u[1] * d[0];
+          return cx * cx + cy * cy + cz * cz < 1e-18;
+        });
+        if (parallel) return;
+        dirs.push(d);
         pairs.push(a, b);
       });
     }

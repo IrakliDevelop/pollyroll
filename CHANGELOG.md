@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - Unreleased
+
+### Added
+
+- Coins: `dc` (0 tails, 1 heads, labelled `T`/`H`, as in Foundry VTT) and `d2` (1 or 2), with
+  every modifier (`3dc=1` counts heads, `4dc kh2`, `d2!`). A coin is a round disc that is tossed
+  (launched upward, flipping end over end), lands near where it was thrown, wobbles flat and shows
+  the chosen face. `RollEvent` stays `v: 1`; receivers on 0.5.0 or older reject rolls with coins. Coins make no sound yet; dice sound as before.
+- Demo: `dc`, `3dc=1` and `2d2` examples, and a coin row in the notation key.
+- Docs: sound research for dice and coins, with a rebuildable listening lab
+  (`docs/research/`), and the coin design (`docs/designs/coin.md`). A coin sound was built and
+  measured but not shipped; the research records why and where the code is.
+
+### Changed
+
+- Physics buffers hold hulls of up to 32 vertices and 16-edge faces; slot tables grow with the
+  bodies in a roll. Dice-only rolls move exactly as in 0.5.0.
+
 ## [0.5.0] - Unreleased
 
 ### Added

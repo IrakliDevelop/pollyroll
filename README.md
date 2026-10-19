@@ -63,8 +63,9 @@ Notation is case-insensitive and ignores whitespace.
 
 | Syntax                  | Meaning                                                               |
 | ----------------------- | --------------------------------------------------------------------- |
-| `NdX`                   | N dice (1–100) of X ∈ 4, 6, 8, 10, 12, 20, 100; N defaults to 1       |
+| `NdX`                   | N dice (1–100) of X ∈ 2, 4, 6, 8, 10, 12, 20, 100; N defaults to 1    |
 | `d%`, `dF`              | d100; Fudge die (−1, 0, +1)                                           |
+| `dc`                    | Coin: 0 tails, 1 heads; `3dc=1` counts heads (`d2` is a 1–2 coin)     |
 | `+`, `-`, integers      | Add or subtract terms and constants                                   |
 | `khN` `klN` `dhN` `dlN` | Keep or drop the highest or lowest N (N defaults to 1)                |
 | `kN`, `dN`              | `khN`, `dlN` (N defaults to 1)                                        |
@@ -77,7 +78,7 @@ Notation is case-insensitive and ignores whitespace.
 
 Limits are at most 20 terms, at most 200 dice before explosions and rerolls, and inputs of at most
 256 characters. Examples: `2d20kh1+5`, `4d6dl1`, `4d6r1`, `2d20ro1`, `3d6!`, `d6!>=5`, `5d10>=7+1`,
-`4d6kh3>=5`, `adv+3`, `1d%`, `4dF`.
+`4d6kh3>=5`, `adv+3`, `1d%`, `4dF`, `3dc=1`, `2d2`.
 
 - **Rerolls** keep the replaced die on the table: it is listed in `dropped` and `rerolled`, its
   replacement comes in the next wave, and keep/drop ranks only the dice that were not rerolled.
@@ -145,9 +146,11 @@ physics impact, rotating through them with a slight pitch change, louder for har
 `clacks` the tray keeps its procedural sound, so apps that never import this entry pay nothing. If
 the browser cannot decode the clip, the tray falls back to the procedural sound. Any `ClackSet`
 works: base64 audio plus, per clack, its start (ms after the clip's first sample at 20% of its peak, so decoders that keep the MP3
-encoder delay still line up) and length.
+encoder delay still line up) and length. Coins (`dc`, `d2`) make no sound.
 
-The clacks are cut from Kenney's [Casino Audio](https://kenney.nl/assets/casino-audio) (CC0).
+The clacks are cut from Kenney's [Casino Audio](https://kenney.nl/assets/casino-audio) (CC0). How the
+sounds were chosen and measured, including a coin sound that did not ship:
+[docs/research/sound.md](docs/research/sound.md).
 
 ## Renderer (`pollyroll/render`)
 
@@ -183,6 +186,7 @@ die's natural order:
 - `d10`, `d100ones`: digits `'0'…'9'`.
 - `d100tens`: `'00'…'90'`.
 - `dF`: three entries for −1, blank, and +1.
+- `d2`: `'1'`, `'2'`. `dc`: tails then heads (default `'T'`, `'H'`).
 
 The label font is the skin's `font` if it has one, otherwise `labelFont`. If the browser can't parse that font, the label falls back to `labelFont`, then `system-ui`.
 
@@ -329,7 +333,7 @@ that Chromium, Firefox, and WebKit compute the same trajectory hash as Node.
 
 ## Known limits
 
-These describe 0.4.0. Each one is a deliberate trade-off or a measured edge case, not a
+These describe 0.6.0. Each one is a deliberate trade-off or a measured edge case, not a
 hidden bug.
 
 **Physics and layout**
@@ -348,16 +352,21 @@ hidden bug.
   smaller than `dieScale`. With many dice in a small canvas the dice get small, down to a floor of
   0.5 × `dieScale`. Dice beyond 30 animated bodies are counted in the summary but not shown; a d100
   counts as two bodies.
+- **Coins wobble briefly and can lean on dice.** A tossed coin flips in the air, then wobbles flat
+  in about 0.2 s, shorter than a real coin spinning down. In rolls that mix coins and dice, a coin
+  often comes to rest leaning on a die (about 30% of coins in `5d6+2dc`); the settle tail tips it
+  flat. In crowded coin rolls (`10dc`) about 2 in 100 rolls still end with a coin on a coin after
+  re-simulation, and it slides off in the tail.
 - **Crowded rolls can take longer.** About 2 in 1,200 crowded rolls (20–30 dice, measured in 0.2.0)
   jitter in a pile until the 6 s step cap before the settle tail flattens them.
 - **Motion matches only between same-shape trays and versions.** Two clients see identical motion
   when their trays have the same aspect ratio and the same `dieScale` and they run the same minor
-  version of pollyroll (0.4.0 changed the physics). The values always match, because the
+  version of pollyroll (0.4.0 changed the physics; 0.6.0 added coins and left dice motion unchanged). The values always match, because the
   remap runs on each client.
 - **Explosion and reroll waves add time.** Each wave is thrown after the previous one settles, so
   long chains (up to 10 waves) take several seconds.
 - **The simulation runs before the first frame.** `playRoll` simulates the whole roll on the main
-  thread first: about 5 ms for 10 dice and 15 ms for 30 dice on a desktop CPU, several times that on
+  thread first: about 5 ms for 10 dice, 15 ms for 30 dice and 18 ms for 10 coins on a desktop CPU, several times that on
   slow phones. A roll that ends stacked is simulated again (about 1 in 1,000 rolls), multiplying that
   cost by the attempts.
 
@@ -376,9 +385,10 @@ hidden bug.
 **Notation and wire format**
 
 - **Not supported:** compounding explosions (`!!`), crit ranges, failures (`f`), parentheses, `*`
-  and `/`, and dice other than d4, d6, d8, d10, d12, d20, d100 and dF.
+  and `/`, and dice other than d2, d4, d6, d8, d10, d12, d20, d100, dF and the coin `dc`.
 - **Older receivers:** aliases (`kN`, `dN`, `x`, added in 0.1.0) and the 0.2.0 notation (rerolls,
-  explode thresholds, success counting) are rejected by `isRollEvent` in builds that predate them.
+  explode thresholds, success counting) and coins (`d2`, `dc`, added in 0.6.0) are rejected by
+  `isRollEvent` in builds that predate them.
   Upgrade every client before sending them.
 - **Custom GLSL stays local:** `isRollEvent` rejects inline custom GLSL, so share custom-pattern
   skins by registered name.

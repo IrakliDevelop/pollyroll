@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { diceClacks } from './index';
 
@@ -19,5 +20,10 @@ describe('diceClacks', () => {
     expect(bytes).toHaveLength(1188);
     expect(bytes[0]).toBe(0xff);
     expect((bytes[1] ?? 0) & 0xe0).toBe(0xe0);
+  });
+
+  it('keeps the 0.5.0 data byte for byte', () => {
+    const hash = createHash('sha256').update(JSON.stringify(diceClacks)).digest('hex');
+    expect(hash).toBe('8fb77eb47ea985a7c8cab16863f41f99752aebed9b16ff5d956368ba6dc4ef25');
   });
 });

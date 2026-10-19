@@ -79,6 +79,19 @@ describe('evaluate', () => {
     expect(evaluate(ev('3dF', 'dF', [-1, 0, 1])).groups[0]?.subtotal).toBe(0);
   });
 
+  it('counts heads and keeps the highest coins', () => {
+    const coins = (notation: string, values: number[]): RollEvent =>
+      createRoll(notation, { rng: () => values.shift() ?? 0 });
+    const heads = evaluate(coins('3dc=1', [1, 0, 1]));
+    expect(heads.groups[0]?.dice).toEqual([1, 0, 1]);
+    expect(heads.total).toBe(2);
+    expect(evaluate(coins('4dc kh2', [0, 1, 1, 0])).groups[0]).toMatchObject({
+      kept: [1, 2],
+      dropped: [0, 3],
+      subtotal: 2,
+    });
+  });
+
   it('sums explosion waves into the group', () => {
     const summary = evaluate(ev('1d6!', 'd6', [6, 6, 3], 0, [0, 1, 2]));
     expect(summary.groups[0]).toMatchObject({ kept: [0, 1, 2], dropped: [], subtotal: 15 });

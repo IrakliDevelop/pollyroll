@@ -4,6 +4,7 @@ import type { ShapeType } from '../geometry/polyhedra';
 import { quatRotate } from '../geometry/vec';
 import type { Quat, Vec3 } from '../geometry/vec';
 import { getBodyShape } from './body';
+import { penetration } from './penetration';
 import { DT, checkHull, createWorld } from './world';
 import type { TrayBounds, World, WorldConfig } from './world';
 
@@ -150,30 +151,34 @@ describe('world: edge cases', () => {
     }
   });
 
-  it('every die hull fits the 20-vertex contact buffer', () => {
+  it('every die hull has at most 20 vertices', () => {
     const shapes: ShapeType[] = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20'];
     for (const shape of shapes) {
       expect(getBodyShape(shape).vertices.length / 3, shape).toBeLessThanOrEqual(20);
     }
   });
 
-  it('checkHull throws RangeError for a hull with more than 20 vertices', () => {
+  it('checkHull throws RangeError for a hull with more than 32 vertices', () => {
     const d6 = getBodyShape('d6');
-    expect(() => checkHull({ ...d6, vertices: new Float64Array(21 * 3) })).toThrow(RangeError);
-    expect(() => checkHull({ ...d6, vertices: new Float64Array(20 * 3) })).not.toThrow();
+    expect(() => checkHull({ ...d6, vertices: new Float64Array(33 * 3) })).toThrow(RangeError);
+    expect(() => checkHull({ ...d6, vertices: new Float64Array(32 * 3) })).not.toThrow();
   });
 
-  it('checkHull throws RangeError for more than 20 faces, 30 edges, or 5 edges per face', () => {
+  it('checkHull throws RangeError for more than 20 faces, 48 edges, or 16 edges per face', () => {
     const d6 = getBodyShape('d6');
     expect(() => checkHull({ ...d6, planes: new Float64Array(21 * 4) })).toThrow(RangeError);
     expect(() => checkHull({ ...d6, planes: new Float64Array(20 * 4) })).not.toThrow();
-    // A closed hull has one edge per two face sides: 16 quads give 32 edges, 15 give 30.
-    expect(() => checkHull({ ...d6, faces: Array<number[]>(16).fill([0, 1, 2, 3]) })).toThrow(
+    // A closed hull has one edge per two face sides: 25 quads give 50 edges, 24 give 48.
+    expect(() => checkHull({ ...d6, faces: Array<number[]>(25).fill([0, 1, 2, 3]) })).toThrow(
       RangeError,
     );
-    expect(() => checkHull({ ...d6, faces: Array<number[]>(15).fill([0, 1, 2, 3]) })).not.toThrow();
-    expect(() => checkHull({ ...d6, faces: [[0, 1, 2, 3, 4, 5]] })).toThrow(RangeError);
-    expect(() => checkHull({ ...d6, faces: [[0, 1, 2, 3, 4]] })).not.toThrow();
+    expect(() => checkHull({ ...d6, faces: Array<number[]>(24).fill([0, 1, 2, 3]) })).not.toThrow();
+    expect(() => checkHull({ ...d6, faces: [Array.from({ length: 17 }, (_, k) => k)] })).toThrow(
+      RangeError,
+    );
+    expect(() =>
+      checkHull({ ...d6, faces: [Array.from({ length: 16 }, (_, k) => k)] }),
+    ).not.toThrow();
   });
 
   it('a zero-velocity body sitting on the floor stays finite', () => {
@@ -403,5 +408,52 @@ describe('world: hull contacts', () => {
     world.add('d6', [0, 2.5, 0], ID, ZERO, ZERO);
     for (let s = 0; s < 240; s++) world.step();
     expect(Math.abs(lowestY(world, 1, 'd6') - 1)).toBeLessThan(0.02);
+  });
+
+  it('accepts the coin hull: 32 vertices, 18 faces, 48 edges, 16-edge caps', () => {
+    expect(() => checkHull(getBodyShape('coin'))).not.toThrow();
+  });
+
+  it('a coin dropped flat from y = 1 comes to rest on its bottom cap', () => {
+    const world = createWorld(BOUNDS);
+    world.add('coin', [0, 1, 0], ID, ZERO, ZERO);
+    for (let s = 0; s < 720; s++) world.step();
+    expect(Math.abs(lowestY(world, 0, 'coin'))).toBeLessThan(0.01);
+    expect(upReadout(world, 0, 'coin').y).toBeGreaterThan(Math.cos((0.5 * Math.PI) / 180));
+    expect(Math.sqrt(world.linearSpeedSq(0))).toBeLessThan(0.05);
+    expect(Math.sqrt(world.angularSpeedSq(0))).toBeLessThan(0.1);
+  });
+
+  it.each<[string, ShapeType, Vec3, ShapeType, Vec3, number]>([
+    [
+      'a coin dropped onto a resting d6 rests on its top face',
+      'd6',
+      [0, 0.5, 0],
+      'coin',
+      [0, 2, 0],
+      1,
+    ],
+    [
+      'a d6 dropped onto a resting coin rests on its top cap',
+      'coin',
+      [0, 0.1, 0],
+      'd6',
+      [0, 2.5, 0],
+      0.2,
+    ],
+  ])('%s, separated and finite', (_, below, at, above, from, top) => {
+    const world = createWorld(BOUNDS);
+    world.add(below, at, ID, ZERO, ZERO);
+    world.add(above, from, ID, ZERO, ZERO);
+    for (let s = 0; s < 240; s++) {
+      world.step();
+      expect(allFinite(world, 1e6)).toBe(true);
+    }
+    const a = new Float64Array(7);
+    const b = new Float64Array(7);
+    world.read(0, a, 0);
+    world.read(1, b, 0);
+    expect(penetration(below, a, above, b)).toBeLessThan(0.02);
+    expect(Math.abs(lowestY(world, 1, above) - top)).toBeLessThan(0.02);
   });
 });

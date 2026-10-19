@@ -38,7 +38,7 @@ export const DEFAULT_CONFIG: WorldConfig = {
 
 export interface World {
   readonly count: number;
-  /** Adds a body; returns its index. Max 30 bodies and 20 hull vertices (RangeError beyond). */
+  /** Adds a body; returns its index. Max 30 bodies and 32 hull vertices (RangeError beyond). */
   add(
     shape: ShapeType,
     position: Vec3,
@@ -54,14 +54,15 @@ export interface World {
 }
 
 const MAX_BODIES = 30;
-const MAX_VERTICES = 20;
+const MAX_VERTICES = 32;
 const MAX_FACES = 20;
-const MAX_EDGES = 30; // hull edges the penetration.ts scratch buffers hold
-const FACE_EDGES = 5; // edges per face: bounds the clip polygon and the warm-start feature keys
+const MAX_EDGES = 48; // hull edges the penetration.ts scratch buffers hold
+const FACE_EDGES = 16; // edges per face: bounds the clip polygon and the warm-start feature keys
 const PLANES = 5;
 const PAIR_CONTACTS = MAX_BODIES * 8;
 const PAIR_KEEP = 4;
-const MAX_CLIP = 32;
+// Sutherland–Hodgman adds a vertex per side plane to a convex polygon; rounding can add more.
+const MAX_CLIP = 4 * FACE_EDGES;
 const REFERENCE_BIAS = 0.005; // prefer A's face unless B's separates clearly more (frame coherence)
 const MAX_CONTACTS = MAX_BODIES * PLANES * MAX_VERTICES + PAIR_CONTACTS;
 const BAUMGARTE = 0.2;
@@ -79,12 +80,10 @@ const C_MASS = 13; // effective masses: normal, tangent 1, tangent 2
 const C_ROWS = 16; // per row (normal, t1, t2): rA×d, IA⁻¹(rA×d), rB×d, IB⁻¹(rB×d)
 const ROW = 12;
 const STRIDE = C_ROWS + 3 * ROW;
-// Warm-start slots: one per (body, plane, vertex), then PAIR_SLOTS per body pair (i, j), keyed by the
-// clip feature: FACE_EDGES incident vertices + 2·FACE_EDGES (edge label) × FACE_EDGES (reference
-// edge) intersections + 1 fallback.
+// Warm-start slots: one per (body, plane, vertex), then a region per body pair (i, j) allocated at
+// add, keyed by the clip feature with e = the pair's most edges per face: e incident vertices +
+// 2·e (edge label) × e (reference edge) intersections + 1 fallback.
 const PLANE_SLOTS = MAX_BODIES * PLANES * MAX_VERTICES;
-const PAIR_SLOTS = FACE_EDGES + 2 * FACE_EDGES * FACE_EDGES + 1;
-const SLOTS = PLANE_SLOTS + MAX_BODIES * MAX_BODIES * PAIR_SLOTS;
 const MARGIN = 0.01; // clipped points up to this far above the reference plane are speculative
 
 /** Element i of a preallocated buffer (indexes are in range by construction). */
@@ -153,6 +152,8 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
   const rot = new Float64Array(MAX_BODIES * 9); // row-major rotation matrix
   const invI = new Float64Array(MAX_BODIES * 9); // world inverse inertia R·diag·Rᵀ
   const vertexCount = new Int32Array(MAX_BODIES);
+  const faceEdges = new Int32Array(MAX_BODIES); // most edges on one face
+  const pairSlot = new Int32Array(MAX_BODIES * MAX_BODIES); // first slot of pair (i, j), i < j
   const faceCount = new Int32Array(MAX_BODIES);
   const worldVerts = new Float64Array(MAX_BODIES * MAX_VERTICES * 3); // R·v + p
   const worldPlanes = new Float64Array(MAX_BODIES * MAX_FACES * 4); // R·n, R·n·p + h
@@ -171,8 +172,10 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
   const contactB = new Int32Array(MAX_CONTACTS);
   const contactSlot = new Int32Array(MAX_CONTACTS);
   const contactFriction = new Float64Array(MAX_CONTACTS);
-  const slotLambda = new Float64Array(SLOTS * 3); // accumulated impulses of each slot's last contact
-  const slotStep = new Int32Array(SLOTS); // stepNumber + 1 of the step that wrote slotLambda
+  // Grown as bodies are added: a coin's 16-edge caps need ~9× the slots of a die pair.
+  let slotLambda = new Float64Array(PLANE_SLOTS * 3); // accumulated impulses of each slot's last contact
+  let slotStep = new Int32Array(PLANE_SLOTS); // stepNumber + 1 of the step that wrote slotLambda
+  let slotCount = PLANE_SLOTS; // slots in use; capacity grows by doubling
   let stepNumber = 1;
   let contactCount = 0;
   let count = 0;
@@ -435,7 +438,10 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
     const nz = at(worldPlanes, pl + 2);
     const d = at(worldPlanes, pl + 3);
     const sign = flip ? -1 : 1;
-    const slotBase = PLANE_SLOTS + (a * MAX_BODIES + b) * PAIR_SLOTS;
+    const slotBase = atInt(pairSlot, a * MAX_BODIES + b);
+    const edgesA = atInt(faceEdges, a);
+    const edgesB = atInt(faceEdges, b);
+    const edges = edgesA > edgesB ? edgesA : edgesB;
 
     let incFace = 0;
     let minDot = Infinity;
@@ -488,23 +494,23 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
         const cz = at(src, c + 2);
         const da = sx * cx + sy * cy + sz * cz - limit;
         const db = sx * at(src, n) + sy * at(src, n + 1) + sz * at(src, n + 2) - limit;
-        // Edge labels: incident edge k is k, the part of side plane e is FACE_EDGES + e.
+        // Edge labels: incident edge k is k, the part of side plane e is edges + e.
         const label = atInt(srcLabel, k);
-        if (da <= 0) {
+        if (da <= 0 && out < MAX_CLIP) {
           dst[out * 3] = cx;
           dst[out * 3 + 1] = cy;
           dst[out * 3 + 2] = cz;
           dstKey[out] = atInt(srcKey, k);
-          dstLabel[out] = da === 0 && db > 0 ? FACE_EDGES + e : label;
+          dstLabel[out] = da === 0 && db > 0 ? edges + e : label;
           out++;
         }
-        if ((da < 0 && db > 0) || (da > 0 && db < 0)) {
+        if (((da < 0 && db > 0) || (da > 0 && db < 0)) && out < MAX_CLIP) {
           const t = da / (da - db);
           dst[out * 3] = cx + (at(src, n) - cx) * t;
           dst[out * 3 + 1] = cy + (at(src, n + 1) - cy) * t;
           dst[out * 3 + 2] = cz + (at(src, n + 2) - cz) * t;
-          dstKey[out] = FACE_EDGES + label * FACE_EDGES + e;
-          dstLabel[out] = da < 0 ? FACE_EDGES + e : label;
+          dstKey[out] = edges + label * edges + e;
+          dstLabel[out] = da < 0 ? edges + e : label;
           out++;
         }
       }
@@ -558,7 +564,7 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
         at(worldVerts, deepest + 1),
         at(worldVerts, deepest + 2),
         depth,
-        slotBase + PAIR_SLOTS - 1,
+        slotBase + edges + 2 * edges * edges,
       );
       return;
     }
@@ -851,6 +857,21 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
       bodyRadius[i] = body.radius;
       vertexCount[i] = body.vertices.length / 3;
       faceCount[i] = body.planes.length / 4;
+      for (const face of body.faces) faceEdges[i] = Math.max(atInt(faceEdges, i), face.length);
+      for (let j = 0; j < i; j++) {
+        const e = Math.max(atInt(faceEdges, j), atInt(faceEdges, i));
+        pairSlot[j * MAX_BODIES + i] = slotCount;
+        slotCount += e + 2 * e * e + 1;
+      }
+      if (slotCount > slotStep.length) {
+        const capacity = Math.max(slotCount, 2 * slotStep.length);
+        const lambda = new Float64Array(capacity * 3);
+        lambda.set(slotLambda);
+        slotLambda = lambda;
+        const step = new Int32Array(capacity);
+        step.set(slotStep);
+        slotStep = step;
+      }
       pos.set(position, i * 3);
       vel.set(velocity, i * 3);
       omega.set(angularVelocity, i * 3);

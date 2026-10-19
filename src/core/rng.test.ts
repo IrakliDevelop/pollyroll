@@ -102,6 +102,7 @@ const critical: readonly [max: number, p001: number, p1e6: number][] = [
   [20, 43.82, 63.677],
   [100, 148.23, 180.792],
   [3, 13.816, 27.631],
+  [2, 10.828, 23.928],
 ];
 
 const chiSquare = (max: number, next: (max: number) => number): number => {

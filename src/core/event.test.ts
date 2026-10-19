@@ -326,6 +326,26 @@ describe('isRollEvent', () => {
     expect(isRollEvent(mutate(fudge, (e) => (e.dice[0] = d(2, 0, 0, 'dF'))))).toBe(false);
   });
 
+  it('accepts coin rolls and rejects coin values out of range', () => {
+    const coins = createRoll('2d2+3dc', { rng: seq(0, 1, 0, 1, 1), seed: S });
+    expect(coins.dice.map((die) => [die.type, die.value])).toEqual([
+      ['d2', 1],
+      ['d2', 2],
+      ['dc', 0],
+      ['dc', 1],
+      ['dc', 1],
+    ]);
+    expect(isRollEvent(coins)).toBe(true);
+    for (const [i, die] of [
+      [2, d(2, 0, 1, 'dc')],
+      [2, d(-1, 0, 1, 'dc')],
+      [0, d(0, 0, 0, 'd2')],
+      [0, d(3, 0, 0, 'd2')],
+    ] as const) {
+      expect(isRollEvent(mutate(coins, (e) => (e.dice[i] = die)))).toBe(false);
+    }
+  });
+
   it('checks explosion structure', () => {
     const ex = exploding();
     const bad = (dice: ReturnType<typeof d>[]): boolean =>

@@ -14,15 +14,16 @@ const FULL_STRENGTH = 15; // units/s at full volume
 const G_DT = DEFAULT_CONFIG.gravity * DT;
 
 /**
- * Impact list of a roll as (global step, strength) pairs in step order, keeping the strongest 48.
- * Impulse proxy: second difference of the keyframe positions minus gravity.
+ * Impact list of a roll as (global step, strength) pairs in step order, keeping the strongest 48;
+ * coins make none. Impulse proxy: second difference of the keyframe positions minus gravity.
  */
 export function impacts(
-  bodies: readonly Pick<PlannedBody, 'startStep' | 'frames'>[],
+  bodies: readonly Pick<PlannedBody, 'startStep' | 'frames' | 'shape'>[],
   tailSteps: number,
 ): Float32Array {
   const all: [number, number][] = [];
-  for (const { startStep, frames: f } of bodies) {
+  for (const { startStep, frames: f, shape } of bodies) {
+    if (shape === 'coin') continue;
     const v = (k: number, i: number): number =>
       ((f[k * 7 + i] ?? 0) - (f[k * 7 - 7 + i] ?? 0)) / DT;
     // The settle-to-flat tail is interpolated, not physical.

@@ -171,6 +171,7 @@ function throwAll(rng: SeedRng, input: SimInput) {
       members.map((b) => getBodyShape(b.shape).radius),
       bounds,
       resting,
+      members.map((b) => b.shape === 'coin'),
     );
     states.forEach((s, k) => {
       const body = members[k];

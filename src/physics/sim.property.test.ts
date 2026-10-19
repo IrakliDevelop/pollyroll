@@ -36,16 +36,17 @@ const input = (seed: string, bodies: { shape: ShapeType; wave: number }[]): SimI
   bounds: BOUNDS,
 });
 
-type Shown = 'd6' | 'd10' | 'd20';
+type Shown = 'd2' | 'd6' | 'd10' | 'd20' | 'dc';
 const valueArb = fc.oneof(
-  ...(['d6', 'd10', 'd20'] as const).map((type) =>
+  ...(['d2', 'd6', 'd10', 'd20'] as const).map((type) =>
     fc.integer({ min: 1, max: Number(type.slice(1)) }).map((value) => ({ type, value })),
   ),
+  fc.integer({ min: 0, max: 1 }).map((value) => ({ type: 'dc' as const, value })),
 );
 
-/** Text a d6/d10/d20 shows for a value: d10 shows 10 as "0". */
+/** Text a die shows for a value: d10 shows 10 as "0", dc shows 0 as "T" and 1 as "H". */
 const expectedText = (type: Shown, value: number): string =>
-  type === 'd10' && value === 10 ? '0' : String(value);
+  type === 'dc' ? (value === 0 ? 'T' : 'H') : type === 'd10' && value === 10 ? '0' : String(value);
 
 /** Label on the readout pointing most upward at the last frame, rendered as q ⊗ remap. */
 function topText(body: PlannedBody): string {
@@ -117,7 +118,7 @@ describe('physics properties', () => {
     );
   });
 
-  it('planRoll shows the chosen d6, d10, or d20 value on top after remap', () => {
+  it('planRoll shows the chosen d2, d6, d10, d20, or dc value on top after remap', () => {
     fc.assert(
       fc.property(seedArb, fc.array(valueArb, { minLength: 1, maxLength: 3 }), (seed, dice) => {
         const event: RollEvent = {
@@ -146,6 +147,14 @@ describe('physics properties', () => {
               { type: 'd10', value: 10 },
               { type: 'd20', value: 20 },
               { type: 'd6', value: 1 },
+            ],
+          ],
+          [
+            'fedcba9876543210fedcba9876543210',
+            [
+              { type: 'dc', value: 0 },
+              { type: 'dc', value: 1 },
+              { type: 'd2', value: 2 },
             ],
           ],
         ],

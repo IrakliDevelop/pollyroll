@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { planRoll } from '../physics/plan';
+import { trayBounds } from './camera';
 import { clackStarts, impacts, playClacks, playImpacts } from './sound';
 import type { ClackSet } from './sound';
 
@@ -8,7 +10,7 @@ const DT = 1 / 120;
 function body(startStep: number, n: number, pos: (k: number) => [number, number, number]) {
   const frames = new Float32Array(n * 7);
   for (let k = 0; k < n; k++) frames.set([...pos(k), 0, 0, 0, 1], k * 7);
-  return { startStep, frames };
+  return { startStep, frames, shape: 'd6' as const };
 }
 
 /** A body resting at y = 0.5 whose x velocity steps through `v` (index = frame), 0 beyond it. */
@@ -80,6 +82,71 @@ describe('impacts', () => {
   ])('kick at frame %i of 60 with tailSteps %i is found at %j', (frame, tail, steps) => {
     const found = pairs(impacts([kicked(60, (k) => (k > frame ? 5 : 0))], tail));
     expect(found.map((p) => p[0])).toEqual(steps);
+  });
+
+  it('finds no impacts for a plan with only a coin', () => {
+    const plan = planRoll(
+      {
+        v: 1,
+        id: 'coin',
+        notation: 'dc',
+        dice: [{ type: 'dc', value: 1, group: 0, wave: 0 }],
+        modifier: 0,
+        seed: '0123456789abcdef0123456789abcdef',
+        createdAt: 0,
+      },
+      trayBounds(4 / 3, 2),
+    );
+    expect(impacts(plan.bodies, plan.tailSteps)).toHaveLength(0);
+  });
+
+  it('finds only the d6 impact when a d6 and a coin are both kicked', () => {
+    // The d6 is kicked to 5 units/s at frame 30, the coin to 8 at frame 20.
+    const d6 = kicked(60, (k) => (k > 30 ? 5 : 0));
+    const coin = { ...kicked(60, (k) => (k > 20 ? 8 : 0)), shape: 'coin' as const };
+    const found = pairs(impacts([d6, coin], 0));
+    expect(found).toHaveLength(1);
+    expect(found[0]?.[0]).toBe(30);
+    expect(found[0]?.[1]).toBeCloseTo(Math.sqrt(25 + 0.0625), 5);
+  });
+
+  it('keeps the 3d6 impact list unchanged for dice-only rolls', () => {
+    const plan = planRoll(
+      {
+        v: 1,
+        id: 'impacts',
+        notation: '3d6',
+        dice: [1, 2, 3].map((value) => ({ type: 'd6' as const, value, group: 0, wave: 0 })),
+        modifier: 0,
+        seed: '0123456789abcdef0123456789abcdef',
+        createdAt: 0,
+      },
+      trayBounds(4 / 3, 2),
+    );
+    // Recorded from impacts() for this seed; dice-only impacts must not change.
+    const before = [
+      [23, 6.5515],
+      [26, 8.4184],
+      [36, 4.5923],
+      [36, 4.6185],
+      [42, 10.9003],
+      [54, 5.2932],
+      [57, 5.45],
+      [57, 5.5178],
+      [61, 2.2408],
+      [75, 2.6788],
+      [85, 2.1857],
+      [92, 3.1582],
+      [110, 2.9328],
+      [118, 3.7908],
+      [133, 2.7827],
+    ];
+    const found = pairs(impacts(plan.bodies, plan.tailSteps));
+    expect(found).toHaveLength(before.length);
+    found.forEach(([step, strength], i) => {
+      expect(step).toBe(before[i]?.[0]);
+      expect(strength).toBeCloseTo(before[i]?.[1] ?? NaN, 3);
+    });
   });
 
   it('keeps the 48 strongest of 60 impacts in step order', () => {

@@ -66,17 +66,41 @@ const VALUES: Record<LabelSet, [number, string][]> = {
     [0, ''],
     [1, '+'],
   ],
+  d2: [
+    [1, '1'],
+    [2, '2'],
+  ],
+  dc: [
+    [0, 'T'],
+    [1, 'H'],
+  ],
 };
 
 const SETS = Object.keys(VALUES) as LabelSet[];
 
 describe('labels', () => {
   it('maps label sets to shapes', () => {
-    expect(SETS.map(shapeOf)).toEqual(['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd10', 'd10', 'd6']);
+    expect(SETS.map(shapeOf)).toEqual([
+      'd4',
+      'd6',
+      'd8',
+      'd10',
+      'd12',
+      'd20',
+      'd10',
+      'd10',
+      'd6',
+      'coin',
+      'coin',
+    ]);
   });
 
   it('numbers d4 vertices 1-4 in vertex order', () => {
     expect(readoutNumbers('d4')).toEqual([1, 2, 3, 4]);
+  });
+
+  it('numbers the coin top cap 1 and the bottom cap 2', () => {
+    expect(readoutNumbers('coin')).toEqual([1, 2]);
   });
 
   it('numbers d6 faces by their explicit normals', () => {
@@ -103,6 +127,7 @@ describe('labels', () => {
     ['d10', 9, range(0, 9)],
     ['d12', 13, range(1, 12)],
     ['d20', 21, range(1, 20)],
+    ['coin', 3, range(1, 2)],
   ];
   for (const [shape, sum, all] of OPPOSITE_SUM) {
     it(`gives ${shape} opposite faces summing to ${sum}, each number once`, () => {
@@ -144,6 +169,8 @@ describe('labels', () => {
     d100tens: (v) => v,
     d100ones: (v) => v,
     dF: (v) => v + 1,
+    d2: (v) => v - 1,
+    dc: (v) => v,
   };
   for (const set of SETS) {
     it(`gives every ${set} readout its natural label index`, () => {
@@ -213,6 +240,10 @@ describe('labels', () => {
       ['dF', 2],
       ['dF', -2],
       ['dF', 0.5],
+      ['d2', 0],
+      ['d2', 3],
+      ['dc', -1],
+      ['dc', 2],
     ];
     for (const [set, value] of bad) {
       expect(() => readoutForValue(set, value), `${set} ${value}`).toThrow(RangeError);

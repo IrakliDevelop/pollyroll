@@ -3,7 +3,7 @@ import { NOISE } from '../skins/patterns';
 import type { LabelStyle } from '../skins/types';
 
 export const ATLAS_COLUMNS = 20;
-export const ATLAS_ROWS = 9;
+export const ATLAS_ROWS = 11;
 /** Unit direction toward the key light, world space. */
 export const LIGHT_DIR = [-0.5, 0.7071, -0.5] as const;
 

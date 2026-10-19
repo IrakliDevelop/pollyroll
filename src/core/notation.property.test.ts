@@ -20,7 +20,7 @@ interface Spec {
 }
 
 const MAX_LENGTH = 256;
-const DIES: readonly DieType[] = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd100', 'dF'];
+const DIES: readonly DieType[] = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd100', 'dF', 'd2', 'dc'];
 const MODES: readonly KeepMode[] = ['kh', 'kl', 'dh', 'dl'];
 
 const OPS: readonly CompareOp[] = ['=', '<', '<=', '>', '>='];
@@ -33,6 +33,8 @@ const MAX: Record<DieType, number> = {
   d20: 20,
   d100: 100,
   dF: 1,
+  d2: 2,
+  dc: 1,
 };
 
 const signArb = fc.constantFrom<1 | -1>(1, -1);
@@ -57,7 +59,8 @@ type Mod = [string, Pick<DiceTerm, 'explode' | 'reroll'>];
 /** Explode (`!`/`x`), reroll (`r`/`ro`), or neither, with their AST fields. */
 const modArb = (die: DieType): fc.Arbitrary<Mod> => {
   const none = fc.constant<Mod>(['', { explode: null, reroll: null }]);
-  if (die === 'dF') return none;
+  // Coins have no threshold in [2, max - 1].
+  if (die === 'dF' || MAX[die] < 3) return none;
   const max = MAX[die];
   return fc.oneof(
     none,

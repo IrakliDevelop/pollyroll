@@ -42,6 +42,7 @@ const EXPECTED: Record<
   d10: { faces: 10, vertices: 12, radius: 0.75, sides: 4 },
   d12: { faces: 12, vertices: 20, radius: 0.72, sides: 5 },
   d20: { faces: 20, vertices: 12, radius: 0.85, sides: 3 },
+  coin: { faces: 18, vertices: 32, radius: 0.65, sides: 4 },
 };
 
 describe('vec', () => {
@@ -90,7 +91,7 @@ describe('vec', () => {
 
 describe('polyhedra', () => {
   it('lists the shapes in order', () => {
-    expect(SHAPES).toEqual(['d4', 'd6', 'd8', 'd10', 'd12', 'd20']);
+    expect(SHAPES).toEqual(['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'coin']);
   });
 
   it('caches each polyhedron', () => {
@@ -109,7 +110,8 @@ describe('polyhedra', () => {
         expect(p.faces.length).toBe(exp.faces);
         expect(p.vertices.length).toBe(exp.vertices);
         expect(p.normals.length).toBe(exp.faces);
-        for (const face of p.faces) expect(face.length).toBe(exp.sides);
+        const odd = p.faces.map((f) => f.length).filter((n) => n !== exp.sides);
+        expect(odd).toEqual(type === 'coin' ? [16, 16] : []);
       });
 
       it('satisfies Euler V - E + F = 2', () => {
@@ -165,7 +167,7 @@ describe('polyhedra', () => {
           p.readouts.forEach((r, i) => {
             expectVecClose(r, scale(at(p.vertices, i), 1 / 0.95), 1e-12);
           });
-        } else {
+        } else if (type !== 'coin') {
           expect(p.readouts).toEqual(p.normals);
         }
         for (const r of p.readouts) expect(Math.abs(length(r) - 1)).toBeLessThanOrEqual(1e-12);
@@ -220,6 +222,42 @@ describe('polyhedra', () => {
       // Each kite holds exactly one apex.
       expect(face.filter((i) => i < 2).length).toBe(1);
     }
+  });
+});
+
+describe('coin', () => {
+  const p = getPolyhedron('coin');
+
+  it('is a 16-sided prism of radius 0.65 and half-thickness 0.1 read from its caps', () => {
+    expect(p.vertices.length).toBe(32);
+    expect(p.faces.length).toBe(18);
+    expect(Math.abs(p.radius - 0.65)).toBeLessThanOrEqual(1e-9);
+    expect(Math.max(...p.vertices.map((v) => Math.abs(v[1])))).toBeCloseTo(0.1, 12);
+    expect(p.readouts).toEqual([
+      [0, 1, 0],
+      [0, -1, 0],
+    ]);
+  });
+
+  it('places vertices by square roots, not Math.cos/Math.sin, so every browser builds the same hull', () => {
+    const top = p.vertices.slice(0, 16);
+    const rho = at(top, 0)[0];
+    p.vertices.forEach((v, k) => {
+      expect(v[1], `${k}`).toBe(k < 16 ? at(top, 0)[1] : -at(top, 0)[1]);
+      expectVecClose([v[0], v[2]], [at(top, k % 16)[0], at(top, k % 16)[2]], 0);
+    });
+    // Counter-clockwise from +X seen from +Y: vertex k at (cos, -sin) of k * 22.5 degrees.
+    const c = Math.sqrt(2 + Math.sqrt(2)) / 2;
+    const s = Math.sqrt(2 - Math.sqrt(2)) / 2;
+    expectVecClose(at(top, 1), [rho * c, at(top, 0)[1], -rho * s], 1e-15);
+    top.forEach(([x, , z]) =>
+      expect(Math.abs((x * x + z * z) / (rho * rho) - 1)).toBeLessThan(1e-15),
+    );
+    // Math.cos(Math.PI / 2) is 6e-17 and Math.cos(Math.PI / 4) !== Math.sin(Math.PI / 4).
+    for (const k of [4, 12]) expect(Math.abs(at(top, k)[0])).toBe(0);
+    for (const k of [0, 8]) expect(Math.abs(at(top, k)[2])).toBe(0);
+    expect(at(top, 2)[0]).toBe(-at(top, 2)[2]);
+    expect(at(top, 1)[0]).toBe(-at(top, 3)[2]);
   });
 });
 
