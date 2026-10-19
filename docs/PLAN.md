@@ -4,7 +4,7 @@ Approved specification for the initial build. Decisions here are fixed; an agent
 genuine gap records its choice in [DECISIONS.md](DECISIONS.md) and continues (see
 [agents/delegation.md](agents/delegation.md) § Autonomous run).
 
-> **Amended 2026-10-06 by the owner after the 0.1.0 build, 2026-10-19 for 0.2.0, and 2026-10-19 for 0.3.0.** Sections below describe the shipped
+> **Amended 2026-10-06 by the owner after the 0.1.0 build, 2026-10-19 for 0.2.0, 2026-10-19 for 0.3.0, and 2026-10-19 for 0.4.0.** Sections below describe the shipped
 > behavior; lines marked _(amended)_ replace the original text, and the reason for each is in
 > [DECISIONS.md](DECISIONS.md). § 12 separates what is verified from what was decided and what is
 > still unverified.
@@ -144,8 +144,14 @@ isRollEvent(input: unknown): input is RollEvent;  // validates untrusted input, 
 - Tray: floor at y = 0; walls at the visible floor bounds (from canvas aspect and the fixed camera)
   minus a margin. Throw origin, direction, speed, and spin come from the seed RNG. _(amended, 0.2.0)_
   Dice spawn in an axis-aligned block (spacing 2·Rmax + 0.5, extra dice in higher layers) so no two
-  start overlapping; throw speed 5–8 units/s.
+  start overlapping; throw speed 5–8 units/s. _(amended, 0.4.0)_ The block fills the tray width
+  before adding a row and adds a layer only when the floor grid is full.
 - Waves: each explosion wave is thrown after the previous wave settles; earlier dice stay as bodies.
+  _(amended, 0.4.0)_ A later wave's block is centred on the grid point (9 × 5 over the tray)
+  farthest from the resting dice and thrown at 0.4× speed, so it lands on free floor.
+- _(amended, 0.4.0)_ Re-simulation: a roll whose dice settle with any lowest hull point more than
+  0.1 die units above the floor is simulated again from scratch, continuing the same seed stream,
+  up to 4 attempts; the last attempt is kept. Values are already chosen, so this cannot bias them.
 - Output: per die, a keyframe track (position + quaternion per step) plus the settled up-face.
 - _(amended)_ Settle-to-flat: after settling, any die more than 0.5° off flat gets a deterministic
   _(amended, 0.2.0)_ 36-step tail that rolls it onto its up face and rests it on the floor (dice can
@@ -155,6 +161,7 @@ isRollEvent(input: unknown): input is RollEvent;  // validates untrusted input, 
   horizontal footprints (SAT, 0.05 gap, up to 64 passes, clamped to the walls).
 - _(amended)_ Auto-fit: a roll uses the largest scale ≤ `dieScale` on a 0.05 grid whose tray area
   holds 5 die-units² per animated body, so large rolls shrink instead of overlapping.
+  _(amended, 0.4.0)_ The scale must also let the spawn grid hold every animated body in one layer.
 
 ## 6. Renderer (`pollyroll/render`)
 
