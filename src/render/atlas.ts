@@ -26,6 +26,8 @@ export const LABEL_SETS: readonly LabelSet[] = [
   'd100tens',
   'd100ones',
   'dF',
+  'd2',
+  'dc',
 ];
 
 export type CustomLabels = Partial<Record<LabelSet, readonly string[]>>;

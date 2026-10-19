@@ -32,7 +32,8 @@ export interface TrayOptions {
    * Custom labels per label set; labels[set][i] replaces the i-th label of the set's natural
    * sequence: d4 '1'..'4', d6 '1'..'6', d8 '1'..'8', d12 '1'..'12', d20 '1'..'20' (i = value − 1);
    * d10 and d100ones '0'..'9' and d100tens '00'..'90' (i = digit); dF 0 = the −1 faces, 1 = the
-   * blank faces, 2 = the +1 faces. Missing entries use the default text.
+   * blank faces, 2 = the +1 faces; d2 '1', '2'; dc 0 = tails 'T', 1 = heads 'H'. Missing entries
+   * use the default text.
    */
   labels?: Partial<Record<LabelSet, readonly string[]>>;
   /** Volume 0–1 of impact sounds; default 0 (silent). */

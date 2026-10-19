@@ -1,3 +1,4 @@
+import { createRoll } from 'pollyroll';
 import type { RollEvent, RollSummary } from 'pollyroll';
 import { createDiceTray } from 'pollyroll/render';
 import type { DiceTray } from 'pollyroll/render';
@@ -52,6 +53,14 @@ const pair = (notation: string): RollEvent => ({
   createdAt: 0,
 });
 
+// ?event=coin: dc heads, dc tails, d2 2 → total 3.
+const coinValues = [1, 0, 1];
+const coins = (): RollEvent =>
+  createRoll('2dc+1d2', {
+    seed: '0123456789abcdef0123456789abcdef',
+    rng: () => coinValues.shift() ?? 0,
+  });
+
 const state: SmokeState = {
   ready: false,
   settled: false,
@@ -77,8 +86,11 @@ window.__pollyrollCreate = createDiceTray;
 state.supported = tray.supported;
 const start = performance.now();
 const pairs: Partial<Record<string, string>> = { adv: '2d20kh1', dis: '2d20kl1', all: '2d20' };
-const notation = pairs[params.get('event') ?? ''];
-const done = tray.playRoll(notation === undefined ? event : pair(notation));
+const choice = params.get('event') ?? '';
+const notation = pairs[choice];
+const done = tray.playRoll(
+  choice === 'coin' ? coins() : notation === undefined ? event : pair(notation),
+);
 state.ready = true;
 void done.then((summary) => {
   state.elapsedMs = performance.now() - start;
