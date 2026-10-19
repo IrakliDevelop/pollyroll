@@ -24,7 +24,8 @@ All notable changes to this project are documented here. The format follows
   drop falls freely, instead of turning at constant speed.
 - `pollyroll/render`: rolls play 1.5× faster (dice feel heavier; the simulation is unchanged), the
   clock starts at the first drawn frame, and impact sounds follow the same clock. Impacts in the last
-  0.3 s of a roll without a settle tail are no longer dropped.
+  0.3 s of a roll without a settle tail are no longer dropped. A roll received in a hidden tab
+  settles at once instead of replaying when the tab returns.
 - The same `RollEvent` animates differently than in 0.3.0 (values are identical), so clients of a
   shared roll should run the same minor version to see the same motion.
 
