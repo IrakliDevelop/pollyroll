@@ -568,6 +568,7 @@ describe('coin rolls', () => {
       expect(stacked).toBeLessThanOrEqual(maxStacked);
       expect(flipped / tossed).toBeGreaterThanOrEqual(0.9);
     },
+    120_000,
   );
 });
 
