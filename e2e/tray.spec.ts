@@ -801,4 +801,40 @@ test.describe('tray accessibility', () => {
     expect(labels.seen).not.toContain('6d6: [1, 2, 3, 4, 5, 6] = 21');
     expect(labels.seen[0]).toBe('2d6+3: [2, 5] + 3 = 10');
   });
+
+  test('resets the label while a new roll animates', async ({ page }) => {
+    await page.goto('/smoke.html');
+    await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
+    await needsWebGL2(page);
+    const labels = await page.evaluate(
+      async ([a, b, invalid]) => {
+        window.__pollyrollTray.dispose();
+        const host = document.createElement('div');
+        host.style.cssText = 'width:800px;height:600px';
+        document.body.append(host);
+        const tray = window.__pollyrollCreate(host, { announce: true, reducedMotion: 'never' });
+        const canvas = host.querySelector('canvas');
+        const live = host.querySelector('[role="status"]');
+        if (canvas === null || live === null) throw new Error('missing canvas or live region');
+        const read = (): [string | null, string | null] => [
+          canvas.getAttribute('aria-label'),
+          live.textContent,
+        ];
+        await tray.playRoll(a);
+        await tray.playRoll(invalid).catch(() => undefined);
+        const afterInvalid = read();
+        const next = tray.playRoll(b);
+        const animating = read();
+        await next;
+        return { afterInvalid, animating, settled: read() };
+      },
+      [EVENT, SIX, INVALID] as const,
+    );
+    expect(labels.afterInvalid).toEqual(['2d6+3: [2, 5] + 3 = 10', '2d6+3: [2, 5] + 3 = 10']);
+    expect(labels.animating).toEqual(['Dice tray', '']);
+    expect(labels.settled).toEqual([
+      '6d6: [1, 2, 3, 4, 5, 6] = 21',
+      '6d6: [1, 2, 3, 4, 5, 6] = 21',
+    ]);
+  });
 });

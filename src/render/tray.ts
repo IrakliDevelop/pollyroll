@@ -753,6 +753,7 @@ export function createDiceTray(
         if (summary.groups[d.group]?.dropped.includes(k)) dropped.add(i);
       });
       stop();
+      show('');
       resolvePending();
       const r: Roll = {
         plan,
