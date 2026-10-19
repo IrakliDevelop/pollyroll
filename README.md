@@ -78,8 +78,8 @@ Limits are at most 20 terms, at most 200 dice before explosions and rerolls, and
 256 characters. Examples: `2d20kh1+5`, `4d6dl1`, `4d6r1`, `2d20ro1`, `3d6!`, `d6!>=5`, `5d10>=7+1`,
 `4d6kh3>=5`, `adv+3`, `1d%`, `4dF`.
 
-- **Rerolls** keep the replaced die on the table: it is listed in `dropped`, its replacement comes
-  in the next wave, and keep/drop ranks only the dice that were not rerolled.
+- **Rerolls** keep the replaced die on the table: it is listed in `dropped` and `rerolled`, its
+  replacement comes in the next wave, and keep/drop ranks only the dice that were not rerolled.
 - **Success counting** applies after keep/drop. A comparison written right after a bare `!` or `r`
   belongs to that modifier (`d6!>=5` explodes on 5+); put the success comparison first
   (`4d6>=5r`) or after an explicit number (`4d6r1>=5`).
@@ -173,8 +173,9 @@ The label font is the skin's `font` if it has one, otherwise `labelFont`. If the
   shrinks in 0.05 steps until its dice fit the tray, so a single d20 shows at full size while 20d6
   stays readable without overlapping. The size sets the walls as well as the drawing, so both sides
   of a shared roll need the same `dieScale` and tray aspect to see identical motion.
-- **Dropped dice fade:** once a roll settles, dice that `evaluate` lists as dropped (keep/drop and
-  rerolled dice) are drawn at 35% opacity with their shadows, so the kept dice stand out.
+- **Dropped dice fade:** dice that `evaluate` lists as dropped are drawn at 35% opacity with their
+  shadows, so the kept dice stand out. A rerolled die fades as soon as its replacement is thrown;
+  keep/drop drops fade once the roll settles, since later waves can change the ranking.
 - **Sound:** with `sound` above 0 the tray plays a short procedural clack for each hard impact,
   derived from the dice tracks (no audio files). Browsers start audio only after a user gesture, so a
   roll that does not start from a click may stay silent.
