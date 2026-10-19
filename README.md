@@ -29,6 +29,7 @@ npm install pollyroll
 | `pollyroll/render` | `createDiceTray`, skins and presets                                | Browsers       |
 | `pollyroll/react`  | `useDiceTray` hook and `<DiceTray />` overlay                      | React          |
 | `pollyroll/format` | `formatRoll(event, summary)`: one-line plain-text result           | Node, browsers |
+| `pollyroll/sounds` | `diceClacks`: seven recorded dice clacks (opt-in, about 1.3 KB)    | Browsers       |
 
 ## Quick start
 
@@ -130,6 +131,23 @@ formatRoll(event, evaluate(event));
 Dropped dice are in parentheses and redacted values are `?`. The result is plain text: set it with
 `textContent`, not as HTML, since `notation` may come from another client.
 
+## Sounds (`pollyroll/sounds`)
+
+```ts
+import { createDiceTray } from 'pollyroll/render';
+import { diceClacks } from 'pollyroll/sounds';
+
+const tray = createDiceTray(el, { sound: 0.6, clacks: diceClacks });
+```
+
+Seven real dice clacks in one tiny embedded MP3 (no audio file to host). The tray plays one at each
+physics impact, rotating through them with a slight pitch change, louder for harder hits. Without
+`clacks` the tray keeps its procedural sound, so apps that never import this entry pay nothing. If
+the browser cannot decode the clip, the tray falls back to the procedural sound. Any `ClackSet`
+works: base64 audio plus, per clack, its start (ms from the clip's first sound) and length.
+
+The clacks are cut from Kenney's [Casino Audio](https://kenney.nl/assets/casino-audio) (CC0).
+
 ## Renderer (`pollyroll/render`)
 
 ```ts
@@ -176,8 +194,8 @@ The label font is the skin's `font` if it has one, otherwise `labelFont`. If the
 - **Dropped dice fade:** dice that `evaluate` lists as dropped are drawn at 35% opacity with their
   shadows, so the kept dice stand out. A rerolled die fades as soon as its replacement is thrown;
   keep/drop drops fade once the roll settles, since later waves can change the ranking.
-- **Sound:** with `sound` above 0 the tray plays a short procedural clack for each hard impact,
-  derived from the dice tracks (no audio files). Browsers start audio only after a user gesture, so a
+- **Sound:** with `sound` above 0 the tray plays a clack for each hard impact, derived from the dice
+  tracks: recorded clacks when `clacks` is set (see `pollyroll/sounds`), otherwise a procedural one. Browsers start audio only after a user gesture, so a
   roll that does not start from a click may stay silent.
 - **Accessibility:** the canvas has `role="img"` and, once a roll settles, an `aria-label` with the
   result from `formatRoll` ("Dice tray" while a roll animates or the tray is empty). On a canvas
@@ -378,4 +396,5 @@ The build specification is in [docs/PLAN.md](docs/PLAN.md) and the decision log 
 
 ## License
 
-MIT
+MIT. The recorded clacks in `pollyroll/sounds` are by Kenney (kenney.nl) under
+[CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
