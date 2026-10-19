@@ -1,4 +1,3 @@
-import { FLATTEN_STEPS } from '../physics/flatten';
 import type { PlannedBody } from '../physics/plan';
 import { DEFAULT_CONFIG, DT } from '../physics/world';
 
@@ -14,13 +13,14 @@ const G_DT = DEFAULT_CONFIG.gravity * DT;
  */
 export function impacts(
   bodies: readonly Pick<PlannedBody, 'startStep' | 'frames'>[],
+  tailSteps: number,
 ): Float32Array {
   const all: [number, number][] = [];
   for (const { startStep, frames: f } of bodies) {
     const v = (k: number, i: number): number =>
       ((f[k * 7 + i] ?? 0) - (f[k * 7 - 7 + i] ?? 0)) / DT;
     // The settle-to-flat tail is interpolated, not physical.
-    const end = f.length / 7 - FLATTEN_STEPS - 1;
+    const end = f.length / 7 - tailSteps - 1;
     let last = -COOLDOWN;
     for (let k = 1; k < end; k++) {
       const x = v(k + 1, 0) - v(k, 0);
@@ -52,13 +52,14 @@ export function noiseBuffer(ctx: AudioContext): AudioBuffer {
   return buffer;
 }
 
-/** Schedules one band-passed `noise` burst per impact at `start + step · DT`; returns the sources. */
+/** Schedules one band-passed `noise` burst per impact at `start + step · DT / rate`; returns the sources. */
 export function playImpacts(
   ctx: AudioContext,
   noise: AudioBuffer,
   list: Float32Array,
   start: number,
   volume: number,
+  rate: number,
 ): AudioBufferSourceNode[] {
   const sources: AudioBufferSourceNode[] = [];
   for (let i = 0; i < list.length / 2; i++) {
@@ -71,7 +72,7 @@ export function playImpacts(
     const gain = ctx.createGain();
     gain.gain.value = volume * Math.min(1, (list[i * 2 + 1] ?? 0) / FULL_STRENGTH);
     src.connect(filter).connect(gain).connect(ctx.destination);
-    src.start(start + (list[i * 2] ?? 0) * DT);
+    src.start(start + ((list[i * 2] ?? 0) * DT) / rate);
     sources.push(src);
   }
   return sources;

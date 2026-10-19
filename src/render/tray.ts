@@ -55,6 +55,8 @@ export interface DiceTray {
 }
 
 const FADE_MS = 300;
+// Faster playback reads as heavier dice: k× speed equals k² gravity along the same paths.
+const PLAYBACK = 1.5;
 const DROPPED_OPACITY = 0.35;
 const INST = 9; // floats per die instance: x, y, z, atlas row (−1 = blank), qx, qy, qz, qw, opacity
 const FRAME = 7; // floats per keyframe: x, y, z, qx, qy, qz, qw
@@ -103,7 +105,8 @@ interface Roll {
   eventSkin: SkinRef | undefined;
   skin: SkinGpu;
   scale: number;
-  t0: number;
+  sound: number; // clack volume, 0 = silent
+  t0: number; // first drawn frame's rAF time; −1 until then
   step: number;
   done: boolean;
   text: string;
@@ -621,20 +624,27 @@ export function createDiceTray(
     }, fadeAfterMs);
   }
 
-  function tick(): void {
+  function tick(now: number): void {
     frame = 0;
     const r = roll;
     if (r === null) return;
-    const now = performance.now();
     if (!r.done) {
-      const s = (now - r.t0) / 1000 / DT;
+      if (r.t0 < 0) {
+        r.t0 = now;
+        if (r.sound > 0 && audio !== null) {
+          const { ctx, noise } = audio;
+          const list = impacts(r.plan.bodies, r.plan.tailSteps);
+          sources = playImpacts(ctx, noise, list, ctx.currentTime, r.sound, PLAYBACK);
+        }
+      }
+      const s = ((now - r.t0) * PLAYBACK) / 1000 / DT;
       if (s >= r.plan.totalSteps) {
         settle(r);
         return;
       }
-      r.step = s < 0 ? 0 : s;
+      r.step = s;
     } else if (fadeStart >= 0) {
-      alpha = 1 - (now - fadeStart) / FADE_MS;
+      alpha = 1 - (performance.now() - fadeStart) / FADE_MS;
       if (alpha <= 0) {
         tray.clear();
         return;
@@ -756,7 +766,8 @@ export function createDiceTray(
         eventSkin: event.skin,
         skin,
         scale,
-        t0: performance.now(),
+        sound: 0,
+        t0: -1,
         step: 0,
         done: false,
         text: formatRoll(event, summary),
@@ -776,9 +787,9 @@ export function createDiceTray(
           const ctx = new AudioContext();
           audio = { ctx, noise: noiseBuffer(ctx) };
         }
-        const { ctx, noise } = audio;
-        if (ctx.state === 'suspended') void ctx.resume();
-        sources = playImpacts(ctx, noise, impacts(plan.bodies), ctx.currentTime, sound);
+        // Resume inside the caller's gesture; the clacks are scheduled on the first frame.
+        if (audio.ctx.state === 'suspended') void audio.ctx.resume();
+        r.sound = sound;
       }
       return done;
     },
