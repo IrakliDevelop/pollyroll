@@ -86,6 +86,7 @@
     "e2e": "playwright test",
     "agent:check": "node scripts/check-agent-docs.mjs",
     "dev": "vite --config demo/vite.config.ts",
+    "demo:build": "vite build --config demo/vite.config.ts",
     "verify": "pnpm agent:check && pnpm lint && pnpm format:check && pnpm build && pnpm typecheck && pnpm test:coverage && pnpm size",
     "prepublishOnly": "pnpm verify",
     "prepare": "husky"
