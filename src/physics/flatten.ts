@@ -315,7 +315,7 @@ export function liftTails(
 }
 
 /** Floor-clamped height of the lowest hull vertex of `pose` (frame layout). */
-function bottomOf(shape: ShapeType, pose: Float64Array): number {
+export function bottomOf(shape: ShapeType, pose: Float64Array): number {
   const [, py = 0, , qx = 0, qy = 0, qz = 0, qw = 1] = pose;
   return Math.max(0, py + lowestY(getPolyhedron(shape).vertices, qx, qy, qz, qw));
 }

@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { RollEvent } from '../core/types';
 import { shapeOf } from '../geometry/labels';
 import { getPolyhedron } from '../geometry/polyhedra';
+import type { ShapeType } from '../geometry/polyhedra';
 import { penetration } from '../physics/penetration';
 import { planRoll } from '../physics/plan';
+import { simulate } from '../physics/sim';
 import { cameraPosition, fitScale, trayBounds, viewProjection } from './camera';
 
 // Hand computation for trayBounds(4/3, 1), orthographic half height 5.1, insets 0.6 die units:
@@ -194,6 +196,40 @@ describe('fitScale', () => {
       });
     }
   }, 60_000);
+
+  it('settles fitted 608:360 rolls with no die resting on another', () => {
+    const run = (n: number, shape: ShapeType): ShapeType[] => Array<ShapeType>(n).fill(shape);
+    const rolls: [string, ShapeType[], number[]][] = [
+      ['4 d6', run(4, 'd6'), [0, 0, 0, 0]],
+      ['6 d6', run(6, 'd6'), [0, 0, 0, 0, 0, 0]],
+      ['4 d6 + wave-1 d6', run(5, 'd6'), [0, 0, 0, 0, 1]],
+      [
+        '10 mixed',
+        ['d4', 'd6', 'd6', 'd8', 'd8', 'd10', 'd10', 'd12', 'd20', 'd20'],
+        Array<number>(10).fill(0),
+      ],
+      [
+        '20 mixed',
+        [
+          ...run(4, 'd4'),
+          ...run(4, 'd6'),
+          ...run(4, 'd8'),
+          ...run(3, 'd10'),
+          ...run(2, 'd12'),
+          ...run(3, 'd20'),
+        ],
+        Array<number>(20).fill(0),
+      ],
+    ];
+    for (const [name, shapes, waves] of rolls) {
+      const radii = shapes.map((s) => getPolyhedron(s).radius);
+      const bounds = trayBounds(608 / 360, fitScale(2, radii, 608 / 360));
+      for (let i = 0; i < 150; i++) {
+        const seed = i.toString(16).padStart(32, '0');
+        expect(simulate({ seed, shapes, waves, bounds }).stacked, `${name} seed ${i}`).toBe(false);
+      }
+    }
+  }, 600_000);
 });
 
 describe('viewProjection', () => {

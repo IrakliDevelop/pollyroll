@@ -1,7 +1,9 @@
 import { createSeedRng } from '../core/rng';
+import type { SeedRng } from '../core/rng';
 import type { ShapeType } from '../geometry/polyhedra';
 import { getBodyShape } from './body';
 import {
+  bottomOf,
   FLATTEN_STEPS,
   flatOrientation,
   flattenTail,
@@ -18,6 +20,8 @@ export const MAX_STEPS_PER_WAVE = 720;
 export const SETTLE_LINEAR = 0.05; // units/s
 export const SETTLE_ANGULAR = 0.1; // rad/s
 export const SETTLE_STEPS = 24;
+export const MAX_ATTEMPTS = 4;
+export const STACK_HEIGHT = 0.1; // die units
 
 export interface SimInput {
   seed: string;
@@ -38,6 +42,8 @@ export interface SimResult {
   totalSteps: number;
   tracks: BodyTrack[];
   settled: boolean;
+  attempts: number;
+  stacked: boolean; // the kept attempt still ends with a die bottom above STACK_HEIGHT
 }
 
 const FRAME = 7;
@@ -50,6 +56,8 @@ const ANGULAR_SQ = SETTLE_ANGULAR * SETTLE_ANGULAR;
  * MAX_STEPS_PER_WAVE steps; earlier dice stay in the world. A wave is settled once every body in
  * the world has stayed below SETTLE_LINEAR and SETTLE_ANGULAR for SETTLE_STEPS consecutive steps.
  * Every throw parameter comes from the sfc32 stream of `seed`. Tracks are returned in input order.
+ * A roll ending with any die's bottom above STACK_HEIGHT is thrown again from scratch, continuing the
+ * stream, up to MAX_ATTEMPTS times; the last attempt is kept.
  * Resting centres are then pushed apart by the footprints of the flattened dice (see `separate`);
  * when any die rests cocked or moved, every track gains a FLATTEN_STEPS tail (see `flattenTail`,
  * lifted over dice it would hit by `liftTails`); other dice hold.
@@ -60,6 +68,60 @@ export function simulate(input: SimInput): SimResult {
     throw new RangeError('shapes and waves must have the same length');
   }
   const rng = createSeedRng(input.seed);
+  let attempts = 1;
+  let run = throwAll(rng, input);
+  for (; run.stacked && attempts < MAX_ATTEMPTS; attempts++) run = throwAll(rng, input);
+  const { bodies, thrown, poses, totalSteps, settled, stacked } = run;
+  const xz = new Float64Array(poses.flatMap((p) => [p[0] ?? 0, p[2] ?? 0]));
+  separate(
+    xz,
+    thrown.map((b, k) => footprint(b.shape, flatOrientation(b.shape, poses[k] ?? []))),
+    bounds,
+  );
+  const tails = thrown.map((body, k) =>
+    flattenTail(
+      body.shape,
+      poses[k] ?? new Float64Array(FRAME),
+      xz[2 * k] ?? 0,
+      xz[2 * k + 1] ?? 0,
+    ),
+  );
+  liftTails(
+    thrown.map((b) => b.shape),
+    poses,
+    xz,
+    tails,
+  );
+  const ends = bodies.map((body) => {
+    const k = thrown.indexOf(body);
+    const pose = poses[k];
+    if (pose === undefined) return { up: 0, tail: null };
+    return { up: upReadout(body.shape, pose), tail: tails[k] ?? null };
+  });
+  const extra = ends.some((e) => e.tail !== null) ? FLATTEN_STEPS : 0;
+  const tracks = bodies.map((body, i): BodyTrack => {
+    const frames = new Float32Array(body.length + extra * FRAME);
+    frames.set(body.frames.subarray(0, body.length));
+    const tail = ends[i]?.tail;
+    for (let k = 0; k < extra; k++) {
+      const at = body.length + k * FRAME;
+      if (tail) frames.set(tail.subarray(k * FRAME, (k + 1) * FRAME), at);
+      else frames.copyWithin(at, body.length - FRAME, body.length);
+    }
+    return {
+      shape: body.shape,
+      wave: body.wave,
+      startStep: body.startStep,
+      frames,
+      upReadout: ends[i]?.up ?? 0,
+    };
+  });
+  return { totalSteps: totalSteps + extra, tracks, settled, attempts, stacked };
+}
+
+/** One attempt of `simulate`: a fresh world throws every wave, drawing from `rng` where it stands. */
+function throwAll(rng: SeedRng, input: SimInput) {
+  const { shapes, waves, bounds } = input;
   const world = createWorld(bounds);
 
   interface Body {
@@ -144,51 +206,8 @@ export function simulate(input: SimInput): SimResult {
     world.read(body.index, pose, 0);
     return pose;
   });
-  const xz = new Float64Array(poses.flatMap((p) => [p[0] ?? 0, p[2] ?? 0]));
-  separate(
-    xz,
-    thrown.map((b, k) => footprint(b.shape, flatOrientation(b.shape, poses[k] ?? []))),
-    bounds,
-  );
-  const tails = thrown.map((body, k) =>
-    flattenTail(
-      body.shape,
-      poses[k] ?? new Float64Array(FRAME),
-      xz[2 * k] ?? 0,
-      xz[2 * k + 1] ?? 0,
-    ),
-  );
-  liftTails(
-    thrown.map((b) => b.shape),
-    poses,
-    xz,
-    tails,
-  );
-  const ends = bodies.map((body) => {
-    const k = thrown.indexOf(body);
-    const pose = poses[k];
-    if (pose === undefined) return { up: 0, tail: null };
-    return { up: upReadout(body.shape, pose), tail: tails[k] ?? null };
-  });
-  const extra = ends.some((e) => e.tail !== null) ? FLATTEN_STEPS : 0;
-  const tracks = bodies.map((body, i): BodyTrack => {
-    const frames = new Float32Array(body.length + extra * FRAME);
-    frames.set(body.frames.subarray(0, body.length));
-    const tail = ends[i]?.tail;
-    for (let k = 0; k < extra; k++) {
-      const at = body.length + k * FRAME;
-      if (tail) frames.set(tail.subarray(k * FRAME, (k + 1) * FRAME), at);
-      else frames.copyWithin(at, body.length - FRAME, body.length);
-    }
-    return {
-      shape: body.shape,
-      wave: body.wave,
-      startStep: body.startStep,
-      frames,
-      upReadout: ends[i]?.up ?? 0,
-    };
-  });
-  return { totalSteps: totalSteps + extra, tracks, settled };
+  const stacked = thrown.some((b, k) => bottomOf(b.shape, poses[k] ?? spot) > STACK_HEIGHT);
+  return { bodies, thrown, poses, totalSteps, settled, stacked };
 }
 
 const FNV_OFFSET = 0x811c9dc5;

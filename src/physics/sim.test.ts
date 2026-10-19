@@ -262,7 +262,13 @@ describe('throwWave', () => {
 describe('simulate', () => {
   it('returns no tracks for no dice', () => {
     const result = simulate({ seed: '0'.repeat(32), shapes: [], waves: [], bounds: BOUNDS });
-    expect(result).toEqual({ totalSteps: 0, tracks: [], settled: true });
+    expect(result).toEqual({
+      totalSteps: 0,
+      tracks: [],
+      settled: true,
+      attempts: 1,
+      stacked: false,
+    });
   });
 
   it('rejects mismatched shapes and waves', () => {
@@ -342,6 +348,26 @@ describe('simulate', () => {
     expect(result.tracks[0]?.startStep).toBe(result.tracks[2]?.startStep);
   });
 
+  it('re-simulates a roll that ends with a die resting on another', () => {
+    // Seed 3 found by search: its first attempt ends with a d6 resting on another.
+    const input: SimInput = {
+      seed: '00000000000000000000000000000003',
+      shapes: Array<ShapeType>(6).fill('d6'),
+      waves: [0, 0, 0, 0, 0, 0],
+      bounds: { minX: -4.25, maxX: 4.25, minZ: -2.25, maxZ: 2.25 },
+    };
+    const result = simulate(input);
+    expect(result.attempts).toBeGreaterThanOrEqual(2);
+    expect(result.stacked).toBe(false);
+    expect(trackHash(simulate(input))).toBe(trackHash(result));
+  });
+
+  it('keeps the first attempt of a one-die roll', () => {
+    const result = simulate({ seed: '0'.repeat(32), shapes: ['d6'], waves: [0], bounds: BOUNDS });
+    expect(result.attempts).toBe(1);
+    expect(result.stacked).toBe(false);
+  });
+
   it('reports settled: false when a wave hits the step cap', () => {
     const tight: TrayBounds = { minX: -0.2, maxX: 0.2, minZ: -0.2, maxZ: 0.2 };
     const result = simulate({
@@ -408,10 +434,12 @@ describe('determinism', () => {
     const result: SimResult = {
       totalSteps: 0,
       settled: true,
+      attempts: 1,
+      stacked: false,
       tracks: [{ shape: 'd6', wave: 0, startStep: 0, frames: new Float32Array([1]), upReadout: 0 }],
     };
     expect(trackHash(result)).toBe(h.toString(16).padStart(8, '0'));
-    expect(trackHash({ totalSteps: 0, settled: true, tracks: [] })).toBe('811c9dc5');
+    expect(trackHash({ ...result, tracks: [] })).toBe('811c9dc5');
   });
 });
 
