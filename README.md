@@ -179,7 +179,9 @@ The label font is the skin's `font` if it has one, otherwise `labelFont`. If the
   derived from the dice tracks (no audio files). Browsers start audio only after a user gesture, so a
   roll that does not start from a click may stay silent.
 - **Accessibility:** the canvas has `role="img"` and, once a roll settles, an `aria-label` with the
-  result from `formatRoll`.
+  result from `formatRoll` ("Dice tray" while a roll animates or the tray is empty). On a canvas
+  you pass in, these replace its own `role` and `aria-label`, and `announce` inserts the live
+  region right after it.
 - **Superseded rolls:** if a roll is replaced, cleared, or disposed, its promise still resolves with
   that roll's own summary. It never rejects in these cases.
 - **Dice limit:** at most 30 dice are animated per tray (a d100 counts as two). Dice beyond that

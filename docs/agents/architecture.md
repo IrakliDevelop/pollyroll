@@ -10,12 +10,14 @@
 | `src/skins/`                 | `Skin` types, presets, GLSL pattern sources, `defineSkin`, `registerSkin`                      | unit tests for composition; screenshots per preset                  |
 | `src/render/`                | `pollyroll/render` entry: WebGL2 tray, shaders, glyph atlas, environment, animation loop       | Playwright smoke + screenshots, render size budget                  |
 | `src/react/`                 | `pollyroll/react` entry: `useDiceTray`, `<DiceTray />`                                         | React Testing Library tests, react size budget                      |
+| `src/format/`                | `pollyroll/format` entry: `formatRoll` plain-text result line; type-only imports from core     | unit tests, format size budget                                      |
 | `demo/`                      | Vite playground: notation input, skin picker, two-tray shared roll                             | demo build, manual smoke                                            |
 | `e2e/`                       | Playwright: render smoke, screenshots, cross-browser determinism                               | `pnpm e2e`                                                          |
 
 ## Dependency direction
 
-`core` ← `geometry` ← `physics` ← `render` ← `react`; `skins` is used by `render` (types also by
+`core` ← `geometry` ← `physics` ← `render` ← `react`; `format` imports core types only and is
+used by `render`; `skins` is used by `render` (types also by
 `core` for `SkinRef`). Nothing imports upward. `core` never imports `render`, `react`, or any DOM or
 WebGL type. `physics` and `geometry` are DOM-free so they run under Node for tests and benches.
 
