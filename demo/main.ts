@@ -2,7 +2,7 @@ import { createRoll, evaluate, isRollEvent, PollyrollSyntaxError, redact } from 
 import type { RollEvent } from 'pollyroll';
 import { classic, createDiceTray } from 'pollyroll/render';
 import type { DiceTray, Skin } from 'pollyroll/render';
-import { diceClacks } from 'pollyroll/sounds';
+import { coinClinks, diceClacks } from 'pollyroll/sounds';
 import { byId, createSkinEditor } from './editor';
 
 const form = byId('controls', HTMLFormElement);
@@ -18,7 +18,11 @@ const resultA = byId('result-a', HTMLParagraphElement);
 const resultB = byId('result-b', HTMLParagraphElement);
 
 const dieScale = Number(sizeInput.value);
-const trayA = createDiceTray(byId('tray-a', HTMLDivElement), { dieScale, clacks: diceClacks });
+const trayA = createDiceTray(byId('tray-a', HTMLDivElement), {
+  dieScale,
+  clacks: diceClacks,
+  coinClinks,
+});
 const trayB = createDiceTray(byId('tray-b', HTMLDivElement), { dieScale });
 noticeEl.hidden = trayA.supported && trayB.supported;
 
@@ -125,6 +129,9 @@ for (const notation of [
   'd6!>=5',
   'd%+d10',
   '4dF',
+  'dc',
+  '3dc=1',
+  '2d2',
   '30d6',
 ]) {
   const button = document.createElement('button');
