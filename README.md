@@ -3,6 +3,8 @@
 Lightweight 3D dice for the web with zero runtime dependencies. It has a WebGL2 renderer and a
 deterministic physics engine, and rolls are result-first, so it works for multiplayer.
 
+**[Live demo](https://iraklidevelop.github.io/pollyroll/)**: notation input, skin editor, and a two-tray shared roll.
+
 - **Result-first.** Values are drawn before any physics runs. The simulation only animates the dice,
   and a symmetry remap turns each settled die so its top face shows the value already chosen.
 - **Shared rolls.** A roll is a plain JSON `RollEvent`. Every client that plays the same event shows
