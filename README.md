@@ -144,7 +144,8 @@ Seven real dice clacks in one tiny embedded MP3 (no audio file to host). The tra
 physics impact, rotating through them with a slight pitch change, louder for harder hits. Without
 `clacks` the tray keeps its procedural sound, so apps that never import this entry pay nothing. If
 the browser cannot decode the clip, the tray falls back to the procedural sound. Any `ClackSet`
-works: base64 audio plus, per clack, its start (ms from the clip's first sound) and length.
+works: base64 audio plus, per clack, its start (ms after the clip's first sample at 20% of its peak, so decoders that keep the MP3
+encoder delay still line up) and length.
 
 The clacks are cut from Kenney's [Casino Audio](https://kenney.nl/assets/casino-audio) (CC0).
 
