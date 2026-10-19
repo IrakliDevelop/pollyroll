@@ -4,7 +4,7 @@ Approved specification for the initial build. Decisions here are fixed; an agent
 genuine gap records its choice in [DECISIONS.md](DECISIONS.md) and continues (see
 [agents/delegation.md](agents/delegation.md) § Autonomous run).
 
-> **Amended 2026-10-06 by the owner after the 0.1.0 build, 2026-10-19 for 0.2.0, 2026-10-19 for 0.3.0, 2026-10-19 for 0.4.0, and 2026-10-19 for 0.5.0.** Sections below describe the shipped
+> **Amended 2026-10-06 by the owner after the 0.1.0 build, 2026-10-19 for 0.2.0, 2026-10-19 for 0.3.0, 2026-10-19 for 0.4.0, 2026-10-19 for 0.5.0, and 2026-10-19 for 0.6.0.** Sections below describe the shipped
 > behavior; lines marked _(amended)_ replace the original text, and the reason for each is in
 > [DECISIONS.md](DECISIONS.md). § 12 separates what is verified from what was decided and what is
 > still unverified.
@@ -24,7 +24,7 @@ built for shared (multiplayer) rolls from day one. Independent of Fieldnotes and
 | Physics   | Custom fixed-step rigid-body solver in TypeScript. No rapier, cannon, or ammo.                                                                                                                                                                                                                                       |
 | Outcome   | **Result-first.** Values are chosen by RNG before simulation; physics only animates.                                                                                                                                                                                                                                 |
 | Remap     | Simulate headless, read the settled up-face, then post-multiply the die's orientation for the whole trajectory by a **rotation symmetry** of its polyhedron that moves the chosen value's face to the settled up-face. Geometry is invariant, so the motion is unchanged and the real-die label layout is preserved. |
-| Assets    | None. Geometry generated in code; labels from a runtime Canvas2D glyph atlas; patterns procedural in GLSL; environment lighting analytic. _(amended, 0.5.0)_ `pollyroll/sounds` embeds 7 CC0 clacks (Kenney) as one base64 MP3.                                                                                      |
+| Assets    | None. Geometry generated in code; labels from a runtime Canvas2D glyph atlas; patterns procedural in GLSL; environment lighting analytic. _(amended, 0.5.0)_ `pollyroll/sounds` embeds 7 CC0 clacks (Kenney) as one base64 MP3; _(amended, 0.6.0)_ and 8 CC0 coin clinks (Kenney) as a second.                       |
 | Transport | The library never touches the network. It creates and plays plain `RollEvent` objects.                                                                                                                                                                                                                               |
 | Fallback  | No WebGL2, or reduced motion → `playRoll` resolves immediately with the summary, no animation.                                                                                                                                                                                                                       |
 | Package   | Single package at the repo root with subpath exports: `pollyroll` (core, DOM-free), `pollyroll/render`, `pollyroll/react`; _(amended, 0.3.0)_ `pollyroll/format` (DOM-free); _(amended, 0.5.0)_ `pollyroll/sounds` (opt-in clack data).                                                                              |
@@ -32,13 +32,14 @@ built for shared (multiplayer) rolls from day one. Independent of Fieldnotes and
 
 ### Budgets (min+gzip, hard limits in `size-limit`)
 
-| Entry                                                                       | Limit  |
-| --------------------------------------------------------------------------- | ------ |
-| `pollyroll` (core)                                                          | 4 KB   |
-| `pollyroll/render` (renderer + physics + geometry + shaders + skin presets) | 30 KB  |
-| `pollyroll/react` (excluding react)                                         | 1 KB   |
-| `pollyroll/format` _(amended, 0.3.0)_                                       | 0.5 KB |
-| `pollyroll/sounds` _(amended, 0.5.0)_                                       | 1.5 KB |
+| Entry                                                                       | Limit   |
+| --------------------------------------------------------------------------- | ------- |
+| `pollyroll` (core)                                                          | 4 KB    |
+| `pollyroll/render` (renderer + physics + geometry + shaders + skin presets) | 30 KB   |
+| `pollyroll/react` (excluding react)                                         | 1 KB    |
+| `pollyroll/format` _(amended, 0.3.0)_                                       | 0.5 KB  |
+| `pollyroll/sounds` `diceClacks` _(amended, 0.5.0; per export, 0.6.0)_       | 1.5 KB  |
+| `pollyroll/sounds` `coinClinks` _(amended, 0.6.0)_                          | 0.75 KB |
 
 Baseline being replaced: dice-box JS plus 2.1 MB of `public/assets` (ammo.js + themes).
 
@@ -65,6 +66,8 @@ Baseline being replaced: dice-box JS plus 2.1 MB of `public/assets` (ammo.js + t
 | `d20`  | 20      | 1–20      | opposite faces sum to 21                                                                           |
 | `d100` | 2 × d10 | 1–100     | one event entry; rendered as a tens d10 (`00`–`90`) and a ones d10 (`0`–`9`); `00` + `0` = 100     |
 | `dF`   | 6       | −1, 0, +1 | d6 geometry labeled `−`, `−`, blank, blank, `+`, `+`                                               |
+| `d2`   | 2       | 1–2       | _(amended, 0.6.0)_ coin geometry labeled `1`, `2`                                                  |
+| `dc`   | 2       | 0, 1      | _(amended, 0.6.0)_ coin: 0 = tails `T`, 1 = heads `H` (Foundry VTT's `dc`)                         |
 
 - `6` and `9` carry an underline on d10, d12, d20, and the d100 ones die.
 - Rotation groups (transitive on faces, so every value is reachable): d4 T (12), d6 and d8 O (24),
@@ -77,7 +80,7 @@ Baseline being replaced: dice-box JS plus 2.1 MB of `public/assets` (ammo.js + t
 ## 3. `RollEvent` (wire contract, v1)
 
 ```ts
-type DieType = 'd4' | 'd6' | 'd8' | 'd10' | 'd12' | 'd20' | 'd100' | 'dF';
+type DieType = 'd4' | 'd6' | 'd8' | 'd10' | 'd12' | 'd20' | 'd100' | 'dF' | 'd2' | 'dc'; // d2, dc: amended, 0.6.0
 
 interface RollEvent {
   v: 1;
@@ -131,7 +134,10 @@ isRollEvent(input: unknown): input is RollEvent;  // validates untrusted input, 
   comparison with an explicit operator counts successes among kept dice (`5d10>=7`). Rerolls reuse
   later waves; replaced dice are listed in `dropped`. `RollEvent` stays v1; the `DiceTerm` AST type
   changes (`explode: Compare | null`, new `reroll`, `success`).
-- Out of scope: compounding, crit ranges, failures.
+- _(amended, 0.6.0)_ `d2` (X = 2) and `dc` (coin) join the die sizes; every modifier applies to them
+  (`3dc=1` counts heads). `RollEvent` stays v1: the `type` enum widens, so a receiver on 0.5.0 or
+  older rejects an event with a coin in `isRollEvent` (fails closed).
+- Out of scope: compounding, crit ranges, failures, a coin "call" modifier.
 
 ## 5. Physics (`src/physics/`, internal, DOM-free)
 
@@ -144,6 +150,11 @@ isRollEvent(input: unknown): input is RollEvent;  // validates untrusted input, 
   _(amended, 0.4.0)_ Friction 0.6 against the floor, 0.1 against walls and between dice.
   _(amended)_ Contacts are warm-started from the previous step's impulses.
 - Settle: every body below 0.05 units/s linear and 0.1 rad/s angular speed for 24 consecutive steps.
+- _(amended, 0.6.0)_ Coin: physics hull a 16-sided prism, circumradius 0.65, thickness 0.2
+  (vertices from half-angle square roots, no trigonometry); readouts are the two caps only; hull
+  buffers hold 32 vertices, 48 edges, 16 edges per face. Coins may have their own damping and
+  settle rule (keyed by shape, dice unchanged) so they visibly wobble flat; a scripted wobble tail
+  is the fallback if the simulated wobble is too short. Design: [designs/coin.md](designs/coin.md).
 - Determinism rule from AGENTS.md: only `+ - * /` and `Math.sqrt` in the step; quaternion
   integration with a first-order update and explicit renormalization.
 - Tray: floor at y = 0; walls at the visible floor bounds (from canvas aspect and the fixed camera)
@@ -186,6 +197,7 @@ interface TrayOptions {
   sound?: number;                                           // (amended, 0.2.0) clack volume 0–1, default 0
   announce?: boolean;                                       // (amended, 0.3.0) polite live region; default false
   clacks?: ClackSet;                                        // (amended, 0.5.0) recorded clacks, e.g. diceClacks from pollyroll/sounds
+  coinClinks?: ClackSet;                                    // (amended, 0.6.0) recorded clinks layered on the coin synth, e.g. coinClinks
 }
 
 interface DiceTray {
@@ -202,6 +214,10 @@ interface DiceTray {
   dice draw at 35% opacity; _(amended, 0.3.0)_ a rerolled die drops to 35% when its replacement
   wave is thrown. An unpositioned host element gets `position: relative`.
 - An `HTMLElement` target gets an absolutely positioned, transparent, pointer-events-none canvas.
+- _(amended, 0.6.0)_ Coins sound like a coin on a wooden table, not a dice clack: a modal synth
+  (ring modes rolled off by contact time, table modes at 0.6–2.4 kHz), with a short recorded clink
+  layered on each landing and bounce when `coinClinks` is given, and a rattle from the rim
+  contacts of a wobbling coin. Research: [research/sound.md](research/sound.md).
 - Forward pass, GGX PBR (base color, metalness, roughness, clearcoat). _(amended)_ Fixed
   orthographic camera looking straight down (visible half height 5.1 world units at every aspect),
   so every die's up face is seen face-on; walls inset 0.6 die units; blob shadows offset away from
@@ -254,7 +270,7 @@ src/skins/                   types, presets, patterns (GLSL strings)
 src/render/index.ts          render entry; tray, gl, shaders, atlas, env
 src/react/index.ts           react entry
 src/format/index.ts          format entry (amended, 0.3.0): formatRoll, type-only imports
-src/sounds/index.ts          sounds entry (amended, 0.5.0): diceClacks data, type-only imports
+src/sounds/index.ts          sounds entry (amended, 0.5.0): diceClacks (0.6.0: and coinClinks) data, type-only imports
 demo/                        Vite playground: notation input, skin picker, two-tray shared-roll demo
 e2e/                         Playwright: render smoke, screenshots, cross-browser determinism
 ```
