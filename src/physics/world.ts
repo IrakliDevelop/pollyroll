@@ -13,7 +13,9 @@ export interface TrayBounds {
 export interface WorldConfig {
   gravity: number;
   restitution: number;
-  friction: number;
+  friction: number; // floor
+  wallFriction: number; // walls: low so dice slide off instead of resting cocked
+  pairFriction: number; // die against die: low so dice slide off neighbours
   linearDamping: number; // per second, applied as v *= 1 / (1 + c·DT)
   angularDamping: number; // per second, applied as ω *= 1 / (1 + c·DT)
   iterations: number;
@@ -25,6 +27,8 @@ export const DEFAULT_CONFIG: WorldConfig = {
   gravity: -30,
   restitution: 0.35,
   friction: 0.6,
+  wallFriction: 0.1,
+  pairFriction: 0.1,
   // Tuned on the settle-acceptance throws (10 mixed dice, seeds 0-49 and 50-249): the best settle
   // rate in the allowed ranges with a median of about 250 steps.
   linearDamping: 0.6,
@@ -129,6 +133,8 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
   const { gravity, iterations } = cfg;
   const restitution = clampNumber(cfg.restitution, 0, 1);
   const friction = clampNumber(cfg.friction, 0, Infinity);
+  const wallFriction = clampNumber(cfg.wallFriction, 0, Infinity);
+  const pairFriction = clampNumber(cfg.pairFriction, 0, Infinity);
   const linearFactor = 1 / (1 + clampNumber(cfg.linearDamping, 0, Infinity) * DT);
   const angularFactor = 1 / (1 + clampNumber(cfg.angularDamping, 0, Infinity) * DT);
   const biasRate = BAUMGARTE / DT;
@@ -164,6 +170,7 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
   const contactA = new Int32Array(MAX_CONTACTS); // -1 for a static plane
   const contactB = new Int32Array(MAX_CONTACTS);
   const contactSlot = new Int32Array(MAX_CONTACTS);
+  const contactFriction = new Float64Array(MAX_CONTACTS);
   const slotLambda = new Float64Array(SLOTS * 3); // accumulated impulses of each slot's last contact
   const slotStep = new Int32Array(SLOTS); // stepNumber + 1 of the step that wrote slotLambda
   let stepNumber = 1;
@@ -287,11 +294,13 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
     rbz: number,
     depth: number,
     slot: number,
+    mu: number,
   ): void {
     const c = contactCount++;
     contactA[c] = a;
     contactB[c] = b;
     contactSlot[c] = slot;
+    contactFriction[c] = mu;
     const warm = atInt(slotStep, slot) === stepNumber;
     const base = c * STRIDE;
     let t1x: number;
@@ -396,6 +405,7 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
       z - at(pos, pb + 2),
       depth,
       slot,
+      pairFriction,
     );
   }
 
@@ -650,6 +660,7 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
         const ny = at(planeNormal, p * 3 + 1);
         const nz = at(planeNormal, p * 3 + 2);
         const offset = at(planeOffset, p);
+        const mu = p === 0 ? friction : wallFriction;
         for (let k = 0; k < nv; k++) {
           const w = (i * MAX_VERTICES + k) * 3;
           const wx = at(worldVerts, w);
@@ -658,7 +669,22 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
           const separation = nx * wx + ny * wy + nz * wz - offset;
           if (separation < 0) {
             const slot = (i * PLANES + p) * MAX_VERTICES + k;
-            addContact(-1, i, nx, ny, nz, 0, 0, 0, wx - px, wy - py, wz - pz, -separation, slot);
+            addContact(
+              -1,
+              i,
+              nx,
+              ny,
+              nz,
+              0,
+              0,
+              0,
+              wx - px,
+              wy - py,
+              wz - pz,
+              -separation,
+              slot,
+              mu,
+            );
           }
         }
       }
@@ -681,7 +707,7 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
 
   /**
    * Sequential impulses with warm starting (Catto 2005): normal impulse clamped >= 0, box friction
-   * clamped to ±friction·λn; accumulated impulses are saved per slot for the next step.
+   * clamped to ±μ·λn with the contact's μ; accumulated impulses are saved per slot for the next step.
    */
   function solve(): void {
     for (let c = 0; c < contactCount; c++) {
@@ -761,7 +787,7 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
           if (row === 0) {
             next = old + mass * (at(contacts, base + C_TARGET) - v);
             if (next < 0) next = 0;
-            limit = friction * next;
+            limit = at(contactFriction, c) * next;
           } else {
             next = old - mass * v;
             if (next > limit) next = limit;

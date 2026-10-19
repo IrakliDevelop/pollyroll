@@ -44,6 +44,7 @@ export interface SimResult {
   settled: boolean;
   attempts: number;
   stacked: boolean; // the kept attempt still ends with a die bottom above STACK_HEIGHT
+  tailSteps: number; // steps of the settle tail at the end of every track
 }
 
 const FRAME = 7;
@@ -116,7 +117,7 @@ export function simulate(input: SimInput): SimResult {
       upReadout: ends[i]?.up ?? 0,
     };
   });
-  return { totalSteps: totalSteps + extra, tracks, settled, attempts, stacked };
+  return { totalSteps: totalSteps + extra, tracks, settled, attempts, stacked, tailSteps: extra };
 }
 
 /** One attempt of `simulate`: a fresh world throws every wave, drawing from `rng` where it stands. */

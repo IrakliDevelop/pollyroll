@@ -284,24 +284,17 @@ describe('simulate ends flat', () => {
           ),
         ).toBe(true);
       });
-      const cocked = result.tracks.map((t) => {
-        const n = t.frames.length / 7;
-        return (
-          n > FLATTEN_STEPS &&
-          restOf(t.shape, frameAt(t.frames, n - 1 - FLATTEN_STEPS)).upY < COS_HALF_DEGREE
-        );
-      });
-      if (!cocked.includes(true)) continue;
+      const tail = result.tailSteps;
+      if (tail === 0) continue;
       tailed++;
-      result.tracks.forEach((t, k) => {
-        if (cocked[k] === true) return;
+      result.tracks.forEach((t) => {
         const n = t.frames.length / 7;
         const final = frameAt(t.frames, n - 1);
-        const before = frameAt(t.frames, n - 1 - FLATTEN_STEPS);
+        const before = frameAt(t.frames, n - 1 - tail);
+        if (restOf(t.shape, before).upY < COS_HALF_DEGREE) return;
         if (before[0] !== final[0] || before[2] !== final[2]) return;
         // Already flat and not pushed apart: holds its final frame through the tail.
-        for (let s = n - 1 - FLATTEN_STEPS; s < n - 1; s++)
-          expect(frameAt(t.frames, s)).toEqual(final);
+        for (let s = n - 1 - tail; s < n - 1; s++) expect(frameAt(t.frames, s)).toEqual(final);
         held++;
       });
     }

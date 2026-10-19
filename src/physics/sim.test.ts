@@ -268,6 +268,7 @@ describe('simulate', () => {
       settled: true,
       attempts: 1,
       stacked: false,
+      tailSteps: 0,
     });
   });
 
@@ -349,9 +350,9 @@ describe('simulate', () => {
   });
 
   it('re-simulates a roll that ends with a die resting on another', () => {
-    // Seed 3 found by search: its first attempt ends with a d6 resting on another.
+    // Seed 0xee5 found by search: its first attempt ends with a d6 resting on another.
     const input: SimInput = {
-      seed: '00000000000000000000000000000003',
+      seed: '00000000000000000000000000000ee5',
       shapes: Array<ShapeType>(6).fill('d6'),
       waves: [0, 0, 0, 0, 0, 0],
       bounds: { minX: -4.25, maxX: 4.25, minZ: -2.25, maxZ: 2.25 },
@@ -403,6 +404,14 @@ describe('determinism', () => {
     expect(GOLDEN_HASH).toMatch(/^[0-9a-f]{8}$/);
   });
 
+  it('reports tailSteps 0 for a die that settles flat, FLATTEN_STEPS for the crowded case', () => {
+    const single = simulate({ seed: '0'.repeat(32), shapes: ['d6'], waves: [0], bounds: BOUNDS });
+    const crowded = GOLDEN_CASES[4];
+    if (crowded === undefined) throw new Error('missing crowded golden case');
+    expect(single.tailSteps).toBe(0);
+    expect(simulate(crowded).tailSteps).toBe(FLATTEN_STEPS);
+  });
+
   it('the crowded golden case moves at least one die apart in the flatten tail', () => {
     const input = GOLDEN_CASES[4];
     expect(input?.shapes).toHaveLength(9);
@@ -410,7 +419,7 @@ describe('determinism', () => {
     const result = simulate(input);
     const moved = result.tracks.some((t) => {
       const end = t.frames.length - 7;
-      const rest = end - FLATTEN_STEPS * 7;
+      const rest = end - result.tailSteps * 7;
       const dx = (t.frames[end] ?? 0) - (t.frames[rest] ?? 0);
       const dz = (t.frames[end + 2] ?? 0) - (t.frames[rest + 2] ?? 0);
       // Settled dice drift under 0.05 units/s, far less than 0.05 units over the tail.
@@ -436,6 +445,7 @@ describe('determinism', () => {
       settled: true,
       attempts: 1,
       stacked: false,
+      tailSteps: 0,
       tracks: [{ shape: 'd6', wave: 0, startStep: 0, frames: new Float32Array([1]), upReadout: 0 }],
     };
     expect(trackHash(result)).toBe(h.toString(16).padStart(8, '0'));
