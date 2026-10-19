@@ -9,10 +9,12 @@ import { quatRotate } from '../geometry/vec';
 import { FLATTEN_STEPS } from './flatten';
 import { GOLDEN_CASES, GOLDEN_HASH, goldenHash } from './golden';
 import {
+  MAX_ATTEMPTS,
   MAX_STEPS_PER_WAVE,
   SETTLE_ANGULAR,
   SETTLE_LINEAR,
   SETTLE_STEPS,
+  STACK_HEIGHT,
   simulate,
   trackHash,
 } from './sim';
@@ -59,6 +61,8 @@ describe('constants', () => {
     expect(SETTLE_LINEAR).toBe(0.05);
     expect(SETTLE_ANGULAR).toBe(0.1);
     expect(SETTLE_STEPS).toBe(24);
+    expect(MAX_ATTEMPTS).toBe(4);
+    expect(STACK_HEIGHT).toBe(0.1);
   });
 });
 
@@ -363,6 +367,18 @@ describe('simulate', () => {
     expect(result.attempts).toBeGreaterThanOrEqual(2);
     expect(result.stacked).toBe(false);
     expect(trackHash(simulate(input))).toBe(trackHash(result));
+  });
+
+  it('stops after four attempts when the dice cannot fit in one layer', () => {
+    // A 2×2 tray holds at most four unit d6 side by side, so a fifth always rests on top.
+    const result = simulate({
+      seed: '0'.repeat(32),
+      shapes: Array<ShapeType>(5).fill('d6'),
+      waves: [0, 0, 0, 0, 0],
+      bounds: { minX: -1, maxX: 1, minZ: -1, maxZ: 1 },
+    });
+    expect(result.attempts).toBe(4);
+    expect(result.stacked).toBe(true);
   });
 
   it('keeps the first attempt of a one-die roll', () => {
