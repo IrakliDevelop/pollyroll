@@ -175,7 +175,7 @@ The tray's sound has three layers. Dice keep their current sound.
 
 `pollyroll/sounds` exports `coinClinks`:
 
-- **Source:** the 8 Kenney clinks (RPG Audio `handleCoins`, `handleCoins2`, CC0), at the
+- **Source:** 6 of the 8 Kenney clinks (shipped: the two shortest dropped to keep 16 kbps; RPG Audio `handleCoins`, `handleCoins2`, CC0), at the
   offsets the lab uses.
 - **Processing:**
   - each clink is trimmed to 25 ms with a 3 ms fade;
