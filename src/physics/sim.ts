@@ -50,7 +50,6 @@ export interface SimResult {
 const FRAME = 7;
 const LINEAR_SQ = SETTLE_LINEAR * SETTLE_LINEAR;
 const ANGULAR_SQ = SETTLE_ANGULAR * SETTLE_ANGULAR;
-const COS_SQ_HALF_DEGREE = 0.9999238475781956; // cos² 0.5°
 
 /**
  * Runs the headless simulation for one roll. Waves are thrown in ascending order of their distinct
@@ -161,15 +160,6 @@ function throwAll(rng: SeedRng, input: SimInput) {
   };
 
   const spot = new Float64Array(FRAME);
-  // Coin settle rule: a coin tilted 0.5°–45° is wobbling unless a wall or die props it, so a slow
-  // wobble runs on until the coin lies flat.
-  const wobbling = (body: Body): boolean => {
-    world.read(body.index, spot, 0);
-    const x = spot[3] ?? 0;
-    const z = spot[5] ?? 0;
-    const capY = 1 - 2 * (x * x + z * z);
-    return capY * capY < COS_SQ_HALF_DEGREE && capY * capY > 0.5;
-  };
   for (const wave of values) {
     const members = bodies.filter((b) => b.wave === wave);
     const resting = present.flatMap((b) => {
@@ -202,8 +192,7 @@ function throwAll(rng: SeedRng, input: SimInput) {
         record(body);
         if (
           world.linearSpeedSq(body.index) >= LINEAR_SQ ||
-          world.angularSpeedSq(body.index) >= ANGULAR_SQ ||
-          (body.shape === 'coin' && wobbling(body) && world.propped(body.index) === 0)
+          world.angularSpeedSq(body.index) >= ANGULAR_SQ
         ) {
           still = false;
         }
