@@ -1,7 +1,7 @@
 import type { PlannedBody } from '../physics/plan';
 import { DEFAULT_CONFIG, DT } from '../physics/world';
 
-/** Recorded clacks: base64 audio and, per clack, [start ms relative to the clip's first sound, length ms]. */
+/** Recorded clacks: base64 audio plus [start ms after its first sound, length ms] per clack. */
 export interface ClackSet {
   readonly audio: string;
   readonly clacks: readonly (readonly [number, number])[];

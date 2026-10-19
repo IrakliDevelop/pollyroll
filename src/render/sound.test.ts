@@ -95,49 +95,54 @@ describe('impacts', () => {
   });
 });
 
+/** Boundary fake: only the AudioContext members playImpacts and playClacks use; records starts. */
+function fakeAudio(currentTime: number) {
+  const calls: { buffer: unknown; args: number[]; rate: number }[] = [];
+  const gains: { value: number }[] = [];
+  let filters = 0;
+  const node = <T extends object>(props: T) => ({ ...props, connect: <N>(n: N): N => n });
+  const ctx = {
+    currentTime,
+    destination: {},
+    createBufferSource: () => {
+      const src = node({
+        buffer: null,
+        playbackRate: { value: 1 },
+        start: (...args: number[]) =>
+          calls.push({ buffer: src.buffer, args, rate: src.playbackRate.value }),
+        stop: () => undefined,
+      });
+      return src;
+    },
+    createBiquadFilter: () => {
+      filters++;
+      return node({ type: '', frequency: { value: 0 }, Q: { value: 0 } });
+    },
+    createGain: () => {
+      const gain = { value: 0 };
+      gains.push(gain);
+      return node({ gain });
+    },
+  };
+  return { ctx: ctx as unknown as AudioContext, calls, gains, filters: () => filters };
+}
+
 describe('playImpacts', () => {
   it('starts an impact at step 120 played at rate 1.5 at start + 2/3 s', () => {
-    const starts: number[] = [];
-    const node = <T extends object>(props: T) => ({ ...props, connect: <N>(n: N): N => n });
-    const ctx = {
-      destination: {},
-      createBufferSource: () =>
-        node({ buffer: null, start: (when: number) => starts.push(when), stop: () => undefined }),
-      createBiquadFilter: () => node({ type: '', frequency: { value: 0 }, Q: { value: 0 } }),
-      createGain: () => node({ gain: { value: 0 } }),
-    };
-    // Boundary fake: only the AudioContext members playImpacts uses.
-    const fake = ctx as unknown as AudioContext;
-    playImpacts(fake, {} as AudioBuffer, new Float32Array([120, 15]), 10, 1, 1.5);
-    expect(starts).toHaveLength(1);
-    expect(starts[0]).toBeCloseTo(10 + 2 / 3, 9);
+    const { ctx, calls } = fakeAudio(0);
+    playImpacts(ctx, {} as AudioBuffer, new Float32Array([120, 15]), 10, 1, 1.5);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.args[0]).toBeCloseTo(10 + 2 / 3, 9);
   });
 
   it('skips impacts that fall before currentTime', () => {
-    const starts: number[] = [];
-    const node = <T extends object>(props: T) => ({ ...props, connect: <N>(n: N): N => n });
-    const ctx = {
-      currentTime: 10.5,
-      destination: {},
-      createBufferSource: () =>
-        node({ buffer: null, start: (when: number) => starts.push(when), stop: () => undefined }),
-      createBiquadFilter: () => node({ type: '', frequency: { value: 0 }, Q: { value: 0 } }),
-      createGain: () => node({ gain: { value: 0 } }),
-    };
-    // Boundary fake: only the AudioContext members playImpacts uses.
-    const fake = ctx as unknown as AudioContext;
+    const { ctx, calls } = fakeAudio(10.5);
     // At start 10 and rate 1.5, steps 0 and 120 fall at 10 and 10.667 s.
-    const sources = playImpacts(
-      fake,
-      {} as AudioBuffer,
-      new Float32Array([0, 15, 120, 15]),
-      10,
-      1,
-      1.5,
-    );
+    const list = new Float32Array([0, 15, 120, 15]);
+    const sources = playImpacts(ctx, {} as AudioBuffer, list, 10, 1, 1.5);
     expect(sources).toHaveLength(1);
-    expect(starts).toHaveLength(1);
-    expect(starts[0]).toBeCloseTo(10 + 2 / 3, 9);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.args[0]).toBeCloseTo(10 + 2 / 3, 9);
   });
 });
 
@@ -165,30 +170,7 @@ describe('clackStarts', () => {
 
 describe('playClacks', () => {
   it('plays clack (i · 5 + 1) % n per impact with varied rate and strength gain, skipping past ones', () => {
-    const calls: { buffer: unknown; args: number[]; rate: number }[] = [];
-    const gains: { value: number }[] = [];
-    const node = <T extends object>(props: T) => ({ ...props, connect: <N>(n: N): N => n });
-    const ctx = {
-      currentTime: 10.5,
-      destination: {},
-      createBufferSource: () => {
-        const src = node({
-          buffer: null,
-          playbackRate: { value: 1 },
-          start: (...args: number[]) =>
-            calls.push({ buffer: src.buffer, args, rate: src.playbackRate.value }),
-          stop: () => undefined,
-        });
-        return src;
-      },
-      createGain: () => {
-        const gain = { value: 0 };
-        gains.push(gain);
-        return node({ gain });
-      },
-    };
-    // Boundary fake: only the AudioContext members playClacks uses.
-    const fake = ctx as unknown as AudioContext;
+    const { ctx, calls, gains, filters } = fakeAudio(10.5);
     const buffer = {} as AudioBuffer;
     const set: ClackSet = {
       audio: '',
@@ -197,7 +179,7 @@ describe('playClacks', () => {
     const starts = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6];
     // At start 10 and rate 1.5, steps 0, 120, 240, 360 fall at 10, 10.667, 11.333, 12 s.
     const list = new Float32Array([0, 15, 120, 15, 240, 7.5, 360, 30]);
-    const sources = playClacks(fake, buffer, starts, set, list, 10, 0.8, 1.5);
+    const sources = playClacks(ctx, buffer, starts, set, list, 10, 0.8, 1.5);
     expect(sources).toHaveLength(3);
     // Impacts 1, 2, 3: clacks 6, 4, 2; rates 0.94 + 0.12 · (7, 1, 8) / 12.
     const expected = [
@@ -206,6 +188,7 @@ describe('playClacks', () => {
       { when: 12, offset: 0.2, duration: 0.022, rate: 1.02, gain: 0.8 },
     ];
     expect(calls).toHaveLength(3);
+    expect(filters()).toBe(0);
     calls.forEach((c, i) => {
       const e = expected[i];
       expect(c.buffer).toBe(buffer);

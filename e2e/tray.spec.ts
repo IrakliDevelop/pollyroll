@@ -944,19 +944,17 @@ test.describe('sound', () => {
     expect(result.error).toBe('RangeError');
   });
 
+  const STUB_CLACKS: ClackSet = {
+    audio: 'AAAA',
+    clacks: [
+      [-0.8, 61],
+      [70.2, 47],
+      [127.2, 36],
+    ],
+  };
+
   /** Plays EVENT to settle on a fresh 800 × 600 tray with recorded clacks; returns what was scheduled. */
-  const clackRoll = (
-    page: Page,
-    decode: AudioRecord['decode'],
-    clacks: ClackSet = {
-      audio: 'AAAA',
-      clacks: [
-        [-0.8, 61],
-        [70.2, 47],
-        [127.2, 36],
-      ],
-    },
-  ) =>
+  const clackRoll = (page: Page, decode: AudioRecord['decode'], clacks = STUB_CLACKS) =>
     page.evaluate(
       async ({ event, decode, clacks }) => {
         const a = window.__audio;
@@ -1025,40 +1023,36 @@ test.describe('sound', () => {
   test('schedules nothing for a roll replaced before its clacks decode', async ({ page }) => {
     await settled(page, '');
     await needsWebGL2(page);
-    const result = await page.evaluate(async (event) => {
-      const a = window.__audio;
-      a.decode = 'hold';
-      a.startArgs = [];
-      const canvas = document.createElement('canvas');
-      canvas.style.cssText = 'width: 800px; height: 600px';
-      document.body.append(canvas);
-      const tray = window.__pollyrollCreate(canvas, {
-        labelFont: 'sans-serif',
-        reducedMotion: 'never',
-        sound: 1,
-        clacks: {
-          audio: 'AAAA',
-          clacks: [
-            [-0.8, 61],
-            [70.2, 47],
-            [127.2, 36],
-          ],
-        },
-      });
-      void tray.playRoll(event);
-      // Both rolls draw their first frame while the decode is still pending.
-      await new Promise(requestAnimationFrame);
-      const second = tray.playRoll(event);
-      await new Promise(requestAnimationFrame);
-      a.release();
-      await second;
-      const replaced = a.startArgs.length;
-      a.startArgs = [];
-      await tray.playRoll(event);
-      const decoded = a.startArgs.length;
-      tray.dispose();
-      return { replaced, decoded };
-    }, EVENT);
+    const result = await page.evaluate(
+      async ({ event, clacks }) => {
+        const a = window.__audio;
+        a.decode = 'hold';
+        a.startArgs = [];
+        const canvas = document.createElement('canvas');
+        canvas.style.cssText = 'width: 800px; height: 600px';
+        document.body.append(canvas);
+        const tray = window.__pollyrollCreate(canvas, {
+          labelFont: 'sans-serif',
+          reducedMotion: 'never',
+          sound: 1,
+          clacks,
+        });
+        void tray.playRoll(event);
+        // Both rolls draw their first frame while the decode is still pending.
+        await new Promise(requestAnimationFrame);
+        const second = tray.playRoll(event);
+        await new Promise(requestAnimationFrame);
+        a.release();
+        await second;
+        const replaced = a.startArgs.length;
+        a.startArgs = [];
+        await tray.playRoll(event);
+        const decoded = a.startArgs.length;
+        tray.dispose();
+        return { replaced, decoded };
+      },
+      { event: EVENT, clacks: STUB_CLACKS },
+    );
     expect(result.decoded).toBeGreaterThanOrEqual(3);
     // Only the current roll's clacks: the replaced roll would double the count.
     expect(result.replaced).toBe(result.decoded);
