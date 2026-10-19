@@ -332,7 +332,8 @@ Chromium uses SwiftShader (`--use-angle=swiftshader --enable-unsafe-swiftshader`
   seeds per roll type: 100% of coins flip in the air; coins end on the rim before the tail in
   4.5–8% of coin-only rolls and 13–34% when mixed with dice (leaning on them); `10dc` ends stacked
   in 2% of rolls after re-simulation, smaller coin rolls in none; no 720-step cap hits. `10dc`
-  pre-simulates in ≈ 18 ms. Dice motion unchanged (golden hash `90088985`); 10-dice bench ≈ 4.5 ms.
+  pre-simulates in ≈ 18 ms. Dice motion unchanged (the five dice golden cases hash as before); the golden hash, now with a
+  `2dc + 1d20` case, is `5ec7f203`; 10-dice bench ≈ 4.5 ms.
   Sizes: core 3.79 kB, render 27.48 kB, `diceClacks` 1.18 kB. Coins are silent (sound built and
   removed; docs/research/coin-sound.patch).
 - Every die × every value shows the rolled value on top after remap (unit tests + property tests).
