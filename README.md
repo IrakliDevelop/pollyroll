@@ -170,8 +170,8 @@ The label font is the skin's `font` if it has one, otherwise `labelFont`. If the
 - **Reduced motion:** the tray draws the settled dice without animating them and resolves
   immediately.
 - **Die size:** `dieScale` (default 2) is the largest size a die is drawn at. A roll with many dice
-  shrinks in 0.05 steps until its dice fit the tray, so a single d20 shows at full size while 20d6
-  stays readable without overlapping. The size sets the walls as well as the drawing, so both sides
+  shrinks in 0.05 steps until its dice fit the tray and spawn side by side, so a single d20 shows at
+  full size while 20d6 stays readable without overlapping. The size sets the walls as well as the drawing, so both sides
   of a shared roll need the same `dieScale` and tray aspect to see identical motion.
 - **Dropped dice fade:** dice that `evaluate` lists as dropped are drawn at 35% opacity with their
   shadows, so the kept dice stand out. A rerolled die fades as soon as its replacement is thrown;
@@ -309,7 +309,7 @@ that Chromium, Firefox, and WebKit compute the same trajectory hash as Node.
 
 ## Known limits
 
-These describe 0.2.0. Each one is a deliberate trade-off or a measured edge case, not a
+These describe 0.4.0. Each one is a deliberate trade-off or a measured edge case, not a
 hidden bug.
 
 **Physics and layout**
@@ -318,12 +318,14 @@ hidden bug.
   (face-normal separating axis test with clipped face contacts). Edge-to-edge hits get a single
   approximate contact, so a die can glance off at a slightly wrong angle, and an impact can overlap
   a neighbour for one 1/120 s step (usually under 0.1 die units, at most about 0.3).
-- **The final settle is animated, not simulated.** For the last 0.3 s, tilted dice are rolled flat
-  and dice that ended too close are slid apart. A die that rests on others first lifts above them
-  (at most 1.5 die units) and then drops. In about 1 to 7 of 40 crowded rolls a lifting die still
-  clips a neighbour for about 0.1 s.
+- **The final settle is animated, not simulated.** For the last 0.3 s, dice still tilted against a
+  wall or a neighbour topple flat and dice that ended too close slide apart. Dice no longer end on
+  top of each other (a roll that does is simulated again), so the lift over a neighbour is rare;
+  when it happens a die can still clip that neighbour for about 0.1 s (1 to 7 of 40 crowded rolls
+  in 0.2.0).
 - **Large rolls get smaller dice.** Auto-fit shrinks a roll until its dice fit the tray (5 square
-  die-units per die). With many dice in a small canvas the dice get small, down to a floor of
+  die-units per die) and every die spawns side by side, so rolls of 4 or more dice are drawn
+  smaller than `dieScale`. With many dice in a small canvas the dice get small, down to a floor of
   0.5 × `dieScale`. Dice beyond 30 animated bodies are counted in the summary but not shown; a d100
   counts as two bodies.
 - **Crowded rolls can take longer.** About 2 in 1,200 crowded rolls (20–30 dice) jitter in a pile
