@@ -655,13 +655,17 @@ export function createDiceTray(
     fadeStart = -1;
     alpha = 1;
     silence();
-    for (const src of taps) src.stop();
-    taps = [];
+    stopTaps();
   }
 
   function silence(): void {
     for (const src of sources) src.stop();
     sources = [];
+  }
+
+  function stopTaps(): void {
+    for (const src of taps) src.stop();
+    taps = [];
   }
 
   /** Shows the final frame, resolves the roll, and schedules the fade. */
@@ -670,6 +674,8 @@ export function createDiceTray(
     r.done = true;
     // Impacts end before the 24-step calm window; a suspended context must not play them on resume.
     silence();
+    // A tap can ring out only on a running context; on resume an overdue one would play at once.
+    if (audio?.ctx.state !== 'running') stopTaps();
     render();
     show(r.text);
     resolvePending();

@@ -1114,6 +1114,32 @@ test.describe('sound', () => {
     expect(layered.stops).toBe(layered.args.length);
   });
 
+  test('stops the coin tap at settle while the context stays suspended', async ({ page }) => {
+    await settled(page, '');
+    await needsWebGL2(page);
+    const result = await page.evaluate(async (event) => {
+      const a = window.__audio;
+      a.startArgs = [];
+      a.stops = 0;
+      AudioContext.prototype.resume = () => Promise.resolve();
+      const canvas = document.createElement('canvas');
+      canvas.style.cssText = 'width: 800px; height: 600px';
+      document.body.append(canvas);
+      const tray = window.__pollyrollCreate(canvas, {
+        labelFont: 'sans-serif',
+        reducedMotion: 'never',
+        sound: 1,
+      });
+      await tray.playRoll(event);
+      const settleStops = a.stops;
+      tray.dispose();
+      return { starts: a.startArgs.length, settleStops };
+    }, COIN);
+    expect(result.starts).toBeGreaterThan(0);
+    // On resume the tap would play at once, long after the coin came to rest.
+    expect(result.settleStops).toBe(result.starts);
+  });
+
   test('plays dice without waiting for the coin clinks, and coins without waiting for the clacks', async ({
     page,
   }) => {
