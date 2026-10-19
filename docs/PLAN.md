@@ -108,7 +108,7 @@ createRoll(notation: string, opts?: {
   rng?: (maxExclusive: number) => number;         // default: crypto.getRandomValues + rejection sampling
   seed?: string; skin?: SkinRef; rollerId?: string; audience?: RollEvent['audience'];
 }): RollEvent;
-evaluate(event: RollEvent): RollSummary;          // { total | null, modifier, groups: [{ die, sign, dice, kept, dropped, subtotal, success }] } (amended, 0.3.0)
+evaluate(event: RollEvent): RollSummary;          // { total | null, modifier, groups: [{ die, sign, dice, kept, dropped, rerolled, subtotal, success }] } (amended, 0.3.0)
 redact(event: RollEvent): RollEvent;
 isRollEvent(input: unknown): input is RollEvent;  // validates untrusted input, including bounds
 ```
@@ -183,7 +183,8 @@ interface DiceTray {
 ```
 
 - A new `playRoll` replaces the dice of the previous roll. _(amended, 0.2.0)_ Once settled, dropped
-  and rerolled dice draw at 35% opacity. An unpositioned host element gets `position: relative`.
+  dice draw at 35% opacity; _(amended, 0.3.0)_ a rerolled die drops to 35% when its replacement
+  wave is thrown. An unpositioned host element gets `position: relative`.
 - An `HTMLElement` target gets an absolutely positioned, transparent, pointer-events-none canvas.
 - Forward pass, GGX PBR (base color, metalness, roughness, clearcoat). _(amended)_ Fixed
   orthographic camera looking straight down (visible half height 5.1 world units at every aspect),
