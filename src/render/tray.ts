@@ -724,7 +724,8 @@ export function createDiceTray(
       const skin = skinGpu(resolveSkin(event.skin ?? traySkin));
       if (!lost) program(gl, skin.key, skin.fragment);
       fit();
-      const scale = fitScale(dieScale, slots(event).length, aspect);
+      const radii = slots(event).map((b) => getPolyhedron(shapeOf(b.labelSet)).radius);
+      const scale = fitScale(dieScale, radii, aspect);
       let plan: RollPlan;
       try {
         plan = planRoll(event, trayBounds(aspect, scale));

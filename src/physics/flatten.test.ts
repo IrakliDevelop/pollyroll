@@ -195,7 +195,7 @@ describe('simulate ends without overlap', () => {
     [
       'C',
       Array.from({ length: 24 }, (_, k) => CYCLE[k % 6] ?? 'd6'),
-      // trayBounds(608 / 360, fitScale(2, 24, 608 / 360)): the auto-fitted tray for 24 dice.
+      // trayBounds(608 / 360, s) at the 0.3.0 area-only fit for 24 dice.
       { minX: -7.5, maxX: 7.5, minZ: -4.25, maxZ: 4.25 },
     ],
   ];

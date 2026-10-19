@@ -3,7 +3,7 @@ import type { SimInput } from './sim';
 import type { TrayBounds } from './world';
 
 const BOUNDS: TrayBounds = { minX: -6, maxX: 6, minZ: -4, maxZ: 4 };
-// trayBounds(4/3, fitScale(2, 9, 4/3)): crowded enough that resting separation moves dice.
+// trayBounds at the 0.3.0 area-only fit for 9 dice at 4/3: crowded enough to move resting dice.
 const CROWDED: TrayBounds = { minX: -4.25, maxX: 4.25, minZ: -3, maxZ: 3 };
 
 /** Fixed simulation inputs whose combined trajectory hash pins the physics across engines. */

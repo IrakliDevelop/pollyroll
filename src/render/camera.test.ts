@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { DieType, RollEvent } from '../core/types';
+import type { RollEvent } from '../core/types';
+import { shapeOf } from '../geometry/labels';
+import { getPolyhedron } from '../geometry/polyhedra';
 import { penetration } from '../physics/penetration';
 import { planRoll } from '../physics/plan';
 import { cameraPosition, fitScale, trayBounds, viewProjection } from './camera';
@@ -118,24 +120,44 @@ describe('fitScale', () => {
   //   s 2    → 5.5 × 3.5 = 19.25 ≥ 1·5
   //   s 1.45 → 8 × 5.5 = 44 < 9·5;   s 1.4  → 8.5 × 6 = 51 ≥ 45
   //   s 0.9  → 13.5 × 10 = 135 < 30·5; s 0.85 → 14.5 × 10.5 = 152.25 ≥ 150
+  // Radius 0.5 spawns on a 1.5 grid with margin 0.75, so capacity does not bind:
+  //   s 1.4  → fitX ⌊(8.5 − 1.5) / 1.5⌋ + 1 = 5, fitZ ⌊(6 − 1.5) / 1.5⌋ + 1 = 4: 20 ≥ 9
+  //   s 0.85 → fitX ⌊(14.5 − 1.5) / 1.5⌋ + 1 = 9, fitZ ⌊(10.5 − 1.5) / 1.5⌋ + 1 = 7: 63 ≥ 30
   it.each([
     [1, 2],
     [9, 1.4],
     [30, 0.85],
     [1000, 0.5],
   ])('fits %i dice at 4:3 with requested 2 to scale %s', (count, scale) => {
-    expect(fitScale(2, count, 4 / 3)).toBe(scale);
+    expect(fitScale(2, Array<number>(count).fill(0.5), 4 / 3)).toBe(scale);
+  });
+
+  // d6 radius √3/2: spawn spacing 2.232, margin 1.116. At 608:360, halfX = 8.6133:
+  //   s 1.8  → ±4 × ±2,       fitX ⌊(8 − 2.232) / 2.232⌋ + 1 = 3,   fitZ ⌊(4 − 2.232) / 2.232⌋ + 1 = 1: 3 < 4
+  //   s 1.75 → ±4.25 × ±2.25, fitX ⌊(8.5 − 2.232) / 2.232⌋ + 1 = 3, fitZ ⌊(4.5 − 2.232) / 2.232⌋ + 1 = 2: 6 ≥ 4,
+  //            area 8.5 × 4.5 = 38.25 ≥ 20
+  //   s 2    → ±3.5 × ±1.75,  fitX ⌊(7 − 2.232) / 2.232⌋ + 1 = 3,   fitZ 1: 3 ≥ 3, area 24.5 ≥ 15
+  it('shrinks 4 d6 at 608:360 until they spawn in one layer', () => {
+    expect(fitScale(2, Array<number>(4).fill(Math.sqrt(3) / 2), 608 / 360)).toBe(1.75);
+  });
+
+  it('keeps 3 d6 at 608:360 at the requested scale 2: one row holds them', () => {
+    expect(fitScale(2, Array<number>(3).fill(Math.sqrt(3) / 2), 608 / 360)).toBe(2);
   });
 
   it('keeps a requested scale below the 0.5 floor', () => {
-    expect(fitScale(0.4, 30, 4 / 3)).toBe(0.4);
+    expect(fitScale(0.4, Array<number>(30).fill(0.5), 4 / 3)).toBe(0.4);
   });
 
   it('never exceeds the request, stays on the 0.05 grid, and never grows with more dice', () => {
-    for (const aspect of [4 / 3, 16 / 9, 0.75]) {
+    for (const [aspect, radius] of [
+      [4 / 3, Math.sqrt(3) / 2],
+      [16 / 9, 0.95],
+      [0.75, 0.5],
+    ] as const) {
       let prev = Infinity;
       for (let n = 1; n <= 30; n++) {
-        const s = fitScale(2, n, aspect);
+        const s = fitScale(2, Array<number>(n).fill(radius), aspect);
         expect(s).toBeLessThanOrEqual(2);
         expect(s).toBeGreaterThanOrEqual(0.5);
         expect(Number.isInteger(Math.round(s * 1e9) / 5e7)).toBe(true);
@@ -146,23 +168,20 @@ describe('fitScale', () => {
   });
 
   it('leaves 9 mixed dice at 4:3 resting without overlap at the fitted scale (seeds 0–49)', () => {
-    const types: DieType[] = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20'];
-    const bounds = trayBounds(4 / 3, fitScale(2, 9, 4 / 3));
+    const types = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20'] as const;
     for (let i = 0; i < 50; i++) {
+      const dice = Array.from({ length: 9 }, (_, k) => types[(i + k) % 6] ?? 'd6');
       const event: RollEvent = {
         v: 1,
         id: 'fit',
         notation: '9 mixed',
-        dice: Array.from({ length: 9 }, (_, k) => ({
-          type: types[(i + k) % 6] ?? 'd6',
-          value: 1,
-          group: 0,
-          wave: 0,
-        })),
+        dice: dice.map((type) => ({ type, value: 1, group: 0, wave: 0 })),
         modifier: 0,
         seed: i.toString(16).padStart(32, '0'),
         createdAt: 0,
       };
+      const radii = dice.map((type) => getPolyhedron(shapeOf(type)).radius);
+      const bounds = trayBounds(4 / 3, fitScale(2, radii, 4 / 3));
       const rest = planRoll(event, bounds).bodies.map((b) => ({
         shape: b.shape,
         pose: b.frames.subarray(b.frames.length - 7),

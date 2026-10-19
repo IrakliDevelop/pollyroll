@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import type { RollEvent } from '../src/core/types';
+import { shapeOf } from '../src/geometry/labels';
+import { getPolyhedron } from '../src/geometry/polyhedra';
 import { planRoll, slots } from '../src/physics/plan';
 import { DT } from '../src/physics/world';
 import { fitScale, trayBounds } from '../src/render/camera';
@@ -633,7 +635,8 @@ test.describe('dropped dice', () => {
       modifier: 0,
     };
     const explode: RollEvent = { ...reroll, notation: '1d6x' };
-    const plan = planRoll(reroll, trayBounds(4 / 3, fitScale(2, 2, 4 / 3)));
+    const radii = slots(reroll).map((b) => getPolyhedron(shapeOf(b.labelSet)).radius);
+    const plan = planRoll(reroll, trayBounds(4 / 3, fitScale(2, radii, 4 / 3)));
     const start = plan.bodies[1]?.startStep ?? NaN;
     // Fake rAF fires on a 16 ms grid, so a multiple of 16 lands both shots on the same step.
     const atMs = 16 * Math.round((((start + plan.totalSteps) / 2) * DT * 1000) / 16);
@@ -784,7 +787,8 @@ test.describe('sound', () => {
       };
     }, EVENT);
     // The smoke canvas is 800 × 600 CSS pixels at the default dieScale 2.
-    const bounds = trayBounds(4 / 3, fitScale(2, slots(EVENT).length, 4 / 3));
+    const radii = slots(EVENT).map((b) => getPolyhedron(shapeOf(b.labelSet)).radius);
+    const bounds = trayBounds(4 / 3, fitScale(2, radii, 4 / 3));
     const end = planRoll(EVENT, bounds).totalSteps * DT + 0.1;
     expect(replay.current).toBeGreaterThan(0);
     expect(replay.stoppedOnReplace).toBe(replay.replaced);

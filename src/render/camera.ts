@@ -1,3 +1,4 @@
+import { spawnCapacity } from '../physics/throw';
 import type { TrayBounds } from '../physics/world';
 
 const CAMERA_DISTANCE = 14;
@@ -55,13 +56,16 @@ export function trayBounds(aspect: number, dieScale: number): TrayBounds {
   };
 }
 
-/** Largest dieScale ≤ requested, stepping down 0.05 to a floor of 0.5, whose tray holds bodyCount
- *  dice at AREA_PER_DIE die units² each. */
-export function fitScale(requested: number, bodyCount: number, aspect: number): number {
+/** Largest dieScale ≤ requested, stepping down 0.05 to a floor of 0.5, whose tray holds the bodies
+ *  at AREA_PER_DIE die units² each and spawns them all in one layer. */
+export function fitScale(requested: number, radii: readonly number[], aspect: number): number {
+  const n = radii.length;
+  const rMax = Math.max(0, ...radii);
   let s = requested;
   for (let k = 1; s > 0.5; k++) {
     const b = trayBounds(aspect, s);
-    if ((b.maxX - b.minX) * (b.maxZ - b.minZ) >= bodyCount * AREA_PER_DIE) break;
+    const area = (b.maxX - b.minX) * (b.maxZ - b.minZ);
+    if (area >= n * AREA_PER_DIE && spawnCapacity(rMax, b) >= n) break;
     s = Math.max((requested * 20 - k) / 20, 0.5);
   }
   return s;
