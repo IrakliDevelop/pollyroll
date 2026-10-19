@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { clackStarts, impacts, playClacks, playImpacts } from './sound';
+import { planRoll } from '../physics/plan';
+import { trayBounds } from './camera';
+import {
+  clackStarts,
+  coinHit,
+  coinTaps,
+  impacts,
+  impactsOf,
+  playClacks,
+  playImpacts,
+  rimContacts,
+} from './sound';
 import type { ClackSet } from './sound';
 
 const DT = 1 / 120;
@@ -20,6 +31,15 @@ function kicked(n: number, v: (k: number) => number) {
   });
 }
 
+/** (step, strength, body) triples of an impacts list. */
+function triples(list: Float32Array): [number, number, number][] {
+  const out: [number, number, number][] = [];
+  for (let i = 0; i < list.length; i += 3) {
+    out.push([list[i] ?? NaN, list[i + 1] ?? NaN, list[i + 2] ?? NaN]);
+  }
+  return out;
+}
+
 function pairs(list: Float32Array): [number, number][] {
   const out: [number, number][] = [];
   for (let i = 0; i < list.length; i += 2) out.push([list[i] ?? NaN, list[i + 1] ?? NaN]);
@@ -31,7 +51,7 @@ describe('impacts', () => {
     // Free fall y = 3 − 15t² reaches 0.6 at frame 48 and is clamped from frame 49 on;
     // landing speed √(2 · 30 · 2.5) ≈ 12.25 units/s; frame 49 is global step 10 + 49.
     const fall = body(10, 120, (k) => [0, Math.max(0.5, 3 - 15 * (k * DT) ** 2), 0]);
-    const found = pairs(impacts([fall], 36));
+    const found = triples(impacts([fall], 36));
     expect(found).toHaveLength(1);
     const [step, strength] = found[0] ?? [NaN, NaN];
     expect(step).toBe(59);
@@ -47,7 +67,7 @@ describe('impacts', () => {
     [1.9, []],
     [2.1, [20]],
   ])('records a kick of %f units/s at frames %j (threshold 2)', (speed, steps) => {
-    const found = pairs(impacts([kicked(60, (k) => (k > 20 ? speed : 0))], 36));
+    const found = triples(impacts([kicked(60, (k) => (k > 20 ? speed : 0))], 36));
     expect(found.map((p) => p[0])).toEqual(steps);
   });
 
@@ -63,7 +83,7 @@ describe('impacts', () => {
   ])('keeps a second hit %i steps after the first only past the cooldown', (gap, expected) => {
     // +5 units/s from frame 21, −5 from frame 21 + gap: kicks at frames 20 and 20 + gap.
     const b = kicked(80, (k) => (k > 20 + gap ? -5 : k > 20 ? 5 : 0));
-    const found = pairs(impacts([b], 36));
+    const found = triples(impacts([b], 36));
     expect(found).toHaveLength(expected.length);
     found.forEach(([step, strength], i) => {
       expect(step).toBe(expected[i]?.[0]);
@@ -78,8 +98,60 @@ describe('impacts', () => {
     // No tail: only the last frame is ignored, so a kick 10 steps before the end counts.
     [50, 0, [50]],
   ])('kick at frame %i of 60 with tailSteps %i is found at %j', (frame, tail, steps) => {
-    const found = pairs(impacts([kicked(60, (k) => (k > frame ? 5 : 0))], tail));
+    const found = triples(impacts([kicked(60, (k) => (k > frame ? 5 : 0))], tail));
     expect(found.map((p) => p[0])).toEqual(steps);
+  });
+
+  it('reports the body of each impact, so a d6 and a coin are told apart', () => {
+    // Body 0 is kicked at frame 30, body 1 at frame 20; the list is in step order.
+    const d6 = kicked(60, (k) => (k > 30 ? 5 : 0));
+    const coin = kicked(60, (k) => (k > 20 ? 8 : 0));
+    const list = impacts([d6, coin], 0);
+    expect(triples(list).map(([step, , b]) => [step, b])).toEqual([
+      [20, 1],
+      [30, 0],
+    ]);
+    expect(pairs(impactsOf(list, (b) => b === 0)).map((p) => p[0])).toEqual([30]);
+    expect(pairs(impactsOf(list, (b) => b === 1)).map((p) => p[0])).toEqual([20]);
+  });
+
+  it('keeps the dice impact list of a fixed 3d6 plan as before bodies were reported', () => {
+    const plan = planRoll(
+      {
+        v: 1,
+        id: 'impacts',
+        notation: '3d6',
+        dice: [1, 2, 3].map((value) => ({ type: 'd6' as const, value, group: 0, wave: 0 })),
+        modifier: 0,
+        seed: '0123456789abcdef0123456789abcdef',
+        createdAt: 0,
+      },
+      trayBounds(4 / 3, 2),
+    );
+    // Recorded from impacts() at 83fdaf3, which returned (step, strength) pairs.
+    const before = [
+      [23, 6.5515],
+      [26, 8.4184],
+      [36, 4.5923],
+      [36, 4.6185],
+      [42, 10.9003],
+      [54, 5.2932],
+      [57, 5.45],
+      [57, 5.5178],
+      [61, 2.2408],
+      [75, 2.6788],
+      [85, 2.1857],
+      [92, 3.1582],
+      [110, 2.9328],
+      [118, 3.7908],
+      [133, 2.7827],
+    ];
+    const found = pairs(impactsOf(impacts(plan.bodies, plan.tailSteps), () => true));
+    expect(found).toHaveLength(before.length);
+    found.forEach(([step, strength], i) => {
+      expect(step).toBe(before[i]?.[0]);
+      expect(strength).toBeCloseTo(before[i]?.[1] ?? NaN, 3);
+    });
   });
 
   it('keeps the 48 strongest of 60 impacts in step order', () => {
@@ -87,11 +159,131 @@ describe('impacts', () => {
     const bodies = Array.from({ length: 60 }, (_, i) =>
       kicked(120, (k) => (k > 79 - i ? i + 3 : 0)),
     );
-    const found = pairs(impacts(bodies, 36));
+    const found = triples(impacts(bodies, 36));
     expect(found.map((p) => p[0])).toEqual(Array.from({ length: 48 }, (_, j) => 20 + j));
     found.forEach(([, strength], j) => {
       expect(strength).toBeCloseTo(Math.sqrt((62 - j) ** 2 + 0.0625), 2);
     });
+  });
+});
+
+/**
+ * A coin on the floor whose tilt (degrees) about the horizontal axis at angle 2π·k/period turns
+ * once per `period` frames; `lift` raises it off the floor.
+ */
+function wobbling(n: number, tilt: number, period: number, lift = 0) {
+  const t = (tilt * Math.PI) / 360;
+  // Rim radius √(0.65² − 0.1²) and half thickness 0.1: the lowest rim point touches y = 0.
+  const y = Math.sqrt(0.65 ** 2 - 0.01) * Math.sin(2 * t) + 0.1 * Math.cos(2 * t) + lift;
+  const frames = new Float32Array(n * 7);
+  for (let k = 0; k < n; k++) {
+    const a = (2 * Math.PI * k) / period;
+    const s = Math.sin(t);
+    frames.set([0, y, 0, s * Math.cos(a), 0, s * Math.sin(a), Math.cos(t)], k * 7);
+  }
+  return { startStep: 100, frames };
+}
+
+describe('rimContacts', () => {
+  it('finds 16 contacts per revolution of a coin wobbling at 5°, fading from 15 to 6, through the last frame', () => {
+    // Two revolutions of 160 frames: the lowest of the 16 rim vertices changes every 10 frames,
+    // at frames 5, 15, …, 315; the last ones would be missed if the tail's frames were skipped.
+    const found = pairs(rimContacts(wobbling(320, 5, 160)));
+    expect(found).toHaveLength(32);
+    found.forEach(([step], j) => {
+      expect(Math.abs(step - (105 + 10 * j))).toBeLessThanOrEqual(1);
+    });
+    expect(found[0]?.[1]).toBeCloseTo(15, 5);
+    expect(found[31]?.[1]).toBeCloseTo(6, 5);
+  });
+
+  it.each([
+    ['lying flat', wobbling(320, 0, 160)],
+    ['tilted 1.5°, under the 2° threshold', wobbling(320, 1.5, 160)],
+    ['0.05 above the floor', wobbling(320, 5, 160, 0.05)],
+  ])('finds no contacts for a coin %s', (_, coin) => {
+    expect(rimContacts(coin)).toHaveLength(0);
+  });
+});
+
+describe('coinTaps', () => {
+  it('caps rim contacts at 120 per roll, then taps each coin once at its last physical frame', () => {
+    // 800 frames are 5 revolutions: 80 contacts per coin; the last physical frame is 800 − 36 − 1.
+    const coin = { ...wobbling(800, 5, 160), shape: 'coin' as const };
+    const d6 = { ...wobbling(800, 5, 160), shape: 'd6' as const };
+    const found = pairs(coinTaps([coin, d6, { ...coin, startStep: 1000 }], 36));
+    expect(found).toHaveLength(122);
+    // Contacts fall within a step of 105 + 10j for the first coin and 1005 + 10j for the last.
+    [
+      [79, 895],
+      [80, 1005],
+      [119, 1395],
+    ].forEach(([i = 0, step = 0]) => {
+      expect(Math.abs((found[i]?.[0] ?? NaN) - step)).toBeLessThanOrEqual(1);
+    });
+    expect(found.slice(120)).toEqual([
+      [863, 15],
+      [1763, 15],
+    ]);
+  });
+});
+
+const SR = 48000;
+
+/** Energy per Hann window (n samples, hop n/2) in [lo, hi) Hz by direct DFT. */
+function bandEnergy(x: Float32Array, n: number, lo: number, hi: number): number[] {
+  const cos = Array.from({ length: n }, (_, i) => Math.cos((2 * Math.PI * i) / n));
+  const sin = Array.from({ length: n }, (_, i) => Math.sin((2 * Math.PI * i) / n));
+  const out: number[] = [];
+  for (let at = 0; at + n <= x.length; at += n / 2) {
+    const w = Array.from(
+      { length: n },
+      (_, i) => (x[at + i] ?? 0) * (0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (n - 1))),
+    );
+    let e = 0;
+    for (let k = Math.max(1, Math.ceil((lo * n) / SR)); k < n / 2 && (k * SR) / n < hi; k++) {
+      let re = 0;
+      let im = 0;
+      for (let i = 0; i < n; i++) {
+        re += (w[i] ?? 0) * (cos[(k * i) % n] ?? 0);
+        im -= (w[i] ?? 0) * (sin[(k * i) % n] ?? 0);
+      }
+      e += re * re + im * im;
+    }
+    out.push(e);
+  }
+  return out;
+}
+
+const sum = (xs: number[]): number => xs.reduce((a, b) => a + b, 0);
+
+/** Time (s) of the last window of 4–8 kHz (the coin ring) within 20 dB of its loudest. */
+function ringTime(x: Float32Array): number {
+  const e = bandEnergy(x, 256, 4000, 8000);
+  const peak = Math.max(...e);
+  let last = 0;
+  e.forEach((v, i) => {
+    if (v > peak / 100) last = i;
+  });
+  return (last * 128) / SR;
+}
+
+describe('coinHit', () => {
+  it.each([1, 2, 3, 4])(
+    'puts ≥ 60% of a hit (seed %i) at 1–4 kHz and < 2% above 8 kHz, like a coin on wood',
+    (seed) => {
+      const hit = coinHit('hit', seed);
+      // One window of silence first, so the half-covered first window does not cut the attack.
+      const x = new Float32Array(2048 + hit.length);
+      x.set(hit, 2048);
+      const total = sum(bandEnergy(x, 2048, 0, SR / 2));
+      expect(sum(bandEnergy(x, 2048, 1000, 4000)) / total).toBeGreaterThanOrEqual(0.6);
+      expect(sum(bandEnergy(x, 2048, 8000, SR / 2)) / total).toBeLessThan(0.02);
+    },
+  );
+
+  it.each([1, 2, 3, 4])('rings a rim contact (seed %i) under 0.6× as long as a hit', (seed) => {
+    expect(ringTime(coinHit('rim', seed))).toBeLessThan(0.6 * ringTime(coinHit('hit', seed)));
   });
 });
 

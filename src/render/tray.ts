@@ -17,8 +17,18 @@ import { cameraPosition, fitScale, trayBounds, viewProjection } from './camera';
 import { fadeSteps } from './fade';
 import { attrib, createBuffer, createProgram } from './gl';
 import { DIE_VERTEX, dieFragment, LIGHT_DIR, SHADOW_FRAGMENT, SHADOW_VERTEX } from './shaders';
-import { clackStarts, impacts, noiseBuffer, playClacks, playImpacts } from './sound';
-import type { ClackSet } from './sound';
+import {
+  clackStarts,
+  CLINK,
+  coinBank,
+  coinTaps,
+  impacts,
+  impactsOf,
+  noiseBuffer,
+  playClacks,
+  playImpacts,
+} from './sound';
+import type { ClackSet, Clips } from './sound';
 
 export interface TrayOptions {
   skin?: SkinRef;
@@ -40,6 +50,8 @@ export interface TrayOptions {
   sound?: number;
   /** Recorded clacks for impacts, such as `diceClacks` from `pollyroll/sounds`; read at creation. */
   clacks?: ClackSet;
+  /** Recorded clinks layered on the coin synth, such as `coinClinks` from `pollyroll/sounds`; read at creation. */
+  coinClinks?: ClackSet;
   /** Speak each settled result through a polite live region; default false. */
   announce?: boolean;
 }
@@ -244,6 +256,34 @@ function writePose(b: PlannedBody, s: number, row: number, out: Float32Array, o:
   out[o + 7] = w * r[3] - x * r[0] - y * r[1] - z * r[2];
 }
 
+function checkClacks(name: string, set: ClackSet | undefined): void {
+  if (
+    set !== undefined &&
+    (set.clacks.length === 0 ||
+      set.clacks.some(([start, ms]) => !Number.isFinite(start) || !Number.isFinite(ms) || ms <= 0))
+  ) {
+    throw new RangeError(
+      `${name} must list at least one clack with a finite start and positive length`,
+    );
+  }
+}
+
+/** Decodes a clack set; null without one or when it cannot be decoded. */
+function decode(ctx: AudioContext, set: ClackSet | undefined): Promise<Clips | null> | null {
+  if (set === undefined) return null;
+  // Inside the chain, so invalid base64 falls back instead of throwing here.
+  return Promise.resolve()
+    .then(() =>
+      ctx.decodeAudioData(Uint8Array.from(atob(set.audio), (c) => c.charCodeAt(0)).buffer),
+    )
+    .then((buffer) => ({
+      buffer,
+      starts: clackStarts(buffer.getChannelData(0), buffer.sampleRate, set),
+      clacks: set.clacks,
+    }))
+    .catch(() => null);
+}
+
 /**
  * Creates a WebGL2 dice tray on a canvas, or on an absolutely positioned overlay canvas appended to
  * an element. Without WebGL2 `supported` is false and `playRoll` resolves immediately.
@@ -253,18 +293,9 @@ export function createDiceTray(
   opts: TrayOptions = {},
 ): DiceTray {
   let dieScale = checkScale(opts.dieScale ?? 2);
-  const clacks = opts.clacks;
-  if (
-    clacks !== undefined &&
-    (clacks.clacks.length === 0 ||
-      clacks.clacks.some(
-        ([start, ms]) => !Number.isFinite(start) || !Number.isFinite(ms) || ms <= 0,
-      ))
-  ) {
-    throw new RangeError(
-      'clacks must list at least one clack with a finite start and positive length',
-    );
-  }
+  const { clacks, coinClinks } = opts;
+  checkClacks('clacks', clacks);
+  checkClacks('coinClinks', coinClinks);
   const own = !(target instanceof HTMLCanvasElement);
   const canvas = own ? document.createElement('canvas') : target;
   if (own) {
@@ -318,10 +349,17 @@ export function createDiceTray(
   let alpha = 1;
   let aspect = 1;
   let sound = 0;
-  let audio: { ctx: AudioContext; noise: AudioBuffer } | null = null;
+  let audio: {
+    ctx: AudioContext;
+    noise: AudioBuffer;
+    coin: ReturnType<typeof coinBank>;
+  } | null = null;
   let sources: AudioBufferSourceNode[] = [];
-  // undefined while decoding; null without clacks or when they fail to decode.
-  let decoded: { buffer: AudioBuffer; starts: number[] } | null | undefined = null;
+  // undefined while decoding; each null without its set or when it fails to decode.
+  let decoded: { clacks: Clips | null; clinks: Clips | null } | undefined = {
+    clacks: null,
+    clinks: null,
+  };
   let decoding: Promise<void> | null = null;
   const vp = new Float32Array(16);
   const shadowData = new Float32Array(MAX_BODIES * 4);
@@ -651,23 +689,25 @@ export function createDiceTray(
       if (r.t0 < 0) {
         r.t0 = now;
         if (r.sound > 0 && audio !== null) {
-          const { ctx, noise } = audio;
+          const { ctx, noise, coin } = audio;
           const start = ctx.currentTime;
           const play = (): void => {
-            const list = impacts(r.plan.bodies, r.plan.tailSteps);
-            sources =
-              decoded && clacks
-                ? playClacks(
-                    ctx,
-                    decoded.buffer,
-                    decoded.starts,
-                    clacks,
-                    list,
-                    start,
-                    r.sound,
-                    PLAYBACK,
-                  )
-                : playImpacts(ctx, noise, list, start, r.sound, PLAYBACK);
+            const { bodies, tailSteps } = r.plan;
+            const list = impacts(bodies, tailSteps);
+            const isCoin = (b: number): boolean => bodies[b]?.shape === 'coin';
+            const dice = impactsOf(list, (b) => !isCoin(b));
+            const hits = impactsOf(list, isCoin);
+            const clips = (c: Clips, at: Float32Array, volume: number) =>
+              playClacks(ctx, c.buffer, c.starts, c, at, start, volume, PLAYBACK);
+            const clinks = decoded?.clinks;
+            sources = [
+              ...(decoded?.clacks
+                ? clips(decoded.clacks, dice, r.sound)
+                : playImpacts(ctx, noise, dice, start, r.sound, PLAYBACK)),
+              ...clips(coin.hit, hits, r.sound),
+              ...clips(coin.rim, coinTaps(bodies, tailSteps), r.sound),
+              ...(clinks ? clips(clinks, hits, r.sound * CLINK) : []),
+            ];
           };
           if (decoded !== undefined) play();
           else
@@ -827,25 +867,14 @@ export function createDiceTray(
       if (sound > 0 && typeof AudioContext === 'function') {
         if (audio === null) {
           const ctx = new AudioContext();
-          audio = { ctx, noise: noiseBuffer(ctx) };
-          if (clacks !== undefined) {
+          audio = { ctx, noise: noiseBuffer(ctx), coin: coinBank(ctx) };
+          if (clacks !== undefined || coinClinks !== undefined) {
             decoded = undefined;
-            // Inside the chain, so invalid base64 falls back to noise instead of throwing here.
-            decoding = Promise.resolve()
-              .then(() =>
-                ctx.decodeAudioData(
-                  Uint8Array.from(atob(clacks.audio), (c) => c.charCodeAt(0)).buffer,
-                ),
-              )
-              .then((buffer) => {
-                decoded = {
-                  buffer,
-                  starts: clackStarts(buffer.getChannelData(0), buffer.sampleRate, clacks),
-                };
-              })
-              .catch(() => {
-                decoded = null;
-              });
+            decoding = Promise.all([decode(ctx, clacks), decode(ctx, coinClinks)]).then(
+              ([a, b]) => {
+                decoded = { clacks: a, clinks: b };
+              },
+            );
           }
         }
         // Resume inside the caller's gesture; the clacks are scheduled on the first frame.

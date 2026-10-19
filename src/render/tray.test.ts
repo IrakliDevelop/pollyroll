@@ -144,6 +144,17 @@ describe('createDiceTray without WebGL2', () => {
     expect(host.querySelector('canvas')).toBeNull();
   });
 
+  it('rejects a coin clink set with no clinks or a zero length before adding an overlay', () => {
+    noWebGl();
+    const host = document.createElement('div');
+    for (const clacks of [[], [[0, 0]]] satisfies ClackSet['clacks'][]) {
+      expect(() =>
+        createDiceTray(host, { coinClinks: { audio: diceClacks.audio, clacks } }),
+      ).toThrow(RangeError);
+    }
+    expect(host.querySelector('canvas')).toBeNull();
+  });
+
   it('accepts the recorded diceClacks', () => {
     noWebGl();
     expect(createDiceTray(document.createElement('canvas'), { clacks: diceClacks }).supported).toBe(

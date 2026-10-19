@@ -1060,6 +1060,54 @@ test.describe('sound', () => {
     expect(result.replaced).toBe(result.decoded);
   });
 
+  test('plays coins on the synth, layers a clink on each coin hit, and drops the clinks when they cannot be decoded', async ({
+    page,
+  }) => {
+    await settled(page, '');
+    await needsWebGL2(page);
+    const coin: RollEvent = {
+      ...EVENT,
+      notation: '1dc',
+      dice: [{ type: 'dc', value: 1, group: 0, wave: 0 }],
+      modifier: 0,
+    };
+    const roll = (decode: AudioRecord['decode']) =>
+      page.evaluate(
+        async ({ event, decode, clinks }) => {
+          const a = window.__audio;
+          a.decode = decode;
+          a.startArgs = [];
+          a.filters = 0;
+          const canvas = document.createElement('canvas');
+          canvas.style.cssText = 'width: 800px; height: 600px';
+          document.body.append(canvas);
+          const tray = window.__pollyrollCreate(canvas, {
+            labelFont: 'sans-serif',
+            reducedMotion: 'never',
+            sound: 1,
+            coinClinks: clinks,
+          });
+          await tray.playRoll(event);
+          tray.dispose();
+          return { args: a.startArgs, filters: a.filters };
+        },
+        { event: coin, decode, clinks: STUB_CLACKS },
+      );
+    // Clinks start at the stub clip's offsets; synth hits last 300 ms per clip.
+    const offsets = [0.0652, 0.1362, 0.1932];
+    const isClink = (a: number[]): boolean =>
+      offsets.some((o) => Math.abs(o - (a[1] ?? NaN)) < 1e-6);
+    const isHit = (a: number[]): boolean => Math.abs((a[2] ?? NaN) - 0.3) < 1e-6;
+    const layered = await roll('resolve');
+    const alone = await roll('reject');
+    expect(layered.filters).toBe(0);
+    expect(layered.args.filter(isHit).length).toBeGreaterThan(0);
+    expect(layered.args.filter(isClink)).toHaveLength(layered.args.filter(isHit).length);
+    expect(alone.filters).toBe(0);
+    expect(alone.args.filter(isClink)).toEqual([]);
+    expect(alone.args).toEqual(layered.args.filter((a) => !isClink(a)));
+  });
+
   test('creates no AudioContext by default', async ({ page }) => {
     await settled(page, '');
     expect(await page.evaluate(() => window.__audio.constructed)).toBe(0);
