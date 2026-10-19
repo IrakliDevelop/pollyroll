@@ -7,6 +7,7 @@ import { planRoll, slots } from '../src/physics/plan';
 import { DT } from '../src/physics/world';
 import { fitScale, trayBounds } from '../src/render/camera';
 import type { ClackSet } from '../src/render/sound';
+import { diceClacks } from '../src/sounds';
 import type { Skin } from '../src/skins/types';
 
 interface AudioRecord {
@@ -1062,6 +1063,20 @@ test.describe('sound', () => {
     await settled(page, '');
     expect(await page.evaluate(() => window.__audio.constructed)).toBe(0);
   });
+});
+
+test('decodes the recorded diceClacks to a 0.43 s clip', async ({ page }) => {
+  await page.goto('/smoke.html?reduced');
+  test.skip(
+    !(await page.evaluate(() => 'OfflineAudioContext' in window)),
+    'needs OfflineAudioContext',
+  );
+  const duration = await page.evaluate(async (audio) => {
+    const bytes = Uint8Array.from(atob(audio), (c) => c.charCodeAt(0));
+    const buffer = await new OfflineAudioContext(1, 1, 48000).decodeAudioData(bytes.buffer);
+    return buffer.duration;
+  }, diceClacks.audio);
+  expect(Math.abs(duration - 0.43)).toBeLessThanOrEqual(0.03);
 });
 
 test.describe('tray accessibility', () => {
