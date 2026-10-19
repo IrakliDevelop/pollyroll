@@ -252,6 +252,18 @@ export function createDiceTray(
   opts: TrayOptions = {},
 ): DiceTray {
   let dieScale = checkScale(opts.dieScale ?? 2);
+  const clacks = opts.clacks;
+  if (
+    clacks !== undefined &&
+    (clacks.clacks.length === 0 ||
+      clacks.clacks.some(
+        ([start, ms]) => !Number.isFinite(start) || !Number.isFinite(ms) || ms <= 0,
+      ))
+  ) {
+    throw new RangeError(
+      'clacks must list at least one clack with a finite start and positive length',
+    );
+  }
   const own = !(target instanceof HTMLCanvasElement);
   const canvas = own ? document.createElement('canvas') : target;
   if (own) {
@@ -307,7 +319,6 @@ export function createDiceTray(
   let sound = 0;
   let audio: { ctx: AudioContext; noise: AudioBuffer } | null = null;
   let sources: AudioBufferSourceNode[] = [];
-  const clacks = opts.clacks;
   // undefined while decoding; null without clacks or when they fail to decode.
   let decoded: { buffer: AudioBuffer; starts: number[] } | null | undefined = null;
   let decoding: Promise<void> | null = null;
