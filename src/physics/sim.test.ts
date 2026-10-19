@@ -17,7 +17,7 @@ import {
   trackHash,
 } from './sim';
 import type { SimInput, SimResult } from './sim';
-import { throwWave } from './throw';
+import { spawnCapacity, throwWave } from './throw';
 import type { TrayBounds } from './world';
 
 const BOUNDS: TrayBounds = { minX: -6, maxX: 6, minZ: -4, maxZ: 4 };
@@ -180,6 +180,46 @@ describe('throwWave', () => {
         }
       }
     }
+  });
+
+  // trayBounds(608/360, 2); d6 circumradius √3/2: d = 2·0.866 + 0.5 = 2.232, m = 0.866 + 0.25 = 1.116,
+  // fitX = floor((7 − 2.232)/2.232) + 1 = 3, fitZ = floor((3.5 − 2.232)/2.232) + 1 = 1.
+  const ONE_ROW: TrayBounds = { minX: -3.5, maxX: 3.5, minZ: -1.75, maxZ: 1.75 };
+  const D6_R = Math.sqrt(3) / 2;
+
+  it('fills a row before stacking a layer', () => {
+    const states = throwWave(
+      createSeedRng('0123456789abcdef0123456789abcdef'),
+      [D6_R, D6_R, D6_R],
+      ONE_ROW,
+    );
+    const xs = states.map((s) => s.position[0]);
+    for (const s of states) {
+      expect(s.position[1]).toBeGreaterThanOrEqual(2.2);
+      expect(s.position[1]).toBeLessThan(2.8);
+    }
+    // Column spacing 2.232 less the worst jitter 2·0.15.
+    for (let i = 0; i < xs.length; i++) {
+      for (let j = 0; j < i; j++) {
+        expect(Math.abs((xs[i] ?? NaN) - (xs[j] ?? NaN))).toBeGreaterThan(1.93);
+      }
+    }
+  });
+
+  it('stacks a die in a higher layer only once the floor grid is full', () => {
+    const states = throwWave(
+      createSeedRng('0123456789abcdef0123456789abcdef'),
+      [D6_R, D6_R, D6_R, D6_R],
+      ONE_ROW,
+    );
+    // Layer 1 starts at 2.2 + 2·0.866 + 1.1 = 5.032.
+    expect(states.map((s) => s.position[1] >= 5.03)).toEqual([false, false, false, true]);
+  });
+
+  it('reports the one-layer spawn capacity', () => {
+    expect(spawnCapacity(D6_R, ONE_ROW)).toBe(3);
+    // fitX = floor((8.5 − 2.232)/2.232) + 1 = 3, fitZ = floor((4.5 − 2.232)/2.232) + 1 = 2.
+    expect(spawnCapacity(D6_R, { minX: -4.25, maxX: 4.25, minZ: -2.25, maxZ: 2.25 })).toBe(6);
   });
 
   it('stays within the documented ranges for seeded draws', () => {

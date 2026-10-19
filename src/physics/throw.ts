@@ -15,6 +15,16 @@ export function clampInto(value: number, lo: number, hi: number): number {
   return value < lo ? lo : value > hi ? hi : value;
 }
 
+// Margin rMax + 0.25 covers the worst jitter offset 0.15·√2.
+function fitAcross(span: number, rMax: number): number {
+  return Math.max(1, Math.floor((span - 2 * (rMax + 0.25)) / (2 * rMax + 0.5)) + 1);
+}
+
+/** Bodies of bounding radius `rMax` that one spawn layer holds in `bounds`. */
+export function spawnCapacity(rMax: number, bounds: TrayBounds): number {
+  return fitAcross(bounds.maxX - bounds.minX, rMax) * fitAcross(bounds.maxZ - bounds.minZ, rMax);
+}
+
 /**
  * Throw parameters for one wave of `count` bodies with given radii, drawn from rng in a fixed order.
  * Every draw is f = rng.float() in [0, 1); the order is part of the determinism contract:
@@ -26,8 +36,9 @@ export function clampInto(value: number, lo: number, hi: number): number {
  *    1e-6 < |u|² ≤ 1, normalized, as [x, y, z, w]: a uniform random rotation by rejection sampling
  *    of the 4-ball), speed factor, lateral, vy, ωx, ωy, ωz.
  *
- * Bodies sit in an axis-aligned block behind the tray centre, spaced 2·rMax + 0.5 and stacked in
- * layers when the tray is full, so no bounding spheres overlap; each x/z is clamped into the walls.
+ * Bodies sit in an axis-aligned block behind the tray centre, spaced 2·rMax + 0.5, filling the tray
+ * width before adding a row, and stacked in layers only when the floor grid is full, so no bounding
+ * spheres overlap; each x/z is clamped into the walls.
  */
 export function throwWave(
   rng: SeedRng,
@@ -52,13 +63,14 @@ export function throwWave(
   const count = radii.length;
   const rMax = Math.max(0, ...radii);
   const d = 2 * rMax + 0.5;
-  // Margin covers the worst jitter offset 0.15·√2.
   const m = rMax + 0.25;
-  const fitX = Math.max(1, Math.floor((bounds.maxX - bounds.minX - 2 * m) / d) + 1);
-  const fitZ = Math.max(1, Math.floor((bounds.maxZ - bounds.minZ - 2 * m) / d) + 1);
+  const fitZ = fitAcross(bounds.maxZ - bounds.minZ, rMax);
   let k = 0;
   while (k * k < count) k++;
-  const c = Math.min(fitX, k);
+  const c = Math.min(
+    fitAcross(bounds.maxX - bounds.minX, rMax),
+    Math.max(k, Math.ceil(count / fitZ)),
+  );
   const r = Math.min(fitZ, Math.ceil(count / c));
   const perLayer = c * r;
   const back = 0.35 * Math.min((bounds.maxX - bounds.minX) / 2, (bounds.maxZ - bounds.minZ) / 2);
