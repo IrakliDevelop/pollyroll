@@ -825,17 +825,15 @@ export function createDiceTray(
                   Uint8Array.from(atob(clacks.audio), (c) => c.charCodeAt(0)).buffer,
                 ),
               )
-              .then(
-                (buffer) => {
-                  decoded = {
-                    buffer,
-                    starts: clackStarts(buffer.getChannelData(0), buffer.sampleRate, clacks),
-                  };
-                },
-                () => {
-                  decoded = null;
-                },
-              );
+              .then((buffer) => {
+                decoded = {
+                  buffer,
+                  starts: clackStarts(buffer.getChannelData(0), buffer.sampleRate, clacks),
+                };
+              })
+              .catch(() => {
+                decoded = null;
+              });
           }
         }
         // Resume inside the caller's gesture; the clacks are scheduled on the first frame.
