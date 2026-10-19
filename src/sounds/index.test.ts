@@ -29,9 +29,9 @@ describe('diceClacks', () => {
 });
 
 describe('coinClinks', () => {
-  it('lists 8 clinks of 25–30 ms starting no earlier than 5 ms before the first sound', () => {
+  it('lists 6 clinks of 25–30 ms starting no earlier than 5 ms before the first sound', () => {
     const { clacks } = coinClinks;
-    expect(clacks).toHaveLength(8);
+    expect(clacks).toHaveLength(6);
     for (const [start, length] of clacks) {
       expect(Number.isFinite(start)).toBe(true);
       expect(start).toBeGreaterThanOrEqual(-5);

@@ -14,17 +14,15 @@ export const diceClacks: ClackSet = {
   ],
 };
 
-/** Eight coin clinks recorded by Kenney (kenney.nl, CC0 1.0): one 16 kHz mono MP3, low-passed at 3 kHz. */
+/** Six coin clinks recorded by Kenney (kenney.nl, CC0 1.0): one 16 kHz mono MP3, low-passed at 3 kHz. */
 export const coinClinks: ClackSet = {
-  audio: '//MYxAAC0AGICUEAAhf//////8+IHA+Hlf//v/rd/b/rOr////MYxAsEWAMMAYAQAP/9bP///Ur/////1EPvnA+xv+Iw8BBA//MYxBAHWAMEAYAQAO/nPjhd9n/vKdw5gwNV////////X4Z8//MYxAkE8AMUAYAQAEv7Fdn/+oWAZr5Z//////////////9h//MYxAwH0bcEAYAQAGdERAZ7flEjzAq9nK/9DSzW/UQV//////MYxAMFiAL8AYAQAP9XfqPHjv2HELFToad93kiQqWUq//////MYxAMFEbMIAYAQAP//////Qy//b9TKUSjS/+5C6v////////MYxAUGWY8EAYAoAP/////0MHwAMHjsRg19TRb//+j9Vf////MYxAIFYAcMAYAAAP/pc+pugm6Km2V+nizG/+lgHGkV//////MYxAMFKAJsAcAAAPyp0r+VDYlO/+DSga9TwVHgqkxBTUWq',
+  audio: '//MoxAALAAFoAUIQAAwD4WBA5////5yH3Cd4g8QB8EDgPg4XB8oGPLqDBcP+Uh9QIPEDgff//l4g//8PyNr756GT72V6FL/b//MoxA8LKWr4AYEQAFPy6/2yEbCgMqe/KUrkhD/+Iw6AXTv+Xg+B/PCEsv////7/0+5Y7+1lyIrHp05W17NdVvIyp4qDo8Hh//MoxB0UewLsAYBQAX1NNIREks5jOs9GMHxGSMPCNyYoTEp9EocclUqeecSEj/4kjIVwlBciJJHOW3kA9C5LMeK7///////6//MoxAYNWw7wAYA4AP/////dV9B8cDRZy+co1NNrvZ2oZQi5ynHGnFDSh3qn7OZPMZTP6XSXIDjW+njxqv/////+yfT+59Gt//MoxAsOkibwAYA4AJxpEin2cxhuNz9lOJGmCgsjKhRweA4APJGE3fUxjD3eSRSxpEexQZDDyjnf7f+A6v///////6ng8LH9//MoxAsP2pboAYA4ABn97QkGoyJCKQNOQUgDkyxpujjUdm1PPPQ97GqacXZnnTf+2jFyBh70bdfjju/boOMEAIUV//////SS//MoxAYNkp7oAYA4AIWIa535zAWcSqY6lP83Ybi5ixDnTTUT/icXCphIGhpMueQZzZw2RzdP//pQ91HmetVMQU1FNC4wVVVV//MoxAoAAANIAcAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV',
   clacks: [
-    [-1.3, 25],
-    [33.7, 25],
-    [65.7, 25],
-    [100.7, 25],
-    [135.7, 25],
-    [162.7, 25],
-    [197.7, 25],
-    [232.7, 25],
+    [-0.1, 25],
+    [29.9, 25],
+    [59.9, 25],
+    [89.9, 25],
+    [119.9, 25],
+    [149.9, 25],
   ],
 };

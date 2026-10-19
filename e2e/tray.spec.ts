@@ -1164,10 +1164,10 @@ test.describe('sound', () => {
 });
 
 // Trimmed decoders give about 0.43 s of dice clacks; WebKit keeps the encoder delay and padding
-// (about 0.504 s). The coin clinks carry no Xing header, so every decoder keeps them (0.36 s).
+// (about 0.504 s). The coin clinks carry no Xing header, so every decoder keeps them (0.288 s).
 for (const [name, set, minS, maxS] of [
   ['clacks', diceClacks, 0.4, 0.55],
-  ['clinks', coinClinks, 0.33, 0.4],
+  ['clinks', coinClinks, 0.26, 0.32],
 ] as const) {
   test(`decodes the recorded ${name} and aligns every one to a sound`, async ({ page }) => {
     await page.goto('/smoke.html?reduced');
