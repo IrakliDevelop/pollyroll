@@ -119,6 +119,23 @@ describe('throwWave', () => {
     expect(b?.angularVelocity).toSatisfy((w: number[]) => near(w, [-13, 19, -9]));
   });
 
+  it('centres a later wave on the candidate farthest from resting dice, at 0.4× speed', () => {
+    // bx = bz = 0.8 + 0.25 = 1.05, so candidates clamp to x ∈ [−4.95, 4.95], z ∈ [−2.95, 2.95].
+    // Dice rest at the left end; x = 4.95 is farthest, and z = −2.95 and z = 2.95 tie at
+    // min(8.95² + 2.95², 9.95² + 0.05²) = 88.805, so gj = 0 (z = −2.95) wins.
+    const [state] = throwWave(
+      createSeedRng('0123456789abcdef0123456789abcdef'),
+      [0.8],
+      BOUNDS,
+      [-5, -3, -5, 3, -4, 0],
+    );
+    const [x, , z] = state?.position ?? [NaN, NaN, NaN];
+    const [vx, , vz] = state?.velocity ?? [NaN, NaN, NaN];
+    expect(x).toBeGreaterThan(4.5);
+    expect(z).toBeLessThan(-2.5);
+    expect(Math.hypot(vx, vz)).toBeLessThanOrEqual(0.4 * (8 * 1.15 + 1.5));
+  });
+
   it('clamps spawn points inside the walls', () => {
     const tiny: TrayBounds = { minX: -1, maxX: 1, minZ: -1, maxZ: 1 };
     const states = throwWave(
@@ -292,6 +309,24 @@ describe('simulate', () => {
       expect(t.frames.length).toBe((result.totalSteps - t.startStep + 1) * 7);
     }
     expect(result.tracks.map((t) => t.wave)).toEqual([0, 1, 2]);
+  });
+
+  it('throws a later wave clear of the resting dice', () => {
+    const result = simulate({
+      seed: '00000000000000000000000000000001',
+      shapes: ['d6', 'd6', 'd6', 'd6', 'd6'],
+      waves: [0, 0, 0, 1, 2],
+      bounds: BOUNDS,
+    });
+    const late = result.tracks[3];
+    expect(late?.wave).toBe(1);
+    if (late === undefined) return;
+    for (const t of result.tracks.slice(0, 3)) {
+      const at = (late.startStep - t.startStep) * 7;
+      const dx = (late.frames[0] ?? NaN) - (t.frames[at] ?? NaN);
+      const dz = (late.frames[2] ?? NaN) - (t.frames[at + 2] ?? NaN);
+      expect(Math.hypot(dx, dz)).toBeGreaterThanOrEqual(2 * getPolyhedron('d6').radius);
+    }
   });
 
   it('orders waves by value and keeps input order for tracks', () => {

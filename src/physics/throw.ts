@@ -15,6 +15,8 @@ export function clampInto(value: number, lo: number, hi: number): number {
   return value < lo ? lo : value > hi ? hi : value;
 }
 
+const LATE_SPEED = 0.4;
+
 // Margin rMax + 0.25 covers the worst jitter offset 0.15·√2.
 function fitAcross(span: number, rMax: number): number {
   return Math.max(1, Math.floor((span - 2 * (rMax + 0.25)) / (2 * rMax + 0.5)) + 1);
@@ -38,12 +40,15 @@ export function spawnCapacity(rMax: number, bounds: TrayBounds): number {
  *
  * Bodies sit in an axis-aligned block behind the tray centre, spaced 2·rMax + 0.5, filling the tray
  * width before adding a row, and stacked in layers only when the floor grid is full, so no bounding
- * spheres overlap; each x/z is clamped into the walls.
+ * spheres overlap; each x/z is clamped into the walls. A later wave (non-empty `resting`, x/z pairs
+ * of bodies already in the world) centres its block on the 9×5 grid point farthest from them and
+ * throws at LATE_SPEED times the speed.
  */
 export function throwWave(
   rng: SeedRng,
   radii: readonly number[],
   bounds: TrayBounds,
+  resting: readonly number[] = [],
 ): ThrowState[] {
   let hx = 0;
   let hz = 0;
@@ -78,8 +83,35 @@ export function throwWave(
   const bz = ((r - 1) / 2) * d + m;
   const centerX = (bounds.minX + bounds.maxX) / 2;
   const centerZ = (bounds.minZ + bounds.maxZ) / 2;
-  const cx = clampInto(centerX - hx * back, bounds.minX + bx, bounds.maxX - bx);
-  const cz = clampInto(centerZ - hz * back, bounds.minZ + bz, bounds.maxZ - bz);
+  let cx = clampInto(centerX - hx * back, bounds.minX + bx, bounds.maxX - bx);
+  let cz = clampInto(centerZ - hz * back, bounds.minZ + bz, bounds.maxZ - bz);
+  const late = resting.length > 0 ? LATE_SPEED : 1;
+  let best = -1;
+  for (let gi = 0; resting.length > 0 && gi <= 8; gi++) {
+    for (let gj = 0; gj <= 4; gj++) {
+      const x = clampInto(
+        bounds.minX + ((bounds.maxX - bounds.minX) * gi) / 8,
+        bounds.minX + bx,
+        bounds.maxX - bx,
+      );
+      const z = clampInto(
+        bounds.minZ + ((bounds.maxZ - bounds.minZ) * gj) / 4,
+        bounds.minZ + bz,
+        bounds.maxZ - bz,
+      );
+      let score = Infinity;
+      for (let k = 0; k + 1 < resting.length; k += 2) {
+        const dx = x - (resting[k] ?? 0);
+        const dz = z - (resting[k + 1] ?? 0);
+        score = Math.min(score, dx * dx + dz * dz);
+      }
+      if (score > best) {
+        best = score;
+        cx = x;
+        cz = z;
+      }
+    }
+  }
 
   return radii.map((radius, i): ThrowState => {
     const layer = Math.floor(i / perLayer);
@@ -103,8 +135,8 @@ export function throwWave(
       uSq = ux * ux + uy * uy + uz * uz + uw * uw;
     } while (!(uSq > 1e-6 && uSq <= 1));
     const uLen = Math.sqrt(uSq);
-    const along = speed * (0.85 + 0.3 * rng.float());
-    const lateral = (2 * rng.float() - 1) * 1.5;
+    const along = late * speed * (0.85 + 0.3 * rng.float());
+    const lateral = late * (2 * rng.float() - 1) * 1.5;
     const vy = -2 * rng.float();
     const wx = (2 * rng.float() - 1) * 25;
     const wy = (2 * rng.float() - 1) * 25;

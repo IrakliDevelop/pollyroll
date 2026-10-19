@@ -96,12 +96,18 @@ export function simulate(input: SimInput): SimResult {
     body.length += FRAME;
   };
 
+  const spot = new Float64Array(FRAME);
   for (const wave of values) {
     const members = bodies.filter((b) => b.wave === wave);
+    const resting = present.flatMap((b) => {
+      world.read(b.index, spot, 0);
+      return [spot[0] ?? 0, spot[2] ?? 0];
+    });
     const states = throwWave(
       rng,
       members.map((b) => getBodyShape(b.shape).radius),
       bounds,
+      resting,
     );
     states.forEach((s, k) => {
       const body = members[k];
