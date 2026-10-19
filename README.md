@@ -160,7 +160,8 @@ const tray = createDiceTray(target, {
   reducedMotion: 'auto', // 'auto' follows prefers-reduced-motion; 'always' | 'never'
   fadeAfterMs: null, // number: fade the dice out after they settle
   labels: { d6: ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'] }, // optional custom labels per die
-  sound: 0, // 0–1: volume of procedural impact clacks; 0 (default) never creates an AudioContext
+  sound: 0, // 0–1: volume of impact clacks; 0 (default) never creates an AudioContext
+  clacks: undefined, // ClackSet, e.g. diceClacks from pollyroll/sounds; read at creation
   announce: false, // true: speak each settled result through a polite aria-live region
 });
 

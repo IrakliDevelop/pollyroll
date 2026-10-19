@@ -303,12 +303,12 @@ Chromium uses SwiftShader (`--use-angle=swiftshader --enable-unsafe-swiftshader`
   not coalesced under rapid sends.
 - Notation v2, image-texture skins, real shadow maps, persistent roll log.
 
-## 12. Status (2026-10-19, 0.4.0 branch)
+## 12. Status (2026-10-19, 0.5.0 branch)
 
 ### Verified (with evidence)
 
 - 0.1.0 on `master`: CI green on Node 20.19 and 22 and e2e in Chromium, Firefox, WebKit.
-- 0.2.0 on `master` and npm (2026-10-19); 0.3.0 on `master`. 0.4.0 branch, locally: `pnpm verify`
+- 0.2.0 on `master` and npm (2026-10-19); 0.3.0 and 0.4.0 on `master`. 0.5.0 branch, locally: `pnpm verify`
   passes; e2e passes in Chromium and Firefox, including the cross-browser determinism hash. WebKit could not launch on the build machine (missing system
   libraries); CI runs it.
 - Every die × every value shows the rolled value on top after remap (unit tests + property tests).
@@ -322,8 +322,8 @@ Chromium uses SwiftShader (`--use-angle=swiftshader --enable-unsafe-swiftshader`
   0% of rolls end with two dice interpenetrating more than 0.02 die units (0.1.0: 25–33% of mixed
   d20/d12/d8 rolls). During the roll (before the settle tail), 40 seeds × 4 crowded roll types:
   penetration never exceeds 0.3 die units and stays above 0.1 for at most one 1/120 s step.
-- Size budgets: core ≈ 3.77 kB / 4, render ≈ 26.0 kB / 30, react ≈ 0.50 kB / 1, format ≈ 0.34 kB /
-  0.5 (min+gzip).
+- Size budgets: core ≈ 3.77 kB / 4, render ≈ 26.4 kB / 30, react ≈ 0.50 kB / 1, format ≈ 0.34 kB /
+  0.5, sounds ≈ 1.27 kB / 1.5 (min+gzip).
 - 10-dice pre-simulation bench ≈ 4.8 ms mean (seed 0; target ≤ 5 ms; noisy machine, runs up to
   6 ms on both base and branch).
 - 60 fps during animation with 10, 18 and 30 dice at 1× and 4× Chrome CPU throttle on a desktop
@@ -331,7 +331,9 @@ Chromium uses SwiftShader (`--use-angle=swiftshader --enable-unsafe-swiftshader`
   playback (same frames drawn per second, fewer per roll).
 - `redact` leaks no values (null values, explosion and reroll dice removed); `isRollEvent` rejects
   malformed, out-of-range, and inline-GLSL input, and accepts every event `createRoll` builds.
-- Packed tarball: ESM and CJS import of all three entries in Node; types resolve under node10
+- `pollyroll/sounds` MP3 decodes in Chromium and Firefox (0.43 s); `dist/render.*` holds none of
+  its data and `dist/sounds.*` no render code.
+- Packed tarball: ESM and CJS import of every entry in Node; types resolve under node10
   (`typesVersions`), node16, nodenext and bundler; `'use client'` heads `dist/react.*`.
 
 ### Decided (owner or build decisions; rationale in DECISIONS.md)
@@ -352,7 +354,8 @@ Chromium uses SwiftShader (`--use-angle=swiftshader --enable-unsafe-swiftshader`
 The full consumer-facing list is in the README under **Known limits**.
 
 - Use as an installed package inside RollKeeper (Next.js app).
-- Mobile GPUs; WebKit locally (CI covers WebKit determinism).
+- Mobile GPUs; WebKit locally (CI covers WebKit determinism and decoding of the `pollyroll/sounds`
+  MP3). Listening to the recorded clacks in Safari.
 - Known small issues (counts measured in 0.2.0, not re-measured): in 1–7 of 40 crowded rolls a die
   lifting off a pile clips a neighbour for about 0.1 s during the settle tail (lifts are now rare);
   about 2 of 1,200 crowded rolls reach the 720-step cap (0 of 9,000 in the 0.4.0 runs above); the
