@@ -53,6 +53,21 @@ describe('fadeSteps', () => {
     expect(wave1).toBeLessThan(wave2);
   });
 
+  it('keys a later group by event index and times it by both d100 bodies', () => {
+    const { plan, fade } = setup({
+      ...event('1d6+1d100r1', []),
+      dice: [
+        { type: 'd6', value: 3, group: 0, wave: 0 },
+        { type: 'd100', value: 1, group: 1, wave: 0 },
+        { type: 'd100', value: 42, group: 1, wave: 1 },
+      ],
+    });
+    const replacement = plan.bodies.filter((b) => b.die === 2).map((b) => b.startStep);
+    expect(replacement).toHaveLength(2);
+    expect(replacement[1]).toBe(replacement[0]);
+    expect(fade).toEqual(new Map([[1, replacement[0]]]));
+  });
+
   it('fades nothing when no die is dropped', () => {
     expect(setup(event('2d6', [[3, 5]])).fade).toEqual(new Map());
   });
