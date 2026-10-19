@@ -1,0 +1,1132 @@
+diff --git a/.size-limit.json b/.size-limit.json
+index f6b80d6..4118ea0 100644
+--- a/.size-limit.json
++++ b/.size-limit.json
+@@ -34,5 +34,12 @@
+     "import": "{ diceClacks }",
+     "limit": "1.5 KB",
+     "gzip": true
++  },
++  {
++    "name": "pollyroll/sounds coinClinks",
++    "path": "dist/sounds.js",
++    "import": "{ coinClinks }",
++    "limit": "0.75 KB",
++    "gzip": true
+   }
+ ]
+diff --git a/demo/main.ts b/demo/main.ts
+index bf2fa7a..b835df6 100644
+--- a/demo/main.ts
++++ b/demo/main.ts
+@@ -2,7 +2,7 @@ import { createRoll, evaluate, isRollEvent, PollyrollSyntaxError, redact } from
+ import type { RollEvent } from 'pollyroll';
+ import { classic, createDiceTray } from 'pollyroll/render';
+ import type { DiceTray, Skin } from 'pollyroll/render';
+-import { diceClacks } from 'pollyroll/sounds';
++import { coinClinks, diceClacks } from 'pollyroll/sounds';
+ import { byId, createSkinEditor } from './editor';
+ 
+ const form = byId('controls', HTMLFormElement);
+@@ -18,7 +18,11 @@ const resultA = byId('result-a', HTMLParagraphElement);
+ const resultB = byId('result-b', HTMLParagraphElement);
+ 
+ const dieScale = Number(sizeInput.value);
+-const trayA = createDiceTray(byId('tray-a', HTMLDivElement), { dieScale, clacks: diceClacks });
++const trayA = createDiceTray(byId('tray-a', HTMLDivElement), {
++  dieScale,
++  clacks: diceClacks,
++  coinClinks,
++});
+ const trayB = createDiceTray(byId('tray-b', HTMLDivElement), { dieScale });
+ noticeEl.hidden = trayA.supported && trayB.supported;
+ 
+diff --git a/e2e/tray.spec.ts b/e2e/tray.spec.ts
+index 1981186..546aab9 100644
+--- a/e2e/tray.spec.ts
++++ b/e2e/tray.spec.ts
+@@ -8,7 +8,7 @@ import { DT } from '../src/physics/world';
+ import { fitScale, trayBounds } from '../src/render/camera';
+ import { clackStarts } from '../src/render/sound';
+ import type { ClackSet } from '../src/render/sound';
+-import { diceClacks } from '../src/sounds';
++import { coinClinks, diceClacks } from '../src/sounds';
+ import type { Skin } from '../src/skins/types';
+ 
+ interface AudioRecord {
+@@ -1060,47 +1060,178 @@ test.describe('sound', () => {
+     expect(result.replaced).toBe(result.decoded);
+   });
+ 
++  const COIN: RollEvent = {
++    ...EVENT,
++    notation: '1dc',
++    dice: [{ type: 'dc', value: 1, group: 0, wave: 0 }],
++    modifier: 0,
++  };
++
++  test('plays coins on the synth, layers a clink on each coin hit, and drops the clinks when they cannot be decoded', async ({
++    page,
++  }) => {
++    await settled(page, '');
++    await needsWebGL2(page);
++    const roll = (decode: AudioRecord['decode']) =>
++      page.evaluate(
++        async ({ event, decode, clinks }) => {
++          const a = window.__audio;
++          a.decode = decode;
++          a.startArgs = [];
++          a.filters = 0;
++          a.stops = 0;
++          const canvas = document.createElement('canvas');
++          canvas.style.cssText = 'width: 800px; height: 600px';
++          document.body.append(canvas);
++          const tray = window.__pollyrollCreate(canvas, {
++            labelFont: 'sans-serif',
++            reducedMotion: 'never',
++            sound: 1,
++            coinClinks: clinks,
++          });
++          await tray.playRoll(event);
++          const settleStops = a.stops;
++          tray.dispose();
++          return { args: a.startArgs, filters: a.filters, settleStops, stops: a.stops };
++        },
++        { event: COIN, decode, clinks: STUB_CLACKS },
++      );
++    // Clinks start at the stub clip's offsets; synth hits last 300 ms per clip.
++    const offsets = [0.0652, 0.1362, 0.1932];
++    const isClink = (a: number[]): boolean =>
++      offsets.some((o) => Math.abs(o - (a[1] ?? NaN)) < 1e-6);
++    const isHit = (a: number[]): boolean => Math.abs((a[2] ?? NaN) - 0.3) < 1e-6;
++    const layered = await roll('resolve');
++    const alone = await roll('reject');
++    expect(layered.filters).toBe(0);
++    expect(layered.args.filter(isHit).length).toBeGreaterThan(0);
++    expect(layered.args.filter(isClink)).toHaveLength(layered.args.filter(isHit).length);
++    expect(alone.filters).toBe(0);
++    expect(alone.args.filter(isClink)).toEqual([]);
++    expect(alone.args).toEqual(layered.args.filter((a) => !isClink(a)));
++    // Settle lets the coin's soft tap ring out; dispose stops it.
++    expect(layered.settleStops).toBe(layered.args.length - 1);
++    expect(layered.stops).toBe(layered.args.length);
++  });
++
++  test('stops the coin tap at settle while the context stays suspended', async ({ page }) => {
++    await settled(page, '');
++    await needsWebGL2(page);
++    const result = await page.evaluate(async (event) => {
++      const a = window.__audio;
++      a.startArgs = [];
++      a.stops = 0;
++      AudioContext.prototype.resume = () => Promise.resolve();
++      const canvas = document.createElement('canvas');
++      canvas.style.cssText = 'width: 800px; height: 600px';
++      document.body.append(canvas);
++      const tray = window.__pollyrollCreate(canvas, {
++        labelFont: 'sans-serif',
++        reducedMotion: 'never',
++        sound: 1,
++      });
++      await tray.playRoll(event);
++      const settleStops = a.stops;
++      tray.dispose();
++      return { starts: a.startArgs.length, settleStops };
++    }, COIN);
++    expect(result.starts).toBeGreaterThan(0);
++    // On resume the tap would play at once, long after the coin came to rest.
++    expect(result.settleStops).toBe(result.starts);
++  });
++
++  test('plays dice without waiting for the coin clinks, and coins without waiting for the clacks', async ({
++    page,
++  }) => {
++    await settled(page, '');
++    await needsWebGL2(page);
++    const firstFrame = await page.evaluate(
++      async ({ dice, coin, set }) => {
++        const a = window.__audio;
++        a.decode = 'hold';
++        const scheduled = async (
++          event: RollEvent,
++          opts: Partial<Record<'clacks' | 'coinClinks', ClackSet>>,
++        ) => {
++          a.startArgs = [];
++          const canvas = document.createElement('canvas');
++          canvas.style.cssText = 'width: 800px; height: 600px';
++          document.body.append(canvas);
++          const tray = window.__pollyrollCreate(canvas, {
++            labelFont: 'sans-serif',
++            reducedMotion: 'never',
++            sound: 1,
++            ...opts,
++          });
++          const done = tray.playRoll(event);
++          // The tray draws its first frame, and schedules, before this callback; the set is still decoding.
++          await new Promise(requestAnimationFrame);
++          const n = a.startArgs.length;
++          a.release();
++          await done;
++          tray.dispose();
++          return n;
++        };
++        return {
++          dice: await scheduled(dice, { coinClinks: set }),
++          coin: await scheduled(coin, { clacks: set }),
++        };
++      },
++      { dice: EVENT, coin: COIN, set: STUB_CLACKS },
++    );
++    expect(firstFrame.dice).toBeGreaterThanOrEqual(3);
++    expect(firstFrame.coin).toBeGreaterThan(0);
++  });
++
+   test('creates no AudioContext by default', async ({ page }) => {
+     await settled(page, '');
+     expect(await page.evaluate(() => window.__audio.constructed)).toBe(0);
+   });
+ });
+ 
+-test('decodes the recorded clacks and aligns every clack to a sound', async ({ page }) => {
+-  await page.goto('/smoke.html?reduced');
+-  test.skip(
+-    !(await page.evaluate(() => 'OfflineAudioContext' in window)),
+-    'needs OfflineAudioContext',
+-  );
+-  const { sampleRate, data } = await page.evaluate(async (audio) => {
+-    const bytes = Uint8Array.from(atob(audio), (c) => c.charCodeAt(0));
+-    const buffer = await new OfflineAudioContext(1, 1, 48000).decodeAudioData(bytes.buffer);
+-    return { sampleRate: buffer.sampleRate, data: Array.from(buffer.getChannelData(0)) };
+-  }, diceClacks.audio);
+-  const duration = data.length / sampleRate;
+-  // Trimmed decoders give about 0.43 s; WebKit keeps the encoder delay and padding (about 0.504 s).
+-  expect(duration).toBeGreaterThanOrEqual(0.4);
+-  expect(duration).toBeLessThanOrEqual(0.55);
+-  const peakIn = (from: number, to: number): number =>
+-    data.slice(from, to).reduce((m, x) => Math.max(m, Math.abs(x)), 0);
+-  const peak = peakIn(0, data.length);
+-  const starts = clackStarts(Float32Array.from(data), sampleRate, diceClacks);
+-  for (const [k, start] of starts.entries()) {
+-    const at = Math.round(start * sampleRate);
+-    expect(peakIn(at, at + Math.round(0.008 * sampleRate)), `clack ${k}`).toBeGreaterThanOrEqual(
+-      0.1 * peak,
+-    );
+-    expect(start + (diceClacks.clacks[k]?.[1] ?? Infinity) / 1000).toBeLessThanOrEqual(duration);
+-  }
+-  // An untrimmed decoder (WebKit) leads with the encoder delay; every start moves with the sound.
+-  const delayed = new Float32Array(Math.round(0.066 * sampleRate) + data.length);
+-  delayed.set(data, delayed.length - data.length);
+-  for (const [k, start] of clackStarts(delayed, sampleRate, diceClacks).entries()) {
+-    expect(Math.abs(start - (starts[k] ?? NaN) - 0.066), `delayed clack ${k}`).toBeLessThanOrEqual(
+-      0.001,
++// Trimmed decoders give about 0.43 s of dice clacks; WebKit keeps the encoder delay and padding
++// (about 0.504 s). The coin clinks carry no Xing header, so every decoder keeps them (0.288 s).
++for (const [name, set, minS, maxS] of [
++  ['clacks', diceClacks, 0.4, 0.55],
++  ['clinks', coinClinks, 0.26, 0.32],
++] as const) {
++  test(`decodes the recorded ${name} and aligns every one to a sound`, async ({ page }) => {
++    await page.goto('/smoke.html?reduced');
++    test.skip(
++      !(await page.evaluate(() => 'OfflineAudioContext' in window)),
++      'needs OfflineAudioContext',
+     );
+-  }
+-});
++    const { sampleRate, data } = await page.evaluate(async (audio) => {
++      const bytes = Uint8Array.from(atob(audio), (c) => c.charCodeAt(0));
++      const buffer = await new OfflineAudioContext(1, 1, 48000).decodeAudioData(bytes.buffer);
++      return { sampleRate: buffer.sampleRate, data: Array.from(buffer.getChannelData(0)) };
++    }, set.audio);
++    const duration = data.length / sampleRate;
++    expect(duration).toBeGreaterThanOrEqual(minS);
++    expect(duration).toBeLessThanOrEqual(maxS);
++    const peakIn = (from: number, to: number): number =>
++      data.slice(from, to).reduce((m, x) => Math.max(m, Math.abs(x)), 0);
++    const peak = peakIn(0, data.length);
++    const starts = clackStarts(Float32Array.from(data), sampleRate, set);
++    for (const [k, start] of starts.entries()) {
++      const at = Math.round(start * sampleRate);
++      expect(
++        peakIn(at, at + Math.round(0.008 * sampleRate)),
++        `${name} ${k}`,
++      ).toBeGreaterThanOrEqual(0.1 * peak);
++      expect(start + (set.clacks[k]?.[1] ?? Infinity) / 1000).toBeLessThanOrEqual(duration);
++    }
++    // An untrimmed decoder (WebKit) leads with the encoder delay; every start moves with the sound.
++    const delayed = new Float32Array(Math.round(0.066 * sampleRate) + data.length);
++    delayed.set(data, delayed.length - data.length);
++    for (const [k, start] of clackStarts(delayed, sampleRate, set).entries()) {
++      expect(
++        Math.abs(start - (starts[k] ?? NaN) - 0.066),
++        `delayed ${name} ${k}`,
++      ).toBeLessThanOrEqual(0.001);
++    }
++  });
++}
+ 
+ test.describe('tray accessibility', () => {
+   test('labels the canvas with the settled result and never with a replaced roll', async ({
+diff --git a/src/render/sound.test.ts b/src/render/sound.test.ts
+index b6465a5..2bbf621 100644
+--- a/src/render/sound.test.ts
++++ b/src/render/sound.test.ts
+@@ -1,7 +1,16 @@
+ import { describe, expect, it } from 'vitest';
+ import { planRoll } from '../physics/plan';
+ import { trayBounds } from './camera';
+-import { clackStarts, impacts, playClacks, playImpacts } from './sound';
++import {
++  clackStarts,
++  coinHit,
++  coinTaps,
++  impacts,
++  impactsOf,
++  playClacks,
++  playImpacts,
++  rimContacts,
++} from './sound';
+ import type { ClackSet } from './sound';
+ 
+ const DT = 1 / 120;
+@@ -10,7 +19,7 @@ const DT = 1 / 120;
+ function body(startStep: number, n: number, pos: (k: number) => [number, number, number]) {
+   const frames = new Float32Array(n * 7);
+   for (let k = 0; k < n; k++) frames.set([...pos(k), 0, 0, 0, 1], k * 7);
+-  return { startStep, frames, shape: 'd6' as const };
++  return { startStep, frames };
+ }
+ 
+ /** A body resting at y = 0.5 whose x velocity steps through `v` (index = frame), 0 beyond it. */
+@@ -22,6 +31,15 @@ function kicked(n: number, v: (k: number) => number) {
+   });
+ }
+ 
++/** (step, strength, body) triples of an impacts list. */
++function triples(list: Float32Array): [number, number, number][] {
++  const out: [number, number, number][] = [];
++  for (let i = 0; i < list.length; i += 3) {
++    out.push([list[i] ?? NaN, list[i + 1] ?? NaN, list[i + 2] ?? NaN]);
++  }
++  return out;
++}
++
+ function pairs(list: Float32Array): [number, number][] {
+   const out: [number, number][] = [];
+   for (let i = 0; i < list.length; i += 2) out.push([list[i] ?? NaN, list[i + 1] ?? NaN]);
+@@ -33,7 +51,7 @@ describe('impacts', () => {
+     // Free fall y = 3 − 15t² reaches 0.6 at frame 48 and is clamped from frame 49 on;
+     // landing speed √(2 · 30 · 2.5) ≈ 12.25 units/s; frame 49 is global step 10 + 49.
+     const fall = body(10, 120, (k) => [0, Math.max(0.5, 3 - 15 * (k * DT) ** 2), 0]);
+-    const found = pairs(impacts([fall], 36));
++    const found = triples(impacts([fall], 36));
+     expect(found).toHaveLength(1);
+     const [step, strength] = found[0] ?? [NaN, NaN];
+     expect(step).toBe(59);
+@@ -49,7 +67,7 @@ describe('impacts', () => {
+     [1.9, []],
+     [2.1, [20]],
+   ])('records a kick of %f units/s at frames %j (threshold 2)', (speed, steps) => {
+-    const found = pairs(impacts([kicked(60, (k) => (k > 20 ? speed : 0))], 36));
++    const found = triples(impacts([kicked(60, (k) => (k > 20 ? speed : 0))], 36));
+     expect(found.map((p) => p[0])).toEqual(steps);
+   });
+ 
+@@ -65,7 +83,7 @@ describe('impacts', () => {
+   ])('keeps a second hit %i steps after the first only past the cooldown', (gap, expected) => {
+     // +5 units/s from frame 21, −5 from frame 21 + gap: kicks at frames 20 and 20 + gap.
+     const b = kicked(80, (k) => (k > 20 + gap ? -5 : k > 20 ? 5 : 0));
+-    const found = pairs(impacts([b], 36));
++    const found = triples(impacts([b], 36));
+     expect(found).toHaveLength(expected.length);
+     found.forEach(([step, strength], i) => {
+       expect(step).toBe(expected[i]?.[0]);
+@@ -80,37 +98,24 @@ describe('impacts', () => {
+     // No tail: only the last frame is ignored, so a kick 10 steps before the end counts.
+     [50, 0, [50]],
+   ])('kick at frame %i of 60 with tailSteps %i is found at %j', (frame, tail, steps) => {
+-    const found = pairs(impacts([kicked(60, (k) => (k > frame ? 5 : 0))], tail));
++    const found = triples(impacts([kicked(60, (k) => (k > frame ? 5 : 0))], tail));
+     expect(found.map((p) => p[0])).toEqual(steps);
+   });
+ 
+-  it('finds no impacts for a plan with only a coin', () => {
+-    const plan = planRoll(
+-      {
+-        v: 1,
+-        id: 'coin',
+-        notation: 'dc',
+-        dice: [{ type: 'dc', value: 1, group: 0, wave: 0 }],
+-        modifier: 0,
+-        seed: '0123456789abcdef0123456789abcdef',
+-        createdAt: 0,
+-      },
+-      trayBounds(4 / 3, 2),
+-    );
+-    expect(impacts(plan.bodies, plan.tailSteps)).toHaveLength(0);
+-  });
+-
+-  it('finds only the d6 impact when a d6 and a coin are both kicked', () => {
+-    // The d6 is kicked to 5 units/s at frame 30, the coin to 8 at frame 20.
++  it('reports the body of each impact, so a d6 and a coin are told apart', () => {
++    // Body 0 is kicked at frame 30, body 1 at frame 20; the list is in step order.
+     const d6 = kicked(60, (k) => (k > 30 ? 5 : 0));
+-    const coin = { ...kicked(60, (k) => (k > 20 ? 8 : 0)), shape: 'coin' as const };
+-    const found = pairs(impacts([d6, coin], 0));
+-    expect(found).toHaveLength(1);
+-    expect(found[0]?.[0]).toBe(30);
+-    expect(found[0]?.[1]).toBeCloseTo(Math.sqrt(25 + 0.0625), 5);
++    const coin = kicked(60, (k) => (k > 20 ? 8 : 0));
++    const list = impacts([d6, coin], 0);
++    expect(triples(list).map(([step, , b]) => [step, b])).toEqual([
++      [20, 1],
++      [30, 0],
++    ]);
++    expect(pairs(impactsOf(list, (b) => b === 0)).map((p) => p[0])).toEqual([30]);
++    expect(pairs(impactsOf(list, (b) => b === 1)).map((p) => p[0])).toEqual([20]);
+   });
+ 
+-  it('keeps the impact list of a fixed 3d6 plan from 0.5.0', () => {
++  it('keeps the dice impact list of a fixed 3d6 plan as before bodies were reported', () => {
+     const plan = planRoll(
+       {
+         v: 1,
+@@ -123,7 +128,7 @@ describe('impacts', () => {
+       },
+       trayBounds(4 / 3, 2),
+     );
+-    // Recorded from impacts() at 83fdaf3.
++    // Recorded from impacts() at 83fdaf3, which returned (step, strength) pairs.
+     const before = [
+       [23, 6.5515],
+       [26, 8.4184],
+@@ -141,7 +146,7 @@ describe('impacts', () => {
+       [118, 3.7908],
+       [133, 2.7827],
+     ];
+-    const found = pairs(impacts(plan.bodies, plan.tailSteps));
++    const found = pairs(impactsOf(impacts(plan.bodies, plan.tailSteps), () => true));
+     expect(found).toHaveLength(before.length);
+     found.forEach(([step, strength], i) => {
+       expect(step).toBe(before[i]?.[0]);
+@@ -154,7 +159,7 @@ describe('impacts', () => {
+     const bodies = Array.from({ length: 60 }, (_, i) =>
+       kicked(120, (k) => (k > 79 - i ? i + 3 : 0)),
+     );
+-    const found = pairs(impacts(bodies, 36));
++    const found = triples(impacts(bodies, 36));
+     expect(found.map((p) => p[0])).toEqual(Array.from({ length: 48 }, (_, j) => 20 + j));
+     found.forEach(([, strength], j) => {
+       expect(strength).toBeCloseTo(Math.sqrt((62 - j) ** 2 + 0.0625), 2);
+@@ -162,6 +167,146 @@ describe('impacts', () => {
+   });
+ });
+ 
++/**
++ * A coin on the floor whose tilt (degrees) about the horizontal axis at angle 2π·k/period turns
++ * once per `period` frames; `lift` raises it off the floor.
++ */
++function wobbling(n: number, tilt: number, period: number, lift = 0) {
++  const t = (tilt * Math.PI) / 360;
++  // Rim radius √(0.65² − 0.1²) and half thickness 0.1: the lowest rim point touches y = 0.
++  const y = Math.sqrt(0.65 ** 2 - 0.01) * Math.sin(2 * t) + 0.1 * Math.cos(2 * t) + lift;
++  const frames = new Float32Array(n * 7);
++  for (let k = 0; k < n; k++) {
++    const a = (2 * Math.PI * k) / period;
++    const s = Math.sin(t);
++    frames.set([0, y, 0, s * Math.cos(a), 0, s * Math.sin(a), Math.cos(t)], k * 7);
++  }
++  return { startStep: 100, frames };
++}
++
++describe('rimContacts', () => {
++  it('finds 16 contacts per revolution of a coin wobbling at 5°, fading from 15 to 6, through the last frame', () => {
++    // Two revolutions of 160 frames: the lowest of the 16 rim vertices changes every 10 frames,
++    // at frames 5, 15, …, 315; the last ones would be missed if the tail's frames were skipped.
++    const found = pairs(rimContacts(wobbling(320, 5, 160)));
++    expect(found).toHaveLength(32);
++    found.forEach(([step], j) => {
++      expect(Math.abs(step - (105 + 10 * j))).toBeLessThanOrEqual(1);
++    });
++    expect(found[0]?.[1]).toBeCloseTo(15, 5);
++    expect(found[31]?.[1]).toBeCloseTo(6, 5);
++  });
++
++  it.each([
++    ['lying flat', wobbling(320, 0, 160)],
++    ['tilted 1.5°, under the 2° threshold', wobbling(320, 1.5, 160)],
++    ['0.05 above the floor', wobbling(320, 5, 160, 0.05)],
++  ])('finds no contacts for a coin %s', (_, coin) => {
++    expect(rimContacts(coin)).toHaveLength(0);
++  });
++});
++
++/** A flat coin at y = 0.1 sliding along x at 1 unit/s until frame `rest`, then still. */
++function sliding(n: number, rest: number) {
++  return { ...body(0, n, (k) => [Math.min(k, rest) * DT, 0.1, 0]), shape: 'coin' as const };
++}
++
++describe('coinTaps', () => {
++  it('keeps the first 120 rim contacts by time, so 3 coins with 50 each give 40 each', () => {
++    // 500 frames give contacts at steps 105 + 10j, j < 50, fading by 0.6 · 15 / 49 per contact.
++    const coin = { ...wobbling(500, 5, 160), shape: 'coin' as const };
++    const d6 = { ...coin, shape: 'd6' as const };
++    const { rims } = coinTaps([coin, d6, coin, coin], 36);
++    const found = pairs(rims);
++    expect(found).toHaveLength(120);
++    found.forEach(([step, strength], i) => {
++      const j = Math.floor(i / 3);
++      expect(Math.abs(step - (105 + 10 * j))).toBeLessThanOrEqual(1);
++      expect(strength).toBeCloseTo(15 * (1 - (0.6 * j) / 49), 4);
++    });
++  });
++
++  it('taps two coins whose tracks end together at the frame each comes to rest', () => {
++    const d6 = { ...sliding(400, 50), shape: 'd6' as const };
++    const { taps } = coinTaps([sliding(400, 100), d6, sliding(400, 250)], 36);
++    expect(pairs(taps)).toEqual([
++      [100, 15],
++      [250, 15],
++    ]);
++  });
++
++  it('taps a coin never flat before the tail at the tail frame before settle', () => {
++    // 400 frames from step 100 end at the settle step 499.
++    const { taps } = coinTaps([{ ...wobbling(400, 5, 160), shape: 'coin' as const }], 36);
++    expect(pairs(taps)).toEqual([[498, 15]]);
++  });
++
++  it('taps a coin still sliding at its last frame without a tail before the settle step', () => {
++    // 400 frames from step 0 end at the settle step 399.
++    const { taps } = coinTaps([sliding(400, 399)], 0);
++    expect(pairs(taps)).toEqual([[398, 15]]);
++  });
++});
++
++const SR = 48000;
++
++/** Energy per Hann window (n samples, hop n/2) in [lo, hi) Hz by direct DFT. */
++function bandEnergy(x: Float32Array, n: number, lo: number, hi: number): number[] {
++  const cos = Array.from({ length: n }, (_, i) => Math.cos((2 * Math.PI * i) / n));
++  const sin = Array.from({ length: n }, (_, i) => Math.sin((2 * Math.PI * i) / n));
++  const out: number[] = [];
++  for (let at = 0; at + n <= x.length; at += n / 2) {
++    const w = Array.from(
++      { length: n },
++      (_, i) => (x[at + i] ?? 0) * (0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (n - 1))),
++    );
++    let e = 0;
++    for (let k = Math.max(1, Math.ceil((lo * n) / SR)); k < n / 2 && (k * SR) / n < hi; k++) {
++      let re = 0;
++      let im = 0;
++      for (let i = 0; i < n; i++) {
++        re += (w[i] ?? 0) * (cos[(k * i) % n] ?? 0);
++        im -= (w[i] ?? 0) * (sin[(k * i) % n] ?? 0);
++      }
++      e += re * re + im * im;
++    }
++    out.push(e);
++  }
++  return out;
++}
++
++const sum = (xs: number[]): number => xs.reduce((a, b) => a + b, 0);
++
++/** Time (s) of the last window of 4–8 kHz (the coin ring) within 20 dB of its loudest. */
++function ringTime(x: Float32Array): number {
++  const e = bandEnergy(x, 256, 4000, 8000);
++  const peak = Math.max(...e);
++  let last = 0;
++  e.forEach((v, i) => {
++    if (v > peak / 100) last = i;
++  });
++  return (last * 128) / SR;
++}
++
++describe('coinHit', () => {
++  it.each([1, 2, 3, 4])(
++    'puts ≥ 60% of a hit (seed %i) at 1–4 kHz and < 2% above 8 kHz, like a coin on wood',
++    (seed) => {
++      const hit = coinHit('hit', seed);
++      // One window of silence first, so the half-covered first window does not cut the attack.
++      const x = new Float32Array(2048 + hit.length);
++      x.set(hit, 2048);
++      const total = sum(bandEnergy(x, 2048, 0, SR / 2));
++      expect(sum(bandEnergy(x, 2048, 1000, 4000)) / total).toBeGreaterThanOrEqual(0.6);
++      expect(sum(bandEnergy(x, 2048, 8000, SR / 2)) / total).toBeLessThan(0.02);
++    },
++  );
++
++  it.each([1, 2, 3, 4])('rings a rim contact (seed %i) under 0.6× as long as a hit', (seed) => {
++    expect(ringTime(coinHit('rim', seed))).toBeLessThan(0.6 * ringTime(coinHit('hit', seed)));
++  });
++});
++
+ /** Boundary fake: only the AudioContext members playImpacts and playClacks use; records starts. */
+ function fakeAudio(currentTime: number) {
+   const calls: { buffer: unknown; args: number[]; rate: number }[] = [];
+diff --git a/src/render/sound.ts b/src/render/sound.ts
+index ef5928f..276a740 100644
+--- a/src/render/sound.ts
++++ b/src/render/sound.ts
+@@ -1,3 +1,4 @@
++import { getPolyhedron } from '../geometry/polyhedra';
+ import type { PlannedBody } from '../physics/plan';
+ import { DEFAULT_CONFIG, DT } from '../physics/world';
+ 
+@@ -12,18 +13,36 @@ const COOLDOWN = 6; // steps between two impacts of one body
+ const MAX_IMPACTS = 48;
+ const FULL_STRENGTH = 15; // units/s at full volume
+ const G_DT = DEFAULT_CONFIG.gravity * DT;
++const MAX_RIMS = 120;
++const COS_2DEG = Math.cos(Math.PI / 90);
++const STILL = 0.05 * DT; // units per frame
++const SR = 48000;
++const db = (d: number): number => 10 ** (d / 20);
++const PITCH = 4900; // Hz
++const RING = 0.06; // s
++const SPLIT = 0.022;
++const KNOCK = 1200; // Hz
++const CONTACT = 3000; // Hz
++const TABLE_RING = 0.012; // s
++const RIM_RING = 0.45;
++// Ring mode ratios and levels fitted to Kenney's coin clinks; table modes to coins dropped on wood.
++const RATIOS = [1, 1.73, 2.72, 3.57];
++const LEVELS = [1, 0.55, 0.35, 0.2];
++const TABLE = [610, 980, 1240, 1600, 1750, 2060, 2340];
++const LEVEL = 0.3; // a full hit peaks near 1
++/** Gain of a recorded clink per unit volume: −4 dB under the synth hit, as in the lab's blend. */
++export const CLINK = LEVEL * db(-4);
+ 
+ /**
+- * Impact list of a roll as (global step, strength) pairs in step order, keeping the strongest 48;
+- * coins make none. Impulse proxy: second difference of the keyframe positions minus gravity.
++ * Impact list of a roll as (global step, strength, body index) triples in step order, keeping the
++ * strongest 48. Impulse proxy: second difference of the keyframe positions minus gravity.
+  */
+ export function impacts(
+-  bodies: readonly Pick<PlannedBody, 'startStep' | 'frames' | 'shape'>[],
++  bodies: readonly Pick<PlannedBody, 'startStep' | 'frames'>[],
+   tailSteps: number,
+ ): Float32Array {
+-  const all: [number, number][] = [];
+-  for (const { startStep, frames: f, shape } of bodies) {
+-    if (shape === 'coin') continue;
++  const all: [number, number, number][] = [];
++  for (const [b, { startStep, frames: f }] of bodies.entries()) {
+     const v = (k: number, i: number): number =>
+       ((f[k * 7 + i] ?? 0) - (f[k * 7 - 7 + i] ?? 0)) / DT;
+     // The settle-to-flat tail is interpolated, not physical.
+@@ -36,7 +55,7 @@ export function impacts(
+       const strength = Math.sqrt(x * x + y * y + z * z);
+       if (strength < MIN_STRENGTH || k - last < COOLDOWN) continue;
+       last = k;
+-      all.push([startStep + k, strength]);
++      all.push([startStep + k, strength, b]);
+     }
+   }
+   all.sort((a, b) => a[0] - b[0]);
+@@ -48,6 +67,182 @@ export function impacts(
+   return new Float32Array(keep.flatMap((i) => all[i] ?? []));
+ }
+ 
++/** The (step, strength) pairs of the impacts whose body index passes `keep`. */
++export function impactsOf(list: Float32Array, keep: (body: number) => boolean): Float32Array {
++  const out: number[] = [];
++  for (let i = 0; i < list.length; i += 3) {
++    if (keep(list[i + 2] ?? -1)) out.push(list[i] ?? 0, list[i + 1] ?? 0);
++  }
++  return new Float32Array(out);
++}
++
++/**
++ * Rim contacts of a wobbling coin as (global step, strength) pairs over every frame: one per change
++ * of its lowest hull vertex while it is tilted over 2° within 0.02 of the floor. Strength fades
++ * from full (15) to 40% over the wobble.
++ */
++export function rimContacts(body: Pick<PlannedBody, 'startStep' | 'frames'>): Float32Array {
++  const { vertices } = getPolyhedron('coin');
++  const f = body.frames;
++  const steps: number[] = [];
++  let last = -1;
++  for (let k = 0; k < f.length / 7; k++) {
++    const x = f[k * 7 + 3] ?? 0;
++    const y = f[k * 7 + 4] ?? 0;
++    const z = f[k * 7 + 5] ?? 0;
++    const w = f[k * 7 + 6] ?? 1;
++    // The y row of the rotation matrix gives each vertex's height without a rotated copy.
++    const a = 2 * (x * y + w * z);
++    const b = 1 - 2 * (x * x + z * z);
++    const c = 2 * (y * z - w * x);
++    let low = -1;
++    let h = Infinity;
++    for (let i = 0; i < vertices.length; i++) {
++      const v = vertices[i];
++      const vh = a * (v?.[0] ?? 0) + b * (v?.[1] ?? 0) + c * (v?.[2] ?? 0);
++      if (vh < h) {
++        low = i;
++        h = vh;
++      }
++    }
++    if (flatAt(f, k) || (f[k * 7 + 1] ?? 0) + h > 0.02) {
++      last = -1;
++      continue;
++    }
++    if (last >= 0 && low !== last) steps.push(body.startStep + k);
++    last = low;
++  }
++  const fade = 0.6 / Math.max(1, steps.length - 1);
++  return new Float32Array(steps.flatMap((s, j) => [s, FULL_STRENGTH * (1 - fade * j)]));
++}
++
++/** Whether frame k's cap normal is within 2° of vertical. */
++function flatAt(f: Float32Array, k: number): boolean {
++  const x = f[k * 7 + 3] ?? 0;
++  const z = f[k * 7 + 5] ?? 0;
++  return Math.abs(1 - 2 * (x * x + z * z)) > COS_2DEG;
++}
++
++/**
++ * Rim contacts of every coin, the first 120 per roll by time, and one soft tap per coin at the
++ * frame from which it stays flat and still through its physical frames (the tail's end if never),
++ * always before the settle step.
++ */
++export function coinTaps(
++  bodies: readonly Pick<PlannedBody, 'shape' | 'startStep' | 'frames'>[],
++  tailSteps: number,
++): { rims: Float32Array; taps: Float32Array } {
++  const coins = bodies.filter((b) => b.shape === 'coin');
++  const all = coins.flatMap((b) => {
++    const r = rimContacts(b);
++    return Array.from({ length: r.length / 2 }, (_, j) => [r[j * 2] ?? 0, r[j * 2 + 1] ?? 0]);
++  });
++  // A stable sort keeps body order within a step.
++  all.sort((a, b) => (a[0] ?? 0) - (b[0] ?? 0));
++  const taps = coins.flatMap(({ startStep, frames: f }) => {
++    const n = f.length / 7;
++    let k = n - tailSteps - 1;
++    if (!flatAt(f, k)) k = n - 1;
++    else while (k > 0 && flatAt(f, k - 1) && moved(f, k) < STILL * STILL) k--;
++    return [startStep + Math.min(k, n - 2), FULL_STRENGTH];
++  });
++  return { rims: new Float32Array(all.slice(0, MAX_RIMS).flat()), taps: new Float32Array(taps) };
++}
++
++/** Squared position change from frame k − 1 to frame k. */
++function moved(f: Float32Array, k: number): number {
++  let d = 0;
++  for (let i = 0; i < 3; i++) d += ((f[k * 7 + i] ?? 0) - (f[k * 7 - 7 + i] ?? 0)) ** 2;
++  return d;
++}
++
++/** Adds a damped sine to `out` by the two-term resonator recursion, so there is no sin per sample. */
++function ring(out: Float32Array, f: number, amp: number, tau: number, ph: number): void {
++  const w = (2 * Math.PI * f) / SR;
++  const d = Math.exp(-1 / (tau * SR));
++  const c1 = 2 * d * Math.cos(w);
++  const n = Math.min(Math.round(5 * tau * SR), out.length);
++  let y1 = Math.sin(ph - w) / d;
++  let y2 = Math.sin(ph - 2 * w) / (d * d);
++  for (let i = 0; i < n; i++) {
++    const y = c1 * y1 - d * d * y2;
++    y2 = y1;
++    y1 = y;
++    out[i] = (out[i] ?? 0) + amp * Math.min(1, i / (0.0003 * SR)) * y;
++  }
++}
++
++// Wood keeps the coin in contact for longer, so a strike excites little above 1/(contact time).
++const excite = (f: number): number => 1 / Math.sqrt(1 + (f / CONTACT) ** 4);
++
++/**
++ * A coin striking a wooden table at 48 kHz, by modal synthesis: the coin's ring modes as split
++ * doublets of damped sines rolled off above the contact frequency, the table's modes, and an RBJ
++ * band-passed noise click. A `rim` contact is 12 dB softer with a 0.45× ring.
++ */
++export function coinHit(kind: 'hit' | 'rim', seed: number): Float32Array {
++  let state = seed;
++  const r = (): number => (state = (state * 1664525 + 1013904223) >>> 0) / 4294967296;
++  const s = kind === 'hit' ? 1 : db(-12);
++  const ringS = kind === 'hit' ? RING : RING * RIM_RING;
++  const out = new Float32Array(Math.round(5 * ringS * SR));
++  RATIOS.forEach((ratio, k) => {
++    const f = PITCH * ratio;
++    const amp = (LEVELS[k] ?? 0) * s ** (1 + 0.25 * k) * excite(f);
++    for (const side of [-1, 1]) {
++      ring(out, f * (1 + (side * SPLIT) / 2), amp / 2, ringS / ratio ** 0.8, 2 * Math.PI * r());
++    }
++  });
++  for (const f of TABLE) {
++    ring(
++      out,
++      f * (0.98 + 0.04 * r()),
++      s * (0.3 + 0.7 * r()) * excite(f),
++      TABLE_RING,
++      2 * Math.PI * r(),
++    );
++  }
++  const w0 = (2 * Math.PI * KNOCK) / SR;
++  const al = Math.sin(w0) / 3; // Q 1.5
++  const b0 = al / (1 + al);
++  const a1 = (-2 * Math.cos(w0)) / (1 + al);
++  const a2 = (1 - al) / (1 + al);
++  const decay = Math.exp(-1 / (0.0025 * SR));
++  const g = 3 * s * db(-12);
++  let [x1, x2, y1, y2, env] = [0, 0, 0, 0, 1];
++  for (let i = 0; i < 0.02 * SR; i++) {
++    const x = (r() * 2 - 1) * env;
++    env *= decay;
++    const y = b0 * x - b0 * x2 - a1 * y1 - a2 * y2;
++    [x2, x1, y2, y1] = [x1, x, y1, y];
++    out[i] = (out[i] ?? 0) + g * y;
++  }
++  return out.map((v) => v * LEVEL);
++}
++
++/** Clips in one buffer: clip k starts at `starts[k]` s and lasts `clacks[k][1]` ms. */
++export interface Clips extends Pick<ClackSet, 'clacks'> {
++  readonly buffer: AudioBuffer;
++  readonly starts: readonly number[];
++}
++
++/** The coin synth's 4 `hit` and 4 `rim` strikes (fixed seeds), each kind as clips in one buffer. */
++export function coinBank(ctx: AudioContext): Record<'hit' | 'rim', Clips> {
++  const clips = (kind: 'hit' | 'rim'): Clips => {
++    const parts = [1, 2, 3, 4].map((seed) => coinHit(kind, seed));
++    const n = parts[0]?.length ?? 0;
++    const buffer = ctx.createBuffer(1, 4 * n, SR);
++    const data = buffer.getChannelData(0);
++    parts.forEach((p, i) => data.set(p, i * n));
++    return {
++      buffer,
++      starts: parts.map((_, i) => (i * n) / SR),
++      clacks: parts.map(() => [0, (n / SR) * 1000]),
++    };
++  };
++  return { hit: clips('hit'), rim: clips('rim') };
++}
++
+ /** 60 ms of mono white noise with an exponential decay baked in. */
+ export function noiseBuffer(ctx: AudioContext): AudioBuffer {
+   const rate = ctx.sampleRate;
+@@ -100,7 +295,7 @@ export function playClacks(
+   ctx: AudioContext,
+   buffer: AudioBuffer,
+   starts: readonly number[],
+-  set: ClackSet,
++  set: Pick<ClackSet, 'clacks'>,
+   list: Float32Array,
+   start: number,
+   volume: number,
+diff --git a/src/render/tray.test.ts b/src/render/tray.test.ts
+index b28a4f1..29934ef 100644
+--- a/src/render/tray.test.ts
++++ b/src/render/tray.test.ts
+@@ -144,6 +144,17 @@ describe('createDiceTray without WebGL2', () => {
+     expect(host.querySelector('canvas')).toBeNull();
+   });
+ 
++  it('rejects a coin clink set with no clinks or a zero length before adding an overlay', () => {
++    noWebGl();
++    const host = document.createElement('div');
++    for (const clacks of [[], [[0, 0]]] satisfies ClackSet['clacks'][]) {
++      expect(() =>
++        createDiceTray(host, { coinClinks: { audio: diceClacks.audio, clacks } }),
++      ).toThrow(RangeError);
++    }
++    expect(host.querySelector('canvas')).toBeNull();
++  });
++
+   it('accepts the recorded diceClacks', () => {
+     noWebGl();
+     expect(createDiceTray(document.createElement('canvas'), { clacks: diceClacks }).supported).toBe(
+diff --git a/src/render/tray.ts b/src/render/tray.ts
+index 1af08c6..0934bbc 100644
+--- a/src/render/tray.ts
++++ b/src/render/tray.ts
+@@ -17,8 +17,18 @@ import { cameraPosition, fitScale, trayBounds, viewProjection } from './camera';
+ import { fadeSteps } from './fade';
+ import { attrib, createBuffer, createProgram } from './gl';
+ import { DIE_VERTEX, dieFragment, LIGHT_DIR, SHADOW_FRAGMENT, SHADOW_VERTEX } from './shaders';
+-import { clackStarts, impacts, noiseBuffer, playClacks, playImpacts } from './sound';
+-import type { ClackSet } from './sound';
++import {
++  clackStarts,
++  CLINK,
++  coinBank,
++  coinTaps,
++  impacts,
++  impactsOf,
++  noiseBuffer,
++  playClacks,
++  playImpacts,
++} from './sound';
++import type { ClackSet, Clips } from './sound';
+ 
+ export interface TrayOptions {
+   skin?: SkinRef;
+@@ -40,6 +50,8 @@ export interface TrayOptions {
+   sound?: number;
+   /** Recorded clacks for impacts, such as `diceClacks` from `pollyroll/sounds`; read at creation. */
+   clacks?: ClackSet;
++  /** Recorded clinks layered on the coin synth, such as `coinClinks` from `pollyroll/sounds`; read at creation. */
++  coinClinks?: ClackSet;
+   /** Speak each settled result through a polite live region; default false. */
+   announce?: boolean;
+ }
+@@ -244,6 +256,34 @@ function writePose(b: PlannedBody, s: number, row: number, out: Float32Array, o:
+   out[o + 7] = w * r[3] - x * r[0] - y * r[1] - z * r[2];
+ }
+ 
++function checkClacks(name: string, set: ClackSet | undefined): void {
++  if (
++    set !== undefined &&
++    (set.clacks.length === 0 ||
++      set.clacks.some(([start, ms]) => !Number.isFinite(start) || !Number.isFinite(ms) || ms <= 0))
++  ) {
++    throw new RangeError(
++      `${name} must list at least one clack with a finite start and positive length`,
++    );
++  }
++}
++
++/** Decodes a clack set; null without one or when it cannot be decoded. */
++function decode(ctx: AudioContext, set: ClackSet | undefined): Promise<Clips | null> | null {
++  if (set === undefined) return null;
++  // Inside the chain, so invalid base64 falls back instead of throwing here.
++  return Promise.resolve()
++    .then(() =>
++      ctx.decodeAudioData(Uint8Array.from(atob(set.audio), (c) => c.charCodeAt(0)).buffer),
++    )
++    .then((buffer) => ({
++      buffer,
++      starts: clackStarts(buffer.getChannelData(0), buffer.sampleRate, set),
++      clacks: set.clacks,
++    }))
++    .catch(() => null);
++}
++
+ /**
+  * Creates a WebGL2 dice tray on a canvas, or on an absolutely positioned overlay canvas appended to
+  * an element. Without WebGL2 `supported` is false and `playRoll` resolves immediately.
+@@ -253,18 +293,9 @@ export function createDiceTray(
+   opts: TrayOptions = {},
+ ): DiceTray {
+   let dieScale = checkScale(opts.dieScale ?? 2);
+-  const clacks = opts.clacks;
+-  if (
+-    clacks !== undefined &&
+-    (clacks.clacks.length === 0 ||
+-      clacks.clacks.some(
+-        ([start, ms]) => !Number.isFinite(start) || !Number.isFinite(ms) || ms <= 0,
+-      ))
+-  ) {
+-    throw new RangeError(
+-      'clacks must list at least one clack with a finite start and positive length',
+-    );
+-  }
++  const { clacks, coinClinks } = opts;
++  checkClacks('clacks', clacks);
++  checkClacks('coinClinks', coinClinks);
+   const own = !(target instanceof HTMLCanvasElement);
+   const canvas = own ? document.createElement('canvas') : target;
+   if (own) {
+@@ -318,11 +349,16 @@ export function createDiceTray(
+   let alpha = 1;
+   let aspect = 1;
+   let sound = 0;
+-  let audio: { ctx: AudioContext; noise: AudioBuffer } | null = null;
++  let audio: {
++    ctx: AudioContext;
++    noise: AudioBuffer;
++    coin: ReturnType<typeof coinBank>;
++  } | null = null;
+   let sources: AudioBufferSourceNode[] = [];
+-  // undefined while decoding; null without clacks or when they fail to decode.
+-  let decoded: { buffer: AudioBuffer; starts: number[] } | null | undefined = null;
+-  let decoding: Promise<void> | null = null;
++  let taps: AudioBufferSourceNode[] = []; // coin taps, left to ring out at settle
++  // Each a promise while decoding, then its clips, or null without the set or when it fails to decode.
++  let clackClips: Clips | null | Promise<Clips | null> = null;
++  let clinkClips: Clips | null | Promise<Clips | null> = null;
+   const vp = new Float32Array(16);
+   const shadowData = new Float32Array(MAX_BODIES * 4);
+   const instances = new Map<LabelSet, Float32Array>(); // reused across rolls, one per label set
+@@ -619,6 +655,7 @@ export function createDiceTray(
+     fadeStart = -1;
+     alpha = 1;
+     silence();
++    stopTaps();
+   }
+ 
+   function silence(): void {
+@@ -626,12 +663,19 @@ export function createDiceTray(
+     sources = [];
+   }
+ 
++  function stopTaps(): void {
++    for (const src of taps) src.stop();
++    taps = [];
++  }
++
+   /** Shows the final frame, resolves the roll, and schedules the fade. */
+   function settle(r: Roll): void {
+     r.step = r.plan.totalSteps;
+     r.done = true;
+     // Impacts end before the 24-step calm window; a suspended context must not play them on resume.
+     silence();
++    // A tap can ring out only on a running context; on resume an overdue one would play at once.
++    if (audio?.ctx.state !== 'running') stopTaps();
+     render();
+     show(r.text);
+     resolvePending();
+@@ -651,29 +695,41 @@ export function createDiceTray(
+       if (r.t0 < 0) {
+         r.t0 = now;
+         if (r.sound > 0 && audio !== null) {
+-          const { ctx, noise } = audio;
++          const { ctx, noise, coin } = audio;
+           const start = ctx.currentTime;
+-          const play = (): void => {
+-            const list = impacts(r.plan.bodies, r.plan.tailSteps);
+-            sources =
+-              decoded && clacks
+-                ? playClacks(
+-                    ctx,
+-                    decoded.buffer,
+-                    decoded.starts,
+-                    clacks,
+-                    list,
+-                    start,
+-                    r.sound,
+-                    PLAYBACK,
+-                  )
+-                : playImpacts(ctx, noise, list, start, r.sound, PLAYBACK);
++          const { bodies, tailSteps } = r.plan;
++          const list = impacts(bodies, tailSteps);
++          const isCoin = (b: number): boolean => bodies[b]?.shape === 'coin';
++          const clips = (c: Clips, at: Float32Array, volume: number) =>
++            playClacks(ctx, c.buffer, c.starts, c, at, start, volume, PLAYBACK);
++          const after = (
++            set: Clips | null | Promise<Clips | null>,
++            play: (c: Clips | null) => void,
++          ): void => {
++            if (!(set instanceof Promise)) play(set);
++            else
++              void set.then((c) => {
++                if (roll === r && !r.done && !disposed) play(c);
++              });
+           };
+-          if (decoded !== undefined) play();
+-          else
+-            void decoding?.then(() => {
+-              if (roll === r && !r.done && !disposed) play();
+-            });
++          after(clackClips, (clacks) => {
++            const dice = impactsOf(list, (b) => !isCoin(b));
++            sources.push(
++              ...(clacks
++                ? clips(clacks, dice, r.sound)
++                : playImpacts(ctx, noise, dice, start, r.sound, PLAYBACK)),
++            );
++          });
++          after(clinkClips, (clinks) => {
++            const hits = impactsOf(list, isCoin);
++            const { rims, taps: rests } = coinTaps(bodies, tailSteps);
++            sources.push(
++              ...clips(coin.hit, hits, r.sound),
++              ...clips(coin.rim, rims, r.sound),
++              ...(clinks ? clips(clinks, hits, r.sound * CLINK) : []),
++            );
++            taps = clips(coin.rim, rests, r.sound);
++          });
+         }
+       }
+       const s = ((now - r.t0) * PLAYBACK) / 1000 / DT;
+@@ -827,26 +883,9 @@ export function createDiceTray(
+       if (sound > 0 && typeof AudioContext === 'function') {
+         if (audio === null) {
+           const ctx = new AudioContext();
+-          audio = { ctx, noise: noiseBuffer(ctx) };
+-          if (clacks !== undefined) {
+-            decoded = undefined;
+-            // Inside the chain, so invalid base64 falls back to noise instead of throwing here.
+-            decoding = Promise.resolve()
+-              .then(() =>
+-                ctx.decodeAudioData(
+-                  Uint8Array.from(atob(clacks.audio), (c) => c.charCodeAt(0)).buffer,
+-                ),
+-              )
+-              .then((buffer) => {
+-                decoded = {
+-                  buffer,
+-                  starts: clackStarts(buffer.getChannelData(0), buffer.sampleRate, clacks),
+-                };
+-              })
+-              .catch(() => {
+-                decoded = null;
+-              });
+-          }
++          audio = { ctx, noise: noiseBuffer(ctx), coin: coinBank(ctx) };
++          clackClips = decode(ctx, clacks)?.then((c) => (clackClips = c)) ?? null;
++          clinkClips = decode(ctx, coinClinks)?.then((c) => (clinkClips = c)) ?? null;
+         }
+         // Resume inside the caller's gesture; the clacks are scheduled on the first frame.
+         if (audio.ctx.state === 'suspended') void audio.ctx.resume();
+diff --git a/src/sounds/index.test.ts b/src/sounds/index.test.ts
+index 02a506a..f94cd7f 100644
+--- a/src/sounds/index.test.ts
++++ b/src/sounds/index.test.ts
+@@ -1,6 +1,6 @@
+ import { createHash } from 'node:crypto';
+ import { describe, expect, it } from 'vitest';
+-import { diceClacks } from './index';
++import { coinClinks, diceClacks } from './index';
+ 
+ describe('diceClacks', () => {
+   it('lists 7 ordered clacks starting at -2.9 ms and ending by 430 ms', () => {
+@@ -27,3 +27,23 @@ describe('diceClacks', () => {
+     expect(hash).toBe('8fb77eb47ea985a7c8cab16863f41f99752aebed9b16ff5d956368ba6dc4ef25');
+   });
+ });
++
++describe('coinClinks', () => {
++  it('lists 6 clinks of 25–30 ms starting no earlier than 5 ms before the first sound', () => {
++    const { clacks } = coinClinks;
++    expect(clacks).toHaveLength(6);
++    for (const [start, length] of clacks) {
++      expect(Number.isFinite(start)).toBe(true);
++      expect(start).toBeGreaterThanOrEqual(-5);
++      expect(length).toBeGreaterThanOrEqual(25);
++      expect(length).toBeLessThanOrEqual(30);
++    }
++  });
++
++  it('decodes to an MP3 opening with a frame sync and no ID3 tag', () => {
++    const bytes = Buffer.from(coinClinks.audio, 'base64');
++    expect(bytes.subarray(0, 3).toString('latin1')).not.toBe('ID3');
++    expect(bytes[0]).toBe(0xff);
++    expect((bytes[1] ?? 0) & 0xe0).toBe(0xe0);
++  });
++});
+diff --git a/src/sounds/index.ts b/src/sounds/index.ts
+index 700f516..db5a996 100644
+--- a/src/sounds/index.ts
++++ b/src/sounds/index.ts
+@@ -13,3 +13,16 @@ export const diceClacks: ClackSet = {
+     [361.1, 56],
+   ],
+ };
++
++/** Six coin clinks recorded by Kenney (kenney.nl, CC0 1.0): one 16 kHz mono MP3, low-passed at 3 kHz. */
++export const coinClinks: ClackSet = {
++  audio: '//MoxAALAAFoAUIQAAwD4WBA5////5yH3Cd4g8QB8EDgPg4XB8oGPLqDBcP+Uh9QIPEDgff//l4g//8PyNr756GT72V6FL/b//MoxA8LKWr4AYEQAFPy6/2yEbCgMqe/KUrkhD/+Iw6AXTv+Xg+B/PCEsv////7/0+5Y7+1lyIrHp05W17NdVvIyp4qDo8Hh//MoxB0UewLsAYBQAX1NNIREks5jOs9GMHxGSMPCNyYoTEp9EocclUqeecSEj/4kjIVwlBciJJHOW3kA9C5LMeK7///////6//MoxAYNWw7wAYA4AP/////dV9B8cDRZy+co1NNrvZ2oZQi5ynHGnFDSh3qn7OZPMZTP6XSXIDjW+njxqv/////+yfT+59Gt//MoxAsOkibwAYA4AJxpEin2cxhuNz9lOJGmCgsjKhRweA4APJGE3fUxjD3eSRSxpEexQZDDyjnf7f+A6v///////6ng8LH9//MoxAsP2pboAYA4ABn97QkGoyJCKQNOQUgDkyxpujjUdm1PPPQ97GqacXZnnTf+2jFyBh70bdfjju/boOMEAIUV//////SS//MoxAYNkp7oAYA4AIWIa535zAWcSqY6lP83Ybi5ixDnTTUT/icXCphIGhpMueQZzZw2RzdP//pQ91HmetVMQU1FNC4wVVVV//MoxAoAAANIAcAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV',
++  clacks: [
++    [-0.1, 25],
++    [29.9, 25],
++    [59.9, 25],
++    [89.9, 25],
++    [119.9, 25],
++    [149.9, 25],
++  ],
++};

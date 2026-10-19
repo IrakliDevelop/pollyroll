@@ -8,3 +8,4 @@ e2e/**/*-snapshots
 .claude/worktrees
 src/sounds/index.ts
 docs/research/coin-lab
+docs/research/coin-sound.patch

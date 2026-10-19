@@ -187,13 +187,16 @@ In the tray, the physics supplies these events.
 
 ### Coin sound in the tray (not shipped)
 
-Built for 0.6.0 and removed before release. To restore it, start from these commits on
-`feat/0.6.0`:
+Built for 0.6.0 and removed before release.
 
-- 80d1992: the synth port, the bank of buffers, the rim contacts and the tray wiring.
-- 196f17e: per-coin tap timing, the shared rim-contact cap and separate decode states.
-- 0eef0f4: taps stopped when audio is suspended.
-- 0e2941f and 9a44497: the `coinClinks` data, 6 clinks in a 578 B MP3.
+[coin-sound.patch](coin-sound.patch) restores it on top of 0.6.0:
+`git apply docs/research/coin-sound.patch`. It brings back:
+
+- the synth port, its bank of buffers and the tray wiring;
+- rim contacts and per-coin taps;
+- `TrayOptions.coinClinks` and the `coinClinks` data (6 clinks in a 578 B MP3);
+- the `coinClinks` size line;
+- the tests for all of the above.
 
 What the tray version did:
 

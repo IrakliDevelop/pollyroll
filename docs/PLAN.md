@@ -151,9 +151,11 @@ isRollEvent(input: unknown): input is RollEvent;  // validates untrusted input, 
 - Settle: every body below 0.05 units/s linear and 0.1 rad/s angular speed for 24 consecutive steps.
 - _(amended, 0.6.0)_ Coin: physics hull a 16-sided prism, circumradius 0.65, thickness 0.2
   (vertices from half-angle square roots, no trigonometry); readouts are the two caps only; hull
-  buffers hold 32 vertices, 48 edges, 16 edges per face. Coins may have their own damping and
-  settle rule (keyed by shape, dice unchanged) so they visibly wobble flat; a scripted wobble tail
-  is the fallback if the simulated wobble is too short. Design: [designs/coin.md](designs/coin.md).
+  buffers hold 32 vertices, 48 edges, 16 edges per face. Coins are tossed, not flung: launched
+  upward at 6–8 units/s with 0.3× a die's horizontal speed and 25–40 rad/s of spin about a
+  seed-drawn horizontal axis (±5 about their own axis); dice-only rolls draw the seed stream as
+  before. Coins use the dice damping and settle rule; their simulated wobble is short (≈ 0.17 s),
+  accepted by the owner for this iteration. Design: [designs/coin.md](designs/coin.md).
 - Determinism rule from AGENTS.md: only `+ - * /` and `Math.sqrt` in the step; quaternion
   integration with a first-order update and explicit renormalization.
 - Tray: floor at y = 0; walls at the visible floor bounds (from canvas aspect and the fixed camera)
@@ -316,7 +318,7 @@ Chromium uses SwiftShader (`--use-angle=swiftshader --enable-unsafe-swiftshader`
   not coalesced under rapid sends.
 - Notation v2, image-texture skins, real shadow maps, persistent roll log.
 
-## 12. Status (2026-10-19, 0.5.0 branch)
+## 12. Status (2026-10-19, 0.6.0 branch)
 
 ### Verified (with evidence)
 
@@ -324,6 +326,15 @@ Chromium uses SwiftShader (`--use-angle=swiftshader --enable-unsafe-swiftshader`
 - 0.2.0 on `master` and npm (2026-10-19); 0.3.0 and 0.4.0 on `master`. 0.5.0 branch, locally: `pnpm verify`
   passes; e2e passes in Chromium and Firefox, including the cross-browser determinism hash. WebKit could not launch on the build machine (missing system
   libraries); CI runs it.
+- 0.5.0 on `master` and npm. 0.6.0 branch, locally: `pnpm verify` steps pass; e2e passes in Chromium
+  and Firefox (Firefox skips its WebGL tests on the build machine); WebKit runs in CI.
+- 0.6.0 coins (`d2`, `dc`): every value shows on top after remap (plan and property tests). Over 200
+  seeds per roll type: 100% of coins flip in the air; coins end on the rim before the tail in
+  4.5–8% of coin-only rolls and 13–34% when mixed with dice (leaning on them); `10dc` ends stacked
+  in 2% of rolls after re-simulation, smaller coin rolls in none; no 720-step cap hits. `10dc`
+  pre-simulates in ≈ 18 ms. Dice motion unchanged (golden hash `90088985`); 10-dice bench ≈ 4.5 ms.
+  Sizes: core 3.79 kB, render 27.48 kB, `diceClacks` 1.18 kB. Coins are silent (sound built and
+  removed; docs/research/coin-sound.patch).
 - Every die × every value shows the rolled value on top after remap (unit tests + property tests).
 - Settled dice are flat (0.5° rule, tested over 1,200 single-die and 100 mixed rolls).
 - No die rests on another at settle (lowest hull point > 0.1 above the floor before the tail):
