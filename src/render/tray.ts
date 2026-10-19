@@ -14,6 +14,7 @@ import { resolveSkin } from '../skins/presets';
 import type { MaterialParams, MaterialPreset, Skin, SkinRef } from '../skins/types';
 import { ATLAS_MAX_LEVEL, buildAtlas, LABEL_SETS } from './atlas';
 import { cameraPosition, fitScale, trayBounds, viewProjection } from './camera';
+import { fadeSteps } from './fade';
 import { attrib, createBuffer, createProgram } from './gl';
 import { DIE_VERTEX, dieFragment, LIGHT_DIR, SHADOW_FRAGMENT, SHADOW_VERTEX } from './shaders';
 import { impacts, noiseBuffer, playImpacts } from './sound';
@@ -98,7 +99,7 @@ interface Group {
 interface Roll {
   plan: RollPlan;
   groups: Group[];
-  dropped: Set<number>; // event dice indices dropped by keep/drop
+  fadeAt: Map<number, number>; // event dice index → step from which it draws faded
   eventSkin: SkinRef | undefined;
   skin: SkinGpu;
   scale: number;
@@ -495,7 +496,7 @@ export function createDiceTray(
         if (b === undefined || b.startStep > s) continue;
         const o = n * INST;
         writePose(b, s, b.value === null ? -1 : grp.row, grp.data, o);
-        const opacity = r.done && r.dropped.has(b.die) ? DROPPED_OPACITY : 1;
+        const opacity = s >= (r.fadeAt.get(b.die) ?? Infinity) ? DROPPED_OPACITY : 1;
         grp.data[o + 8] = opacity;
         const h = at(grp.data, o + 1) * scale;
         const fade = 1 - h / 4;
@@ -744,21 +745,13 @@ export function createDiceTray(
         }
         groups.push({ set, row, bodies, radius, data, count: 0 });
       });
-      // Summary indices are group-local: die i is the k-th die of its group.
-      const dropped = new Set<number>();
-      const seen: number[] = [];
-      event.dice.forEach((d, i) => {
-        const k = seen[d.group] ?? 0;
-        seen[d.group] = k + 1;
-        if (summary.groups[d.group]?.dropped.includes(k)) dropped.add(i);
-      });
       stop();
       show('');
       resolvePending();
       const r: Roll = {
         plan,
         groups,
-        dropped,
+        fadeAt: fadeSteps(event, summary, plan),
         eventSkin: event.skin,
         skin,
         scale,
