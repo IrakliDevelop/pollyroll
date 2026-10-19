@@ -4,6 +4,29 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - Unreleased
+
+### Added
+
+- `pollyroll/format`: `formatRoll(event, summary)` returns a one-line plain-text result, for
+  example `2d20kh1+5: [(7), 15] + 5 = 20` (dropped dice in parentheses, redacted values as `?`).
+  DOM-free, about 0.3 kB.
+- Roll summaries: every group carries `sign` (1 or −1) and `success` (the success comparison, or
+  `null`), so apps no longer re-parse the notation to describe a roll, and `rerolled` (the dice
+  replaced by a reroll, a subset of `dropped`). `RollEvent` is unchanged.
+- `pollyroll/render`: the tray canvas has `role="img"` and an `aria-label` with the settled result
+  ("Dice tray" while a roll animates or the tray is empty). `TrayOptions.announce` (default
+  `false`) also speaks each result through a polite live region.
+- A live demo on GitHub Pages, linked from the README.
+
+### Changed
+
+- `pollyroll/render`: a rerolled die fades to 35% as soon as its replacement is thrown, instead of
+  when the whole roll settles, so a reroll no longer looks like extra dice appearing. Keep/drop
+  drops still fade at settle.
+- The demo results line reads success counts from the summary instead of re-parsing notation,
+  and lists rerolled dice as `rerolled [..]`.
+
 ## [0.2.0] - 2026-10-19
 
 ### Added

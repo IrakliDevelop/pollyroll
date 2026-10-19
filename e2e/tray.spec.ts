@@ -153,6 +153,20 @@ test.describe('tray context loss', () => {
     expect(result).toEqual({ before: 'pending', after: 10 });
   });
 
+  test('labels the canvas with a roll whose context is lost before it settles', async ({
+    page,
+  }) => {
+    await open(page, '');
+    const label = await page.evaluate(async (event) => {
+      const done = window.__pollyrollTray.playRoll(event);
+      await new Promise((r) => setTimeout(r, 100));
+      window.__loseContext.loseContext();
+      await done;
+      return document.getElementById('tray')?.getAttribute('aria-label');
+    }, EVENT);
+    expect(label).toBe('2d6+3: [2, 5] + 3 = 10');
+  });
+
   test('resolves playRoll at once while lost and draws the dice on restore', async ({ page }) => {
     await open(page, '');
     await setLost(page, true);
@@ -606,6 +620,70 @@ test.describe('dropped dice', () => {
     // adv and dis fade different dice, so their changed pixels barely meet.
     expect(diff.overlap).toBeLessThan(0.2);
   });
+
+  test('fades a rerolled die once its replacement is thrown, before settle', async ({ page }) => {
+    // Same dice, waves and seed, so both rolls move identically; only `r` drops the 1.
+    const reroll: RollEvent = {
+      ...EVENT,
+      notation: '1d6r1',
+      dice: [
+        { type: 'd6', value: 1, group: 0, wave: 0 },
+        { type: 'd6', value: 5, group: 0, wave: 1 },
+      ],
+      modifier: 0,
+    };
+    const explode: RollEvent = { ...reroll, notation: '1d6x' };
+    const plan = planRoll(reroll, trayBounds(4 / 3, fitScale(2, 2, 4 / 3)));
+    const start = plan.bodies[1]?.startStep ?? NaN;
+    // Fake rAF fires on a 16 ms grid, so a multiple of 16 lands both shots on the same step.
+    const atMs = 16 * Math.round((((start + plan.totalSteps) / 2) * DT * 1000) / 16);
+    expect(atMs / 1000 / DT).toBeGreaterThan(start);
+    expect(atMs / 1000 / DT).toBeLessThan(plan.totalSteps);
+    await page.clock.install({ time: 0 });
+    await page.goto('/smoke.html');
+    await page.waitForFunction(() => window.__pollyroll.ready);
+    await needsWebGL2(page);
+    await page.clock.pauseAt(20_000);
+    const shot = async (event: RollEvent): Promise<string> => {
+      await page.evaluate((e) => void window.__pollyrollTray.playRoll(e), event);
+      await page.clock.runFor(atMs);
+      return (await page.locator('#tray').screenshot()).toString('base64');
+    };
+    const bright = await shot(explode);
+    const faded = await shot(reroll);
+    const diff = await page.evaluate(
+      async (shots) => {
+        const pixels = async (b64: string): Promise<Uint8ClampedArray> => {
+          const img = new Image();
+          img.src = `data:image/png;base64,${b64}`;
+          await img.decode();
+          const c = document.createElement('canvas');
+          c.width = img.width;
+          c.height = img.height;
+          const ctx = c.getContext('2d');
+          if (ctx === null) throw new Error('no 2D context');
+          ctx.drawImage(img, 0, 0);
+          return ctx.getImageData(0, 0, c.width, c.height).data;
+        };
+        const [pa, pb] = await Promise.all(shots.map(pixels));
+        if (pa === undefined || pb === undefined) throw new Error('no pixels');
+        const n = pa.length / 4;
+        let changed = 0;
+        let lighter = 0;
+        for (let i = 0; i < n; i++) {
+          const sa = (pa[4 * i] ?? 0) + (pa[4 * i + 1] ?? 0) + (pa[4 * i + 2] ?? 0);
+          const sb = (pb[4 * i] ?? 0) + (pb[4 * i + 1] ?? 0) + (pb[4 * i + 2] ?? 0);
+          if (Math.abs(sb - sa) <= 30) continue;
+          changed++;
+          if (sb > sa) lighter++;
+        }
+        return { changed: changed / n, lighter: changed === 0 ? 0 : lighter / changed };
+      },
+      [bright, faded],
+    );
+    expect(diff.changed).toBeGreaterThan(0.003);
+    expect(diff.lighter).toBeGreaterThan(0.95);
+  });
 });
 
 test.describe('sound', () => {
@@ -753,5 +831,74 @@ test.describe('sound', () => {
   test('creates no AudioContext by default', async ({ page }) => {
     await settled(page, '');
     expect(await page.evaluate(() => window.__audio.constructed)).toBe(0);
+  });
+});
+
+test.describe('tray accessibility', () => {
+  test('labels the canvas with the settled result and never with a replaced roll', async ({
+    page,
+  }) => {
+    await page.goto('/smoke.html');
+    await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
+    await needsWebGL2(page);
+    const labels = await page.evaluate(
+      async ([six, event]) => {
+        const canvas = document.getElementById('tray');
+        if (canvas === null) throw new Error('missing #tray');
+        const tray = window.__pollyrollTray;
+        await tray.playRoll(event);
+        const seen: (string | null)[] = [];
+        const record = (ms: MutationRecord[]): void => {
+          for (const m of ms) seen.push(m.oldValue);
+        };
+        const observer = new MutationObserver(record);
+        observer.observe(canvas, { attributeFilter: ['aria-label'], attributeOldValue: true });
+        await Promise.all([tray.playRoll(six), tray.playRoll(event)]);
+        record(observer.takeRecords());
+        observer.disconnect();
+        const final = canvas.getAttribute('aria-label');
+        return { seen: [...seen, final], final };
+      },
+      [SIX, EVENT] as const,
+    );
+    expect(labels.final).toBe('2d6+3: [2, 5] + 3 = 10');
+    expect(labels.seen).not.toContain('6d6: [1, 2, 3, 4, 5, 6] = 21');
+    expect(labels.seen[0]).toBe('2d6+3: [2, 5] + 3 = 10');
+  });
+
+  test('resets the label while a new roll animates', async ({ page }) => {
+    await page.goto('/smoke.html');
+    await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
+    await needsWebGL2(page);
+    const labels = await page.evaluate(
+      async ([a, b, invalid]) => {
+        window.__pollyrollTray.dispose();
+        const host = document.createElement('div');
+        host.style.cssText = 'width:800px;height:600px';
+        document.body.append(host);
+        const tray = window.__pollyrollCreate(host, { announce: true, reducedMotion: 'never' });
+        const canvas = host.querySelector('canvas');
+        const live = host.querySelector('[role="status"]');
+        if (canvas === null || live === null) throw new Error('missing canvas or live region');
+        const read = (): [string | null, string | null] => [
+          canvas.getAttribute('aria-label'),
+          live.textContent,
+        ];
+        await tray.playRoll(a);
+        await tray.playRoll(invalid).catch(() => undefined);
+        const afterInvalid = read();
+        const next = tray.playRoll(b);
+        const animating = read();
+        await next;
+        return { afterInvalid, animating, settled: read() };
+      },
+      [EVENT, SIX, INVALID] as const,
+    );
+    expect(labels.afterInvalid).toEqual(['2d6+3: [2, 5] + 3 = 10', '2d6+3: [2, 5] + 3 = 10']);
+    expect(labels.animating).toEqual(['Dice tray', '']);
+    expect(labels.settled).toEqual([
+      '6d6: [1, 2, 3, 4, 5, 6] = 21',
+      '6d6: [1, 2, 3, 4, 5, 6] = 21',
+    ]);
   });
 });

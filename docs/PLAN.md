@@ -4,7 +4,7 @@ Approved specification for the initial build. Decisions here are fixed; an agent
 genuine gap records its choice in [DECISIONS.md](DECISIONS.md) and continues (see
 [agents/delegation.md](agents/delegation.md) § Autonomous run).
 
-> **Amended 2026-10-06 by the owner after the 0.1.0 build, and 2026-10-19 for 0.2.0.** Sections below describe the shipped
+> **Amended 2026-10-06 by the owner after the 0.1.0 build, 2026-10-19 for 0.2.0, and 2026-10-19 for 0.3.0.** Sections below describe the shipped
 > behavior; lines marked _(amended)_ replace the original text, and the reason for each is in
 > [DECISIONS.md](DECISIONS.md). § 12 separates what is verified from what was decided and what is
 > still unverified.
@@ -26,16 +26,17 @@ built for shared (multiplayer) rolls from day one. Independent of Fieldnotes and
 | Assets    | None. Geometry generated in code; labels from a runtime Canvas2D glyph atlas; patterns procedural in GLSL; environment lighting analytic.                                                                                                                                                                            |
 | Transport | The library never touches the network. It creates and plays plain `RollEvent` objects.                                                                                                                                                                                                                               |
 | Fallback  | No WebGL2, or reduced motion → `playRoll` resolves immediately with the summary, no animation.                                                                                                                                                                                                                       |
-| Package   | Single package at the repo root with subpath exports: `pollyroll` (core, DOM-free), `pollyroll/render`, `pollyroll/react`.                                                                                                                                                                                           |
+| Package   | Single package at the repo root with subpath exports: `pollyroll` (core, DOM-free), `pollyroll/render`, `pollyroll/react`; _(amended, 0.3.0)_ `pollyroll/format` (DOM-free).                                                                                                                                         |
 | Tooling   | pnpm 10, Node ≥ 20.19, TypeScript strict (`tsconfig.base.json`), tsup (ESM + CJS + DTS), Vitest, Playwright, size-limit (`@size-limit/preset-small-lib`), fast-check (property tests), ESLint + Prettier (configs at repo root), husky + lint-staged.                                                                |
 
 ### Budgets (min+gzip, hard limits in `size-limit`)
 
-| Entry                                                                       | Limit |
-| --------------------------------------------------------------------------- | ----- |
-| `pollyroll` (core)                                                          | 4 KB  |
-| `pollyroll/render` (renderer + physics + geometry + shaders + skin presets) | 30 KB |
-| `pollyroll/react` (excluding react)                                         | 1 KB  |
+| Entry                                                                       | Limit  |
+| --------------------------------------------------------------------------- | ------ |
+| `pollyroll` (core)                                                          | 4 KB   |
+| `pollyroll/render` (renderer + physics + geometry + shaders + skin presets) | 30 KB  |
+| `pollyroll/react` (excluding react)                                         | 1 KB   |
+| `pollyroll/format` _(amended, 0.3.0)_                                       | 0.5 KB |
 
 Baseline being replaced: dice-box JS plus 2.1 MB of `public/assets` (ammo.js + themes).
 
@@ -107,7 +108,7 @@ createRoll(notation: string, opts?: {
   rng?: (maxExclusive: number) => number;         // default: crypto.getRandomValues + rejection sampling
   seed?: string; skin?: SkinRef; rollerId?: string; audience?: RollEvent['audience'];
 }): RollEvent;
-evaluate(event: RollEvent): RollSummary;          // { total | null, modifier, groups: [{ dice, kept, dropped, subtotal }] }
+evaluate(event: RollEvent): RollSummary;          // { total | null, modifier, groups: [{ die, sign, dice, kept, dropped, rerolled, subtotal, success }] } (amended, 0.3.0)
 redact(event: RollEvent): RollEvent;
 isRollEvent(input: unknown): input is RollEvent;  // validates untrusted input, including bounds
 ```
@@ -168,6 +169,7 @@ interface TrayOptions {
   fadeAfterMs?: number | null;                              // default null: dice stay until next roll
   labels?: Partial<Record<LabelSet, readonly string[]>>;    // (amended) custom labels, natural order
   sound?: number;                                           // (amended, 0.2.0) clack volume 0–1, default 0
+  announce?: boolean;                                       // (amended, 0.3.0) polite live region; default false
 }
 
 interface DiceTray {
@@ -181,7 +183,8 @@ interface DiceTray {
 ```
 
 - A new `playRoll` replaces the dice of the previous roll. _(amended, 0.2.0)_ Once settled, dropped
-  and rerolled dice draw at 35% opacity. An unpositioned host element gets `position: relative`.
+  dice draw at 35% opacity; _(amended, 0.3.0)_ a rerolled die drops to 35% when its replacement
+  wave is thrown. An unpositioned host element gets `position: relative`.
 - An `HTMLElement` target gets an absolutely positioned, transparent, pointer-events-none canvas.
 - Forward pass, GGX PBR (base color, metalness, roughness, clearcoat). _(amended)_ Fixed
   orthographic camera looking straight down (visible half height 5.1 world units at every aspect),
@@ -234,6 +237,7 @@ src/physics/                 vec/quat math, body, world, sim, sim.bench.ts (+ te
 src/skins/                   types, presets, patterns (GLSL strings)
 src/render/index.ts          render entry; tray, gl, shaders, atlas, env
 src/react/index.ts           react entry
+src/format/index.ts          format entry (amended, 0.3.0): formatRoll, type-only imports
 demo/                        Vite playground: notation input, skin picker, two-tray shared-roll demo
 e2e/                         Playwright: render smoke, screenshots, cross-browser determinism
 ```
@@ -282,12 +286,12 @@ Chromium uses SwiftShader (`--use-angle=swiftshader --enable-unsafe-swiftshader`
   not coalesced under rapid sends.
 - Notation v2, image-texture skins, real shadow maps, persistent roll log.
 
-## 12. Status (2026-10-19, 0.2.0 branch)
+## 12. Status (2026-10-19, 0.3.0 branch)
 
 ### Verified (with evidence)
 
 - 0.1.0 on `master`: CI green on Node 20.19 and 22 and e2e in Chromium, Firefox, WebKit.
-- 0.2.0 branch, locally: `pnpm verify` passes; e2e passes in Chromium and Firefox, including the
+- 0.2.0 on `master` and npm (2026-10-19). 0.3.0 branch, locally: `pnpm verify` passes; e2e passes in Chromium and Firefox, including the
   cross-browser determinism hash. WebKit could not launch on the build machine (missing system
   libraries); CI runs it.
 - Every die × every value shows the rolled value on top after remap (unit tests + property tests).
@@ -296,7 +300,8 @@ Chromium uses SwiftShader (`--use-angle=swiftshader --enable-unsafe-swiftshader`
   0% of rolls end with two dice interpenetrating more than 0.02 die units (0.1.0: 25–33% of mixed
   d20/d12/d8 rolls). During the roll (before the settle tail), 40 seeds × 4 crowded roll types:
   penetration never exceeds 0.3 die units and stays above 0.1 for at most one 1/120 s step.
-- Size budgets: core ≈ 3.73 kB / 4, render ≈ 24.9 kB / 30, react ≈ 0.50 kB / 1 (min+gzip).
+- Size budgets: core ≈ 3.76 kB / 4, render ≈ 25.3 kB / 30, react ≈ 0.50 kB / 1, format ≈ 0.34 kB /
+  0.5 (min+gzip).
 - 10-dice pre-simulation bench ≈ 4.8 ms mean (seed 0; 100-seed mean ≈ 4.35 ms; target ≤ 5 ms).
 - 60 fps during animation with 10, 18 and 30 dice at 1× and 4× Chrome CPU throttle on a desktop
   GPU (NVIDIA RTX 4060 Laptop, ANGLE GL; p95 ≤ 17.1 ms).

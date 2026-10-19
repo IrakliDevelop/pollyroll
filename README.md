@@ -3,6 +3,8 @@
 Lightweight 3D dice for the web with zero runtime dependencies. It has a WebGL2 renderer and a
 deterministic physics engine, and rolls are result-first, so it works for multiplayer.
 
+**[Live demo](https://iraklidevelop.github.io/pollyroll/)**: notation input, skin editor, and a two-tray shared roll.
+
 - **Result-first.** Values are drawn before any physics runs. The simulation only animates the dice,
   and a symmetry remap turns each settled die so its top face shows the value already chosen.
 - **Shared rolls.** A roll is a plain JSON `RollEvent`. Every client that plays the same event shows
@@ -26,6 +28,7 @@ npm install pollyroll
 | `pollyroll`        | Notation parser, `createRoll`, `evaluate`, `redact`, `isRollEvent` | Node, browsers |
 | `pollyroll/render` | `createDiceTray`, skins and presets                                | Browsers       |
 | `pollyroll/react`  | `useDiceTray` hook and `<DiceTray />` overlay                      | React          |
+| `pollyroll/format` | `formatRoll(event, summary)`: one-line plain-text result           | Node, browsers |
 
 ## Quick start
 
@@ -48,7 +51,7 @@ absolutely positioned and ignores pointer events; an element with `position: sta
 ```ts
 parse(notation: string): RollAst;            // throws PollyrollSyntaxError { message, index }
 createRoll(notation, opts?): RollEvent;      // opts: { rng?, seed?, skin?, rollerId?, audience? }
-evaluate(event: RollEvent): RollSummary;     // { total | null, modifier, groups: [{ die, dice, kept, dropped, subtotal }] }
+evaluate(event: RollEvent): RollSummary;     // { total | null, modifier, groups: [{ die, sign, dice, kept, dropped, rerolled, subtotal, success }] }
 redact(event: RollEvent): RollEvent;         // copy with every value null and wave ≥ 1 dice removed
 isRollEvent(input: unknown): input is RollEvent; // validates untrusted input, including bounds
 ```
@@ -75,8 +78,8 @@ Limits are at most 20 terms, at most 200 dice before explosions and rerolls, and
 256 characters. Examples: `2d20kh1+5`, `4d6dl1`, `4d6r1`, `2d20ro1`, `3d6!`, `d6!>=5`, `5d10>=7+1`,
 `4d6kh3>=5`, `adv+3`, `1d%`, `4dF`.
 
-- **Rerolls** keep the replaced die on the table: it is listed in `dropped`, its replacement comes
-  in the next wave, and keep/drop ranks only the dice that were not rerolled.
+- **Rerolls** keep the replaced die on the table: it is listed in `dropped` and `rerolled`, its
+  replacement comes in the next wave, and keep/drop ranks only the dice that were not rerolled.
 - **Success counting** applies after keep/drop. A comparison written right after a bare `!` or `r`
   belongs to that modifier (`d6!>=5` explodes on 5+); put the success comparison first
   (`4d6>=5r`) or after an explicit number (`4d6r1>=5`).
@@ -109,6 +112,24 @@ The event never carries totals or kept/dropped dice; `evaluate(event)` derives t
 index of the dice term (constants are not counted). `wave` is 0 for the initial throw and 1 or more
 for explosions and rerolls.
 
+## Format (`pollyroll/format`)
+
+```ts
+formatRoll(event: RollEvent, summary: RollSummary): string;
+```
+
+```ts
+import { evaluate } from 'pollyroll';
+import { formatRoll } from 'pollyroll/format';
+
+formatRoll(event, evaluate(event));
+// 2d20kh1+5 rolling [7, 15]:     '2d20kh1+5: [(7), 15] + 5 = 20'
+// 1d20-1d4+2 rolling [12], [4]:  '1d20-1d4+2: [12] - [4] + 2 = 10'
+```
+
+Dropped dice are in parentheses and redacted values are `?`. The result is plain text: set it with
+`textContent`, not as HTML, since `notation` may come from another client.
+
 ## Renderer (`pollyroll/render`)
 
 ```ts
@@ -122,6 +143,7 @@ const tray = createDiceTray(target, {
   fadeAfterMs: null, // number: fade the dice out after they settle
   labels: { d6: ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'] }, // optional custom labels per die
   sound: 0, // 0–1: volume of procedural impact clacks; 0 (default) never creates an AudioContext
+  announce: false, // true: speak each settled result through a polite aria-live region
 });
 
 tray.playRoll(event); // Promise<RollSummary>; a new roll replaces the previous dice
@@ -151,11 +173,16 @@ The label font is the skin's `font` if it has one, otherwise `labelFont`. If the
   shrinks in 0.05 steps until its dice fit the tray, so a single d20 shows at full size while 20d6
   stays readable without overlapping. The size sets the walls as well as the drawing, so both sides
   of a shared roll need the same `dieScale` and tray aspect to see identical motion.
-- **Dropped dice fade:** once a roll settles, dice that `evaluate` lists as dropped (keep/drop and
-  rerolled dice) are drawn at 35% opacity with their shadows, so the kept dice stand out.
+- **Dropped dice fade:** dice that `evaluate` lists as dropped are drawn at 35% opacity with their
+  shadows, so the kept dice stand out. A rerolled die fades as soon as its replacement is thrown;
+  keep/drop drops fade once the roll settles, since later waves can change the ranking.
 - **Sound:** with `sound` above 0 the tray plays a short procedural clack for each hard impact,
   derived from the dice tracks (no audio files). Browsers start audio only after a user gesture, so a
   roll that does not start from a click may stay silent.
+- **Accessibility:** the canvas has `role="img"` and, once a roll settles, an `aria-label` with the
+  result from `formatRoll` ("Dice tray" while a roll animates or the tray is empty). On a canvas
+  you pass in, these replace its own `role` and `aria-label`, and `announce` inserts the live
+  region right after it.
 - **Superseded rolls:** if a roll is replaced, cleared, or disposed, its promise still resolves with
   that roll's own summary. It never rejects in these cases.
 - **Dice limit:** at most 30 dice are animated per tray (a d100 counts as two). Dice beyond that

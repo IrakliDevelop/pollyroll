@@ -20,5 +20,12 @@
     "limit": "1 KB",
     "ignore": ["react", "react-dom", "pollyroll", "pollyroll/render"],
     "gzip": true
+  },
+  {
+    "name": "pollyroll/format",
+    "path": "dist/format.js",
+    "import": "*",
+    "limit": "0.5 KB",
+    "gzip": true
   }
 ]

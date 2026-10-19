@@ -17,6 +17,7 @@ export function evaluate(event: RollEvent): RollSummary {
 
   let total: number | null = event.modifier;
   const groups = buckets.map(({ term, dice: rolled }): RollGroupSummary => {
+    const { die, sign, success } = term;
     const dice = rolled.map((d) => d.value);
     // Dice per wave not yet matched to the die they reroll.
     const spare: number[] = [];
@@ -35,7 +36,7 @@ export function evaluate(event: RollEvent): RollSummary {
     });
     if (dice.includes(null)) {
       total = null;
-      return { die: term.die, dice, kept: [], dropped: [], subtotal: null };
+      return { die, sign, dice, kept: [], dropped: [], rerolled: [], subtotal: null, success };
     }
     let keep = pairs;
     let drop: [number, number][] = [];
@@ -53,7 +54,16 @@ export function evaluate(event: RollEvent): RollSummary {
     }
     if (total !== null) total += subtotal;
     const dropped = ascending([...drop, ...rerolled]);
-    return { die: term.die, dice, kept: ascending(keep), dropped, subtotal };
+    return {
+      die,
+      sign,
+      dice,
+      kept: ascending(keep),
+      dropped,
+      rerolled: ascending(rerolled),
+      subtotal,
+      success,
+    };
   });
 
   return { total, modifier: event.modifier, groups };
