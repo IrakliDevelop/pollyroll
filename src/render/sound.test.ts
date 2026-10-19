@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { impacts, playImpacts } from './sound';
+import { clackStarts, impacts, playClacks, playImpacts } from './sound';
+import type { ClackSet } from './sound';
 
 const DT = 1 / 120;
 
@@ -110,5 +111,83 @@ describe('playImpacts', () => {
     playImpacts(fake, {} as AudioBuffer, new Float32Array([120, 15]), 10, 1, 1.5);
     expect(starts).toHaveLength(1);
     expect(starts[0]).toBeCloseTo(10 + 2 / 3, 9);
+  });
+});
+
+describe('clackStarts', () => {
+  it('measures clack starts from the first sample above 5% of the peak, clamped at 0', () => {
+    // 16 kHz: a 0.01 blip at sample 100 stays under 5% of the 1.0 spike at 66 ms (sample 1056).
+    const data = new Float32Array(16000 * 0.2);
+    data[100] = 0.01;
+    data[1056] = -1;
+    const set: ClackSet = {
+      audio: '',
+      clacks: [
+        [-0.8, 61],
+        [70.2, 47],
+        [-100, 10],
+      ],
+    };
+    const starts = clackStarts(data, 16000, set);
+    expect(starts).toHaveLength(3);
+    expect(starts[0]).toBeCloseTo(0.066 - 0.0008, 9);
+    expect(starts[1]).toBeCloseTo(0.066 + 0.0702, 9);
+    expect(starts[2]).toBe(0);
+  });
+});
+
+describe('playClacks', () => {
+  it('plays clack (i · 5 + 1) % n per impact with varied rate and strength gain, skipping past ones', () => {
+    const calls: { buffer: unknown; args: number[]; rate: number }[] = [];
+    const gains: { value: number }[] = [];
+    const node = <T extends object>(props: T) => ({ ...props, connect: <N>(n: N): N => n });
+    const ctx = {
+      currentTime: 10.5,
+      destination: {},
+      createBufferSource: () => {
+        const src = node({
+          buffer: null,
+          playbackRate: { value: 1 },
+          start: (...args: number[]) =>
+            calls.push({ buffer: src.buffer, args, rate: src.playbackRate.value }),
+          stop: () => undefined,
+        });
+        return src;
+      },
+      createGain: () => {
+        const gain = { value: 0 };
+        gains.push(gain);
+        return node({ gain });
+      },
+    };
+    // Boundary fake: only the AudioContext members playClacks uses.
+    const fake = ctx as unknown as AudioContext;
+    const buffer = {} as AudioBuffer;
+    const set: ClackSet = {
+      audio: '',
+      clacks: Array.from({ length: 7 }, (_, k): [number, number] => [k * 10, 20 + k]),
+    };
+    const starts = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6];
+    // At start 10 and rate 1.5, steps 0, 120, 240, 360 fall at 10, 10.667, 11.333, 12 s.
+    const list = new Float32Array([0, 15, 120, 15, 240, 7.5, 360, 30]);
+    const sources = playClacks(fake, buffer, starts, set, list, 10, 0.8, 1.5);
+    expect(sources).toHaveLength(3);
+    // Impacts 1, 2, 3: clacks 6, 4, 2; rates 0.94 + 0.12 · (7, 1, 8) / 12.
+    const expected = [
+      { when: 10 + 2 / 3, offset: 0.6, duration: 0.026, rate: 1.01, gain: 0.8 },
+      { when: 10 + 4 / 3, offset: 0.4, duration: 0.024, rate: 0.95, gain: 0.4 },
+      { when: 12, offset: 0.2, duration: 0.022, rate: 1.02, gain: 0.8 },
+    ];
+    expect(calls).toHaveLength(3);
+    calls.forEach((c, i) => {
+      const e = expected[i];
+      expect(c.buffer).toBe(buffer);
+      expect(c.args).toHaveLength(3);
+      expect(c.args[0]).toBeCloseTo(e?.when ?? NaN, 9);
+      expect(c.args[1]).toBeCloseTo(e?.offset ?? NaN, 9);
+      expect(c.args[2]).toBeCloseTo(e?.duration ?? NaN, 9);
+      expect(c.rate).toBeCloseTo(e?.rate ?? NaN, 9);
+      expect(gains[i]?.value).toBeCloseTo(e?.gain ?? NaN, 9);
+    });
   });
 });

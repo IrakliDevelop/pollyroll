@@ -83,3 +83,39 @@ export function playImpacts(
   }
   return sources;
 }
+
+/** Clack starts (s), measured from the first sound: MP3 decoders differ in trimming the encoder delay. */
+export function clackStarts(data: Float32Array, sampleRate: number, set: ClackSet): number[] {
+  let peak = 0;
+  for (const x of data) peak = Math.max(peak, Math.abs(x));
+  const anchor = data.findIndex((x) => Math.abs(x) > 0.05 * peak) / sampleRate;
+  return set.clacks.map(([ms]) => Math.max(0, anchor + ms / 1000));
+}
+
+/** Schedules one recorded clack per impact at `start + step · DT / rate`, skipping past ones; returns them. */
+export function playClacks(
+  ctx: AudioContext,
+  buffer: AudioBuffer,
+  starts: readonly number[],
+  set: ClackSet,
+  list: Float32Array,
+  start: number,
+  volume: number,
+  rate: number,
+): AudioBufferSourceNode[] {
+  const sources: AudioBufferSourceNode[] = [];
+  for (let i = 0; i < list.length / 2; i++) {
+    const when = start + ((list[i * 2] ?? 0) * DT) / rate;
+    if (when < ctx.currentTime) continue;
+    const k = (i * 5 + 1) % set.clacks.length;
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.playbackRate.value = 0.94 + (0.12 * ((i * 7) % 13)) / 12;
+    const gain = ctx.createGain();
+    gain.gain.value = volume * Math.min(1, (list[i * 2 + 1] ?? 0) / FULL_STRENGTH);
+    src.connect(gain).connect(ctx.destination);
+    src.start(when, starts[k] ?? 0, (set.clacks[k]?.[1] ?? 0) / 1000);
+    sources.push(src);
+  }
+  return sources;
+}

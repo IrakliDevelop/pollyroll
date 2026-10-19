@@ -11,9 +11,14 @@ import type { Skin } from '../src/skins/types';
 interface AudioRecord {
   constructed: number;
   starts: number[];
+  startArgs: number[][];
+  filters: number;
   stops: number;
   gains: { value: number }[];
   closes: number;
+  /** How decodeAudioData settles: at once, by rejecting, or when `release` is called. */
+  decode: 'resolve' | 'reject' | 'hold';
+  release: () => void;
 }
 
 declare global {
@@ -759,7 +764,17 @@ test.describe('dropped dice', () => {
 test.describe('sound', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
-      const rec: AudioRecord = { constructed: 0, starts: [], stops: 0, gains: [], closes: 0 };
+      const rec: AudioRecord = {
+        constructed: 0,
+        starts: [],
+        startArgs: [],
+        filters: 0,
+        stops: 0,
+        gains: [],
+        closes: 0,
+        decode: 'resolve',
+        release: () => undefined,
+      };
       window.__audio = rec;
       const node = <T extends object>(props: T): T & { connect: <N>(n: N) => N } => ({
         ...props,
@@ -779,17 +794,33 @@ test.describe('sound', () => {
         createBufferSource() {
           return node({
             buffer: null,
-            start: (when: number) => rec.starts.push(when),
+            playbackRate: { value: 1 },
+            start: (...args: number[]) => {
+              rec.starts.push(args[0] ?? NaN);
+              rec.startArgs.push(args);
+            },
             stop: () => rec.stops++,
           });
         }
         createBiquadFilter() {
+          rec.filters++;
           return node({ type: '', frequency: { value: 0 }, Q: { value: 0 } });
         }
         createGain() {
           const gain = { value: 0 };
           rec.gains.push(gain);
           return node({ gain });
+        }
+        decodeAudioData(): Promise<unknown> {
+          // 16 kHz clip whose first sound is at 66 ms.
+          const data = new Float32Array(8000);
+          data[1056] = 1;
+          const buffer = { sampleRate: 16000, getChannelData: () => data };
+          if (rec.decode === 'reject') return Promise.reject(new Error('undecodable'));
+          if (rec.decode === 'resolve') return Promise.resolve(buffer);
+          return new Promise((resolve) => {
+            rec.release = () => resolve(buffer);
+          });
         }
         resume() {
           this.state = 'running';
@@ -907,6 +938,107 @@ test.describe('sound', () => {
     expect(result.atFive).toEqual(result.atOne);
     expect(result.muted).toEqual([]);
     expect(result.error).toBe('RangeError');
+  });
+
+  /** Plays EVENT to settle on a fresh 800 × 600 tray with recorded clacks; returns what was scheduled. */
+  const clackRoll = (page: Page, decode: AudioRecord['decode']) =>
+    page.evaluate(
+      async ({ event, decode }) => {
+        const a = window.__audio;
+        a.decode = decode;
+        a.starts = [];
+        a.startArgs = [];
+        a.filters = 0;
+        const canvas = document.createElement('canvas');
+        canvas.style.cssText = 'width: 800px; height: 600px';
+        document.body.append(canvas);
+        const tray = window.__pollyrollCreate(canvas, {
+          labelFont: 'sans-serif',
+          reducedMotion: 'never',
+          sound: 1,
+          clacks: {
+            audio: 'AAAA',
+            clacks: [
+              [-0.8, 61],
+              [70.2, 47],
+              [127.2, 36],
+            ],
+          },
+        });
+        await tray.playRoll(event);
+        tray.dispose();
+        return { args: a.startArgs, filters: a.filters };
+      },
+      { event: EVENT, decode },
+    );
+
+  test('plays recorded clacks from TrayOptions.clacks instead of noise bursts', async ({
+    page,
+  }) => {
+    await settled(page, '');
+    await needsWebGL2(page);
+    const { args, filters } = await clackRoll(page, 'resolve');
+    expect(args.length).toBeGreaterThanOrEqual(3);
+    expect(filters).toBe(0);
+    // Offsets are measured from the stub clip's first sound at 66 ms.
+    const offsets = [0.0652, 0.1362, 0.1932];
+    for (const [when, offset, duration] of args) {
+      expect(when).toBeGreaterThanOrEqual(0);
+      expect(offsets.some((o) => Math.abs(o - (offset ?? NaN)) < 1e-6)).toBe(true);
+      expect(duration).toBeGreaterThan(0.035);
+      expect(duration).toBeLessThan(0.062);
+    }
+  });
+
+  test('falls back to noise bursts when the clacks cannot be decoded', async ({ page }) => {
+    await settled(page, '');
+    await needsWebGL2(page);
+    const { args, filters } = await clackRoll(page, 'reject');
+    expect(args.length).toBeGreaterThanOrEqual(3);
+    expect(filters).toBe(args.length);
+    for (const a of args) expect(a).toHaveLength(1);
+  });
+
+  test('schedules nothing for a roll replaced before its clacks decode', async ({ page }) => {
+    await settled(page, '');
+    await needsWebGL2(page);
+    const result = await page.evaluate(async (event) => {
+      const a = window.__audio;
+      a.decode = 'hold';
+      a.startArgs = [];
+      const canvas = document.createElement('canvas');
+      canvas.style.cssText = 'width: 800px; height: 600px';
+      document.body.append(canvas);
+      const tray = window.__pollyrollCreate(canvas, {
+        labelFont: 'sans-serif',
+        reducedMotion: 'never',
+        sound: 1,
+        clacks: {
+          audio: 'AAAA',
+          clacks: [
+            [-0.8, 61],
+            [70.2, 47],
+            [127.2, 36],
+          ],
+        },
+      });
+      void tray.playRoll(event);
+      // Both rolls draw their first frame while the decode is still pending.
+      await new Promise(requestAnimationFrame);
+      const second = tray.playRoll(event);
+      await new Promise(requestAnimationFrame);
+      a.release();
+      await second;
+      const replaced = a.startArgs.length;
+      a.startArgs = [];
+      await tray.playRoll(event);
+      const decoded = a.startArgs.length;
+      tray.dispose();
+      return { replaced, decoded };
+    }, EVENT);
+    expect(result.decoded).toBeGreaterThanOrEqual(3);
+    // Only the current roll's clacks: the replaced roll would double the count.
+    expect(result.replaced).toBe(result.decoded);
   });
 
   test('creates no AudioContext by default', async ({ page }) => {
