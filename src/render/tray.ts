@@ -267,6 +267,7 @@ export function createDiceTray(
   }
   /** Labels the canvas with a result and announces it; '' restores the idle label. */
   function show(text: string): void {
+    if (disposed) return;
     canvas.setAttribute('aria-label', text || 'Dice tray');
     if (live !== null) live.textContent = text;
   }
@@ -683,6 +684,7 @@ export function createDiceTray(
     frame = 0;
     if (gl !== null) dropGpu(gl, false);
     // The outcome is known; the dice redraw when the context is restored.
+    if (roll !== null && !roll.done) show(roll.text);
     resolvePending();
   };
   const onRestored = (): void => {

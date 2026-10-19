@@ -153,6 +153,20 @@ test.describe('tray context loss', () => {
     expect(result).toEqual({ before: 'pending', after: 10 });
   });
 
+  test('labels the canvas with a roll whose context is lost before it settles', async ({
+    page,
+  }) => {
+    await open(page, '');
+    const label = await page.evaluate(async (event) => {
+      const done = window.__pollyrollTray.playRoll(event);
+      await new Promise((r) => setTimeout(r, 100));
+      window.__loseContext.loseContext();
+      await done;
+      return document.getElementById('tray')?.getAttribute('aria-label');
+    }, EVENT);
+    expect(label).toBe('2d6+3: [2, 5] + 3 = 10');
+  });
+
   test('resolves playRoll at once while lost and draws the dice on restore', async ({ page }) => {
     await open(page, '');
     await setLost(page, true);

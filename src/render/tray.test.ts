@@ -103,8 +103,10 @@ describe('createDiceTray without WebGL2', () => {
     noWebGl();
     const plain = document.createElement('div');
     document.body.appendChild(plain);
-    await createDiceTray(plain).playRoll(event);
+    const quiet = createDiceTray(plain);
+    await quiet.playRoll(event);
     expect(plain.querySelector('[aria-live]')).toBeNull();
+    quiet.dispose();
 
     const host = document.createElement('div');
     document.body.appendChild(host);
@@ -129,6 +131,7 @@ describe('createDiceTray without WebGL2', () => {
     expect(canvas.nextElementSibling?.getAttribute('role')).toBe('status');
     await tray.playRoll(event);
     tray.dispose();
+    tray.clear();
     expect(canvas.hasAttribute('role')).toBe(false);
     expect(canvas.hasAttribute('aria-label')).toBe(false);
     expect(box.children).toHaveLength(1);
