@@ -607,7 +607,8 @@ test('plays the track at 1.5× real time, clocked from the first drawn frame', a
 
 test('settles a roll received in a hidden tab without any frame', async ({ page }) => {
   await page.clock.install({ time: 0 });
-  await open(page, '');
+  await page.goto('/smoke.html');
+  await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
   await needsWebGL2(page);
   await page.clock.pauseAt(20_000);
   const result = await page.evaluate(async (event) => {
