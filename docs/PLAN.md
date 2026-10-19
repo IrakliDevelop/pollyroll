@@ -107,7 +107,7 @@ createRoll(notation: string, opts?: {
   rng?: (maxExclusive: number) => number;         // default: crypto.getRandomValues + rejection sampling
   seed?: string; skin?: SkinRef; rollerId?: string; audience?: RollEvent['audience'];
 }): RollEvent;
-evaluate(event: RollEvent): RollSummary;          // { total | null, modifier, groups: [{ dice, kept, dropped, subtotal }] }
+evaluate(event: RollEvent): RollSummary;          // { total | null, modifier, groups: [{ die, sign, dice, kept, dropped, subtotal, success }] } (amended, 0.3.0)
 redact(event: RollEvent): RollEvent;
 isRollEvent(input: unknown): input is RollEvent;  // validates untrusted input, including bounds
 ```
