@@ -6,6 +6,7 @@ import { getPolyhedron } from '../src/geometry/polyhedra';
 import { planRoll, slots } from '../src/physics/plan';
 import { DT } from '../src/physics/world';
 import { fitScale, trayBounds } from '../src/render/camera';
+import { clackStarts } from '../src/render/sound';
 import type { ClackSet } from '../src/render/sound';
 import { diceClacks } from '../src/sounds';
 import type { Skin } from '../src/skins/types';
@@ -1065,18 +1066,40 @@ test.describe('sound', () => {
   });
 });
 
-test('decodes the recorded diceClacks to a 0.43 s clip', async ({ page }) => {
+test('decodes the recorded clacks and aligns every clack to a sound', async ({ page }) => {
   await page.goto('/smoke.html?reduced');
   test.skip(
     !(await page.evaluate(() => 'OfflineAudioContext' in window)),
     'needs OfflineAudioContext',
   );
-  const duration = await page.evaluate(async (audio) => {
+  const { sampleRate, data } = await page.evaluate(async (audio) => {
     const bytes = Uint8Array.from(atob(audio), (c) => c.charCodeAt(0));
     const buffer = await new OfflineAudioContext(1, 1, 48000).decodeAudioData(bytes.buffer);
-    return buffer.duration;
+    return { sampleRate: buffer.sampleRate, data: Array.from(buffer.getChannelData(0)) };
   }, diceClacks.audio);
-  expect(Math.abs(duration - 0.43)).toBeLessThanOrEqual(0.03);
+  const duration = data.length / sampleRate;
+  // Trimmed decoders give about 0.43 s; WebKit keeps the encoder delay and padding (about 0.504 s).
+  expect(duration).toBeGreaterThanOrEqual(0.4);
+  expect(duration).toBeLessThanOrEqual(0.55);
+  const peakIn = (from: number, to: number): number =>
+    data.slice(from, to).reduce((m, x) => Math.max(m, Math.abs(x)), 0);
+  const peak = peakIn(0, data.length);
+  const starts = clackStarts(Float32Array.from(data), sampleRate, diceClacks);
+  for (const [k, start] of starts.entries()) {
+    const at = Math.round(start * sampleRate);
+    expect(peakIn(at, at + Math.round(0.008 * sampleRate)), `clack ${k}`).toBeGreaterThanOrEqual(
+      0.1 * peak,
+    );
+    expect(start + (diceClacks.clacks[k]?.[1] ?? Infinity) / 1000).toBeLessThanOrEqual(duration);
+  }
+  // An untrimmed decoder (WebKit) leads with the encoder delay; every start moves with the sound.
+  const delayed = new Float32Array(Math.round(0.066 * sampleRate) + data.length);
+  delayed.set(data, delayed.length - data.length);
+  for (const [k, start] of clackStarts(delayed, sampleRate, diceClacks).entries()) {
+    expect(Math.abs(start - (starts[k] ?? NaN) - 0.066), `delayed clack ${k}`).toBeLessThanOrEqual(
+      0.001,
+    );
+  }
 });
 
 test.describe('tray accessibility', () => {
