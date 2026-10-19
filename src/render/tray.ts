@@ -779,7 +779,8 @@ export function createDiceTray(
         pending = { resolve, summary };
       });
       // While lost the outcome resolves now; the dice draw on restore if this roll is still current.
-      if (reduced() || lost) {
+      // A hidden tab runs no frames, so the roll would otherwise replay in full on return.
+      if (reduced() || lost || document.hidden) {
         settle(r);
         return done;
       }

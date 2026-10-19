@@ -605,6 +605,26 @@ test('plays the track at 1.5× real time, clocked from the first drawn frame', a
   expect(Math.abs(ms / 1000 - (totalSteps * DT) / PLAYBACK)).toBeLessThan(0.15);
 });
 
+test('settles a roll received in a hidden tab without any frame', async ({ page }) => {
+  await page.clock.install({ time: 0 });
+  await open(page, '');
+  await needsWebGL2(page);
+  await page.clock.pauseAt(20_000);
+  const result = await page.evaluate(async (event) => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+    // MessageChannel is not faked by page.clock, so this macrotask runs while rAF stays paused.
+    const tick = new Promise<'pending'>((r) => {
+      const { port1, port2 } = new MessageChannel();
+      port1.onmessage = () => r('pending');
+      port2.postMessage(null);
+    });
+    const done = window.__pollyrollTray.playRoll(event).then((s) => s.total);
+    const total = await Promise.race([done, tick]);
+    return { total, label: document.getElementById('tray')?.getAttribute('aria-label') };
+  }, EVENT);
+  expect(result).toEqual({ total: 10, label: '2d6+3: [2, 5] + 3 = 10' });
+});
+
 test.describe('dropped dice', () => {
   test.skip(
     ({ browserName }) => browserName !== 'chromium',
