@@ -97,6 +97,12 @@ async function coverage(
   }, png.toString('base64'));
 }
 
+/** Skips the test when the open page has no WebGL2, as in CI's headless Firefox. */
+async function needsWebGL2(page: Page): Promise<void> {
+  const ok = await page.evaluate(() => !!document.createElement('canvas').getContext('webgl2'));
+  test.skip(!ok, 'needs WebGL2');
+}
+
 /** Opens the smoke page, waits for its roll to settle, and collects page errors. */
 async function open(page: Page, query: string): Promise<string[]> {
   const errors: string[] = [];
@@ -385,6 +391,7 @@ test.describe('tray canvas sizing at devicePixelRatio 2', () => {
     page,
   }) => {
     await blank(page);
+    await needsWebGL2(page);
     const size = await page.evaluate(async () => {
       const canvas = document.createElement('canvas');
       canvas.width = 300;
@@ -399,6 +406,7 @@ test.describe('tray canvas sizing at devicePixelRatio 2', () => {
 
   test('leaves a stylesheet-sized canvas responsive', async ({ page }) => {
     await blank(page);
+    await needsWebGL2(page);
     const size = await page.evaluate(async () => {
       const style = document.createElement('style');
       style.textContent = '.fill { width: 100%; }';
@@ -515,6 +523,7 @@ test.describe('tray robustness', () => {
 test('a failing playRoll leaves the current roll animating and pending', async ({ page }) => {
   await page.goto('/smoke.html');
   await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
+  await needsWebGL2(page);
   const result = await page.evaluate(
     async ([six, invalid]) => {
       const tray = window.__pollyrollTray;
@@ -656,6 +665,7 @@ test.describe('sound', () => {
     page,
   }) => {
     await settled(page, '?sound');
+    await needsWebGL2(page);
     const first = await page.evaluate(() => ({
       constructed: window.__audio.constructed,
       starts: window.__audio.starts.length,
@@ -712,6 +722,7 @@ test.describe('sound', () => {
 
   test('setSound clamps to 1, mutes at 0, and rejects non-finite volumes', async ({ page }) => {
     await settled(page, '?sound');
+    await needsWebGL2(page);
     const result = await page.evaluate(async (event) => {
       const tray = window.__pollyrollTray;
       const a = window.__audio;
