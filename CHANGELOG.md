@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [0.2.0] - Unreleased
+## [0.2.0] - 2026-10-19
 
 ### Added
 
@@ -57,7 +57,7 @@ All notable changes to this project are documented here. The format follows
 
 - Core entry 3.95 → 3.73 kB after a size bake-off (no behaviour change).
 
-## [0.1.0] - Unreleased
+## [0.1.0] - 2026-10-06
 
 First release.
 

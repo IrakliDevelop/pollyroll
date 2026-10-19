@@ -282,7 +282,7 @@ that Chromium, Firefox, and WebKit compute the same trajectory hash as Node.
 
 ## Known limits
 
-These describe 0.1.0 as built. Each one is a deliberate trade-off or a measured edge case, not a
+These describe 0.2.0. Each one is a deliberate trade-off or a measured edge case, not a
 hidden bug.
 
 **Physics and layout**
