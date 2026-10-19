@@ -147,8 +147,8 @@ describe('playImpacts', () => {
 });
 
 describe('clackStarts', () => {
-  it('measures clack starts from the first sample above 5% of the peak, clamped at 0', () => {
-    // 16 kHz: a 0.01 blip at sample 100 stays under 5% of the 1.0 spike at 66 ms (sample 1056).
+  it('measures clack starts from the first sample above 20% of the peak, clamped at 0', () => {
+    // 16 kHz: a 0.01 blip at sample 100 stays under 20% of the 1.0 spike at 66 ms (sample 1056).
     const data = new Float32Array(16000 * 0.2);
     data[100] = 0.01;
     data[1056] = -1;
@@ -165,6 +165,15 @@ describe('clackStarts', () => {
     expect(starts[0]).toBeCloseTo(0.066 - 0.0008, 9);
     expect(starts[1]).toBeCloseTo(0.066 + 0.0702, 9);
     expect(starts[2]).toBe(0);
+  });
+
+  it('anchors at the spike, not at pre-echo at 10% of the peak 3 ms before it', () => {
+    // 16 kHz: pre-echo 0.1 at 63 ms (sample 1008), full spike at 66 ms (sample 1056).
+    const data = new Float32Array(16000 * 0.2);
+    data[1008] = 0.1;
+    data[1056] = 1;
+    const set: ClackSet = { audio: '', clacks: [[10, 20]] };
+    expect(clackStarts(data, 16000, set)[0]).toBeCloseTo(0.066 + 0.01, 9);
   });
 });
 

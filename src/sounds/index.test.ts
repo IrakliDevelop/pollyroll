@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { diceClacks } from './index';
 
 describe('diceClacks', () => {
-  it('lists 7 ordered clacks starting at -0.8 ms and ending by 430 ms', () => {
+  it('lists 7 ordered clacks starting at -2.9 ms and ending by 430 ms', () => {
     const { clacks } = diceClacks;
     expect(clacks).toHaveLength(7);
-    expect(clacks[0]?.[0]).toBe(-0.8);
+    expect(clacks[0]?.[0]).toBe(-2.9);
     for (const [i, [start, length]] of clacks.entries()) {
       expect(length).toBeGreaterThan(0);
       if (i > 0) expect(start).toBeGreaterThan(clacks[i - 1]?.[0] ?? Infinity);

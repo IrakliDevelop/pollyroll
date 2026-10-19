@@ -86,11 +86,11 @@ export function playImpacts(
   return sources;
 }
 
-/** Clack starts (s), measured from the first sound: MP3 decoders differ in trimming the encoder delay. */
+/** Clack starts (s) from the first sample at 20% of peak, above MP3 pre-echo: decoders differ in trimming the encoder delay. */
 export function clackStarts(data: Float32Array, sampleRate: number, set: ClackSet): number[] {
   let peak = 0;
   for (const x of data) peak = Math.max(peak, Math.abs(x));
-  const anchor = data.findIndex((x) => Math.abs(x) > 0.05 * peak) / sampleRate;
+  const anchor = data.findIndex((x) => Math.abs(x) > 0.2 * peak) / sampleRate;
   return set.clacks.map(([ms]) => Math.max(0, anchor + ms / 1000));
 }
 
