@@ -255,9 +255,8 @@ export function createDiceTray(
   }
   canvas.setAttribute('role', 'img');
   canvas.setAttribute('aria-label', 'Dice tray');
-  let live: HTMLDivElement | null = null;
-  if (opts.announce === true) {
-    live = document.createElement('div');
+  const live = opts.announce ? document.createElement('div') : null;
+  if (live !== null) {
     live.setAttribute('role', 'status');
     live.setAttribute('aria-live', 'polite');
     live.style.cssText =
