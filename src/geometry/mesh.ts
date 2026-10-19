@@ -83,8 +83,7 @@ function faceUp(c: Vec3, pts: readonly Vec3[]): Vec3 {
 
 type Emit = (p: Vec3, n: Vec3, label: Label | null) => void;
 
-/** cos and sin of k · 360° / COIN_SEGMENTS: half angles from 30° give 7.5°, then repeated
- *  rotation, so no trigonometry is needed. */
+/** cos and sin of k · 7.5° by half angles from 30° and repeated rotation, without trigonometry. */
 function circle(): [number, number][] {
   const c15 = Math.sqrt((1 + Math.sqrt(3) / 2) / 2);
   const c = Math.sqrt((1 + c15) / 2);
@@ -98,8 +97,7 @@ function circle(): [number, number][] {
   return out;
 }
 
-/** Round disc swept about Y in COIN_SEGMENTS steps from angle 0: flat caps joined to the rim
- *  band by quarter-round edges of radius COIN_ROUND. */
+/** Disc swept about Y from angle 0: flat caps joined to the rim band by quarter-round edges. */
 function coin(poly: Polyhedron, emit: Emit): void {
   const [r, h] = at(poly.vertices, 0);
   const ring = circle();

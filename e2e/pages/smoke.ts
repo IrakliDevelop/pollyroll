@@ -54,12 +54,13 @@ const pair = (notation: string): RollEvent => ({
 });
 
 // ?event=coin: dc heads, dc tails, d2 2 → total 3.
-const coinValues = [1, 0, 1];
-const coins = (): RollEvent =>
-  createRoll('2dc+1d2', {
+const coins = (): RollEvent => {
+  const values = [1, 0, 1];
+  return createRoll('2dc+1d2', {
     seed: '0123456789abcdef0123456789abcdef',
-    rng: () => coinValues.shift() ?? 0,
+    rng: () => values.shift() ?? 0,
   });
+};
 
 const state: SmokeState = {
   ready: false,

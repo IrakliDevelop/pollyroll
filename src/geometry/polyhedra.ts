@@ -9,7 +9,7 @@ export interface Polyhedron {
   faces: readonly (readonly number[])[]; // vertex indexes, counter-clockwise seen from outside
   normals: readonly Vec3[]; // unit outward normal per face
   radius: number; // circumradius (max vertex length)
-  readouts: readonly Vec3[]; // unit directions read for "up": face normals; d4: vertex directions; coin: caps
+  readouts: readonly Vec3[]; // "up" directions: face normals; d4 vertices; coin caps
 }
 
 export const SHAPES: readonly ShapeType[] = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'coin'];
@@ -65,8 +65,7 @@ function d10Vertices(): Vec3[] {
   ];
 }
 
-/** 16-sided prism (ring radius 1): vertex k at k * 22.5 degrees counter-clockwise from +X seen
- *  from +Y, top cap then bottom, with cos/sin from half-angle square roots. */
+/** 16-gon prism, top cap first: vertex k at k · 22.5° from +X (CCW from +Y), by half angles. */
 function coinVertices(): Vec3[] {
   const c = Math.sqrt(2 + Math.sqrt(2)) / 2;
   const s = Math.sqrt(2 - Math.sqrt(2)) / 2;

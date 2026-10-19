@@ -149,7 +149,6 @@ export function throwWave(
     const vx = hx * along + px * lateral;
     const vz = hz * along + pz * lateral;
     if (tossed[i] === true) {
-      // A coin toss: vertical launch, end-over-end spin about a horizontal axis.
       const vy = 6 + 2 * rng.float();
       let ax = 0;
       let az = 0;

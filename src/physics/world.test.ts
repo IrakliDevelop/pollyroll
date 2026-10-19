@@ -151,7 +151,7 @@ describe('world: edge cases', () => {
     }
   });
 
-  it('every die hull fits the 20-vertex contact buffer', () => {
+  it('every die hull has at most 20 vertices', () => {
     const shapes: ShapeType[] = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20'];
     for (const shape of shapes) {
       expect(getBodyShape(shape).vertices.length / 3, shape).toBeLessThanOrEqual(20);

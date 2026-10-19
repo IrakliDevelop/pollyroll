@@ -63,6 +63,7 @@ test.describe('render smoke', () => {
     await page.goto('/smoke.html?event=coin');
     await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
     const state = await page.evaluate(() => window.__pollyroll);
+    expect(state.supported).toBe(true);
     expect(state.summary?.total).toBe(3);
     expect(errors).toEqual([]);
     // Two coins showing H and T and a d2 showing 2.

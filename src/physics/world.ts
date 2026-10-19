@@ -172,7 +172,7 @@ export function createWorld(bounds: TrayBounds, config?: Partial<WorldConfig>): 
   const contactB = new Int32Array(MAX_CONTACTS);
   const contactSlot = new Int32Array(MAX_CONTACTS);
   const contactFriction = new Float64Array(MAX_CONTACTS);
-  // Sized to the pairs added so far: a coin's 16-edge caps need ~9× the slots of a die pair.
+  // Grown as bodies are added: a coin's 16-edge caps need ~9× the slots of a die pair.
   let slotLambda = new Float64Array(PLANE_SLOTS * 3); // accumulated impulses of each slot's last contact
   let slotStep = new Int32Array(PLANE_SLOTS); // stepNumber + 1 of the step that wrote slotLambda
   let slotCount = PLANE_SLOTS; // slots in use; capacity grows by doubling

@@ -198,6 +198,9 @@ describe('parse', () => {
         dice(1, 1, 'd4', null, { reroll: { on: cmp('=', 1), once: true } }),
       ],
     });
+    expect(parse('dcr')).toEqual({
+      terms: [dice(1, 1, 'dc', null, { reroll: { on: cmp('=', 0), once: false } })],
+    });
   });
 
   it('reads a success comparison followed by a constant term', () => {

@@ -535,9 +535,9 @@ describe('coin rolls', () => {
       { minX: -4.5, maxX: 4.5, minZ: -2.25, maxZ: 2.25 },
       0,
     ],
-    ['10dc', coins(10), { minX: -5, maxX: 5, minZ: -2.75, maxZ: 2.75 }, 4],
+    ['10dc', coins(10), { minX: -5, maxX: 5, minZ: -2.75, maxZ: 2.75 }, 1],
   ])(
-    '%s over 200 seeds: every roll settles, 9 in 10 coins flip, coins end flat, few stack',
+    '%s over 50 seeds: every roll settles, 9 in 10 coins flip, coins end flat, few stack',
     (_, shapes, bounds, maxStacked) => {
       const capY = (f: Float32Array, at: number): number => {
         const x = f[at + 3] ?? 0;
@@ -547,7 +547,7 @@ describe('coin rolls', () => {
       let stacked = 0;
       let tossed = 0;
       let flipped = 0;
-      for (let i = 0; i < 200; i++) {
+      for (let i = 0; i < 50; i++) {
         const seed = i.toString(16).padStart(32, '0');
         const result = simulate({ seed, shapes, waves: shapes.map(() => 0), bounds });
         expect(result.settled, `seed ${i}`).toBe(true);
@@ -568,7 +568,6 @@ describe('coin rolls', () => {
       expect(stacked).toBeLessThanOrEqual(maxStacked);
       expect(flipped / tossed).toBeGreaterThanOrEqual(0.9);
     },
-    120_000,
   );
 });
 

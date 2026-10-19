@@ -226,7 +226,7 @@ export interface Clips extends Pick<ClackSet, 'clacks'> {
   readonly starts: readonly number[];
 }
 
-/** The coin synth's 4 `hit` and 4 `rim` strikes (fixed seeds), each set in one buffer as clips for playClacks. */
+/** The coin synth's 4 `hit` and 4 `rim` strikes (fixed seeds), each kind as clips in one buffer. */
 export function coinBank(ctx: AudioContext): Record<'hit' | 'rim', Clips> {
   const clips = (kind: 'hit' | 'rim'): Clips => {
     const parts = [1, 2, 3, 4].map((seed) => coinHit(kind, seed));

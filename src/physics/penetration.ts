@@ -16,8 +16,7 @@ const edgesB = new Float64Array(MAX_EDGES * 3);
 
 const edgeCache: Partial<Record<ShapeType, Int32Array>> = {};
 
-/** Hull edges of `shape` as vertex index pairs, one per edge direction (parallel edges give the
- *  same separating axes), cached. */
+/** Hull edges of `shape` as vertex index pairs, one per direction (parallel edges share axes). */
 function edgeIndexes(shape: ShapeType): Int32Array {
   let cached = edgeCache[shape];
   if (cached === undefined) {

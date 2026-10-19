@@ -99,6 +99,10 @@ describe('labels', () => {
     expect(readoutNumbers('d4')).toEqual([1, 2, 3, 4]);
   });
 
+  it('numbers the coin top cap 1 and the bottom cap 2', () => {
+    expect(readoutNumbers('coin')).toEqual([1, 2]);
+  });
+
   it('numbers d6 faces by their explicit normals', () => {
     const expected: [Vec3, number][] = [
       [[0, 1, 0], 1],
