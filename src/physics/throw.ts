@@ -17,7 +17,6 @@ export function clampInto(value: number, lo: number, hi: number): number {
 
 const LATE_SPEED = 0.4;
 
-// Spawn spacing 2·rMax + 0.5 is exactly twice the margin m.
 function fitAcross(span: number, m: number): number {
   return Math.max(1, Math.floor((span - 2 * m) / (2 * m)) + 1);
 }
@@ -68,9 +67,9 @@ export function throwWave(
 
   const count = radii.length;
   const rMax = Math.max(0, ...radii);
-  const d = 2 * rMax + 0.5;
   // Margin covers the worst jitter offset 0.15·√2.
   const m = rMax + 0.25;
+  const d = 2 * m;
   const fitZ = fitAcross(bounds.maxZ - bounds.minZ, m);
   let k = 0;
   while (k * k < count) k++;

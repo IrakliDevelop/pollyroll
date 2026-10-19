@@ -171,6 +171,25 @@ test.describe('tray context loss', () => {
     expect(label).toBe('2d6+3: [2, 5] + 3 = 10');
   });
 
+  test('shows the final frame on restore for a roll lost before its first frame', async ({
+    page,
+  }) => {
+    await page.clock.install({ time: 0 });
+    await open(page, '');
+    await needsWebGL2(page);
+    await page.clock.pauseAt(20_000);
+    await page.evaluate((event) => void window.__pollyrollTray.playRoll(event), EVENT);
+    await setLost(page, true);
+    await setLost(page, false);
+    const shot = async (): Promise<string> =>
+      (await page.locator('#tray').screenshot()).toString('base64');
+    const restored = await shot();
+    await page.clock.runFor(5000);
+    expect((await shot()) === restored, 'restore draws the settled frame').toBe(true);
+    await page.evaluate(() => window.__pollyrollTray.clear());
+    expect((await shot()) === restored, 'restore draws the dice').toBe(false);
+  });
+
   test('resolves playRoll at once while lost and draws the dice on restore', async ({ page }) => {
     await open(page, '');
     await setLost(page, true);
