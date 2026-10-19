@@ -693,6 +693,8 @@ export function createDiceTray(
     if (frame !== 0) cancelAnimationFrame(frame);
     frame = 0;
     if (gl !== null) dropGpu(gl, false);
+    // Without a drawn frame there is no clock to resume, so restore shows the final frame.
+    if (roll !== null && !roll.done && roll.t0 < 0) settle(roll);
     // The outcome is known; the dice redraw when the context is restored.
     if (roll !== null && !roll.done) show(roll.text);
     resolvePending();
