@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { impacts } from './sound';
+import { impacts, playImpacts } from './sound';
 
 const DT = 1 / 120;
 
@@ -30,7 +30,7 @@ describe('impacts', () => {
     // Free fall y = 3 − 15t² reaches 0.6 at frame 48 and is clamped from frame 49 on;
     // landing speed √(2 · 30 · 2.5) ≈ 12.25 units/s; frame 49 is global step 10 + 49.
     const fall = body(10, 120, (k) => [0, Math.max(0.5, 3 - 15 * (k * DT) ** 2), 0]);
-    const found = pairs(impacts([fall]));
+    const found = pairs(impacts([fall], 36));
     expect(found).toHaveLength(1);
     const [step, strength] = found[0] ?? [NaN, NaN];
     expect(step).toBe(59);
@@ -39,14 +39,14 @@ describe('impacts', () => {
   });
 
   it('finds no impact for a body resting at constant height (|Δv| = 30 · DT = 0.25)', () => {
-    expect(impacts([body(0, 60, () => [0, 0.5, 0])])).toHaveLength(0);
+    expect(impacts([body(0, 60, () => [0, 0.5, 0])], 36)).toHaveLength(0);
   });
 
   it.each([
     [1.9, []],
     [2.1, [20]],
   ])('records a kick of %f units/s at frames %j (threshold 2)', (speed, steps) => {
-    const found = pairs(impacts([kicked(60, (k) => (k > 20 ? speed : 0))]));
+    const found = pairs(impacts([kicked(60, (k) => (k > 20 ? speed : 0))], 36));
     expect(found.map((p) => p[0])).toEqual(steps);
   });
 
@@ -62,7 +62,7 @@ describe('impacts', () => {
   ])('keeps a second hit %i steps after the first only past the cooldown', (gap, expected) => {
     // +5 units/s from frame 21, −5 from frame 21 + gap: kicks at frames 20 and 20 + gap.
     const b = kicked(80, (k) => (k > 20 + gap ? -5 : k > 20 ? 5 : 0));
-    const found = pairs(impacts([b]));
+    const found = pairs(impacts([b], 36));
     expect(found).toHaveLength(expected.length);
     found.forEach(([step, strength], i) => {
       expect(step).toBe(expected[i]?.[0]);
@@ -71,11 +71,13 @@ describe('impacts', () => {
   });
 
   it.each([
-    // The last FLATTEN_STEPS + 1 = 37 frames are the tail: 60 − 37 = 23 is the first ignored frame.
-    [22, [22]],
-    [23, []],
-  ])('ignores a kick at frame %i of 60 only inside the last 37 frames', (frame, steps) => {
-    const found = pairs(impacts([kicked(60, (k) => (k > frame ? 5 : 0))]));
+    // A 36-step tail plus the last frame: 60 − 37 = 23 is the first ignored frame.
+    [22, 36, [22]],
+    [23, 36, []],
+    // No tail: only the last frame is ignored, so a kick 10 steps before the end counts.
+    [50, 0, [50]],
+  ])('kick at frame %i of 60 with tailSteps %i is found at %j', (frame, tail, steps) => {
+    const found = pairs(impacts([kicked(60, (k) => (k > frame ? 5 : 0))], tail));
     expect(found.map((p) => p[0])).toEqual(steps);
   });
 
@@ -84,10 +86,29 @@ describe('impacts', () => {
     const bodies = Array.from({ length: 60 }, (_, i) =>
       kicked(120, (k) => (k > 79 - i ? i + 3 : 0)),
     );
-    const found = pairs(impacts(bodies));
+    const found = pairs(impacts(bodies, 36));
     expect(found.map((p) => p[0])).toEqual(Array.from({ length: 48 }, (_, j) => 20 + j));
     found.forEach(([, strength], j) => {
       expect(strength).toBeCloseTo(Math.sqrt((62 - j) ** 2 + 0.0625), 2);
     });
+  });
+});
+
+describe('playImpacts', () => {
+  it('starts an impact at step 120 played at rate 1.5 at start + 2/3 s', () => {
+    const starts: number[] = [];
+    const node = <T extends object>(props: T) => ({ ...props, connect: <N>(n: N): N => n });
+    const ctx = {
+      destination: {},
+      createBufferSource: () =>
+        node({ buffer: null, start: (when: number) => starts.push(when), stop: () => undefined }),
+      createBiquadFilter: () => node({ type: '', frequency: { value: 0 }, Q: { value: 0 } }),
+      createGain: () => node({ gain: { value: 0 } }),
+    };
+    // Boundary fake: only the AudioContext members playImpacts uses.
+    const fake = ctx as unknown as AudioContext;
+    playImpacts(fake, {} as AudioBuffer, new Float32Array([120, 15]), 10, 1, 1.5);
+    expect(starts).toHaveLength(1);
+    expect(starts[0]).toBeCloseTo(10 + 2 / 3, 9);
   });
 });

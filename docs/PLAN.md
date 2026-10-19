@@ -4,7 +4,7 @@ Approved specification for the initial build. Decisions here are fixed; an agent
 genuine gap records its choice in [DECISIONS.md](DECISIONS.md) and continues (see
 [agents/delegation.md](agents/delegation.md) § Autonomous run).
 
-> **Amended 2026-10-06 by the owner after the 0.1.0 build, 2026-10-19 for 0.2.0, and 2026-10-19 for 0.3.0.** Sections below describe the shipped
+> **Amended 2026-10-06 by the owner after the 0.1.0 build, 2026-10-19 for 0.2.0, 2026-10-19 for 0.3.0, and 2026-10-19 for 0.4.0.** Sections below describe the shipped
 > behavior; lines marked _(amended)_ replace the original text, and the reason for each is in
 > [DECISIONS.md](DECISIONS.md). § 12 separates what is verified from what was decided and what is
 > still unverified.
@@ -47,6 +47,8 @@ Baseline being replaced: dice-box JS plus 2.1 MB of `public/assets` (ammo.js + t
 - 60 fps with 10 dice under Chrome 4× CPU throttle (manual check in the demo; record result).
 - One instanced draw call per die type plus one shadow pass. Device pixel ratio capped at 2.
 - Render-on-demand: the frame loop stops once every die has settled. Idle cost is zero.
+- _(amended, 0.4.0)_ Playback: the 120 Hz track plays at 1.5× real time from the first drawn
+  frame (≈ 2.25× gravity along the same paths); impact sounds use the same clock.
 - Maximum 30 animated bodies per tray; dice beyond 30 are included in the summary but not animated.
 
 ## 2. Dice set
@@ -137,6 +139,7 @@ isRollEvent(input: unknown): input is RollEvent;  // validates untrusted input, 
   die by hull: bounding spheres as broad phase, face-normal SAT, reference-face clipping (up to 4
   points, one normal), feature-keyed warm starts, 0.01 speculative margin; edge–edge pairs get one
   fallback contact. Sequential impulses with restitution 0.35, friction 0.6, linear and angular damping.
+  _(amended, 0.4.0)_ Friction 0.6 against the floor, 0.1 against walls and between dice.
   _(amended)_ Contacts are warm-started from the previous step's impulses.
 - Settle: every body below 0.05 units/s linear and 0.1 rad/s angular speed for 24 consecutive steps.
 - Determinism rule from AGENTS.md: only `+ - * /` and `Math.sqrt` in the step; quaternion
@@ -144,17 +147,27 @@ isRollEvent(input: unknown): input is RollEvent;  // validates untrusted input, 
 - Tray: floor at y = 0; walls at the visible floor bounds (from canvas aspect and the fixed camera)
   minus a margin. Throw origin, direction, speed, and spin come from the seed RNG. _(amended, 0.2.0)_
   Dice spawn in an axis-aligned block (spacing 2·Rmax + 0.5, extra dice in higher layers) so no two
-  start overlapping; throw speed 5–8 units/s.
+  start overlapping; throw speed 5–8 units/s. _(amended, 0.4.0)_ The block fills the tray width
+  before adding a row and adds a layer only when the floor grid is full.
 - Waves: each explosion wave is thrown after the previous wave settles; earlier dice stay as bodies.
+  _(amended, 0.4.0)_ A later wave's block is centred on the grid point (9 × 5 over the tray)
+  farthest from the resting dice and thrown at 0.4× speed, so it lands on free floor.
+- _(amended, 0.4.0)_ Re-simulation: a roll whose dice settle with any lowest hull point more than
+  0.1 die units above the floor is simulated again from scratch, continuing the same seed stream,
+  up to 4 attempts; the last attempt is kept. Values are already chosen, so this cannot bias them.
 - Output: per die, a keyframe track (position + quaternion per step) plus the settled up-face.
 - _(amended)_ Settle-to-flat: after settling, any die more than 0.5° off flat gets a deterministic
   _(amended, 0.2.0)_ 36-step tail that rolls it onto its up face and rests it on the floor (dice can
   come to rest cocked against walls, neighbours, or balanced on an edge): slide and flatten without
   lowering the die's bottom, then drop; a die whose tail would pass through a neighbour lifts above
-  it first (rise ≤ 1.5 die units). Before the tails, resting dice are pushed apart by their exact
+  it first (rise ≤ 1.5 die units). _(amended, 0.4.0)_ Tail timing follows gravity: a turn accelerates
+  (t²) and, when the die rests on the floor and is not lifted, rocks 6% past flat once; a slide alone
+  eases in and out, rises ease in and out, drops fall freely.
+  Before the tails, resting dice are pushed apart by their exact
   horizontal footprints (SAT, 0.05 gap, up to 64 passes, clamped to the walls).
 - _(amended)_ Auto-fit: a roll uses the largest scale ≤ `dieScale` on a 0.05 grid whose tray area
   holds 5 die-units² per animated body, so large rolls shrink instead of overlapping.
+  _(amended, 0.4.0)_ The scale must also let the spawn grid hold every animated body in one layer.
 
 ## 6. Renderer (`pollyroll/render`)
 
@@ -286,25 +299,32 @@ Chromium uses SwiftShader (`--use-angle=swiftshader --enable-unsafe-swiftshader`
   not coalesced under rapid sends.
 - Notation v2, image-texture skins, real shadow maps, persistent roll log.
 
-## 12. Status (2026-10-19, 0.3.0 branch)
+## 12. Status (2026-10-19, 0.4.0 branch)
 
 ### Verified (with evidence)
 
 - 0.1.0 on `master`: CI green on Node 20.19 and 22 and e2e in Chromium, Firefox, WebKit.
-- 0.2.0 on `master` and npm (2026-10-19). 0.3.0 branch, locally: `pnpm verify` passes; e2e passes in Chromium and Firefox, including the
-  cross-browser determinism hash. WebKit could not launch on the build machine (missing system
+- 0.2.0 on `master` and npm (2026-10-19); 0.3.0 on `master`. 0.4.0 branch, locally: `pnpm verify`
+  passes; e2e passes in Chromium and Firefox, including the cross-browser determinism hash. WebKit could not launch on the build machine (missing system
   libraries); CI runs it.
 - Every die × every value shows the rolled value on top after remap (unit tests + property tests).
 - Settled dice are flat (0.5° rule, tested over 1,200 single-die and 100 mixed rolls).
-- No settled overlap: exact hull test, 60 seeds × 6 crowded roll types in fitted 608×360 trays,
+- No die rests on another at settle (lowest hull point > 0.1 above the floor before the tail):
+  1,000 seeds × 9 roll types (2d20 to 20 mixed dice, rerolls) in fitted 608×360 trays, 0 of 9,000
+  (0.3.0: 18–66% of 3+ dice rolls), about 1 extra simulation per 1,000 rolls; camera.test.ts asserts
+  0 of 750. Dice needing a visible tail (> 3° or > 0.1 move): d6 rolls 1–2% (0.3.0: 18–40%), mixed
+  rolls 10–17% (0.3.0: 45–55%), 2d20 at full size 17% (unchanged, d20s leaning on walls).
+- No settled overlap (measured in 0.2.0): exact hull test, 60 seeds × 6 crowded roll types in fitted 608×360 trays,
   0% of rolls end with two dice interpenetrating more than 0.02 die units (0.1.0: 25–33% of mixed
   d20/d12/d8 rolls). During the roll (before the settle tail), 40 seeds × 4 crowded roll types:
   penetration never exceeds 0.3 die units and stays above 0.1 for at most one 1/120 s step.
-- Size budgets: core ≈ 3.76 kB / 4, render ≈ 25.3 kB / 30, react ≈ 0.50 kB / 1, format ≈ 0.34 kB /
+- Size budgets: core ≈ 3.77 kB / 4, render ≈ 26.0 kB / 30, react ≈ 0.50 kB / 1, format ≈ 0.34 kB /
   0.5 (min+gzip).
-- 10-dice pre-simulation bench ≈ 4.8 ms mean (seed 0; 100-seed mean ≈ 4.35 ms; target ≤ 5 ms).
+- 10-dice pre-simulation bench ≈ 4.8 ms mean (seed 0; target ≤ 5 ms; noisy machine, runs up to
+  6 ms on both base and branch).
 - 60 fps during animation with 10, 18 and 30 dice at 1× and 4× Chrome CPU throttle on a desktop
-  GPU (NVIDIA RTX 4060 Laptop, ANGLE GL; p95 ≤ 17.1 ms).
+  GPU (NVIDIA RTX 4060 Laptop, ANGLE GL; p95 ≤ 17.1 ms), measured in 0.2.0; not re-run at 1.5×
+  playback (same frames drawn per second, fewer per roll).
 - `redact` leaks no values (null values, explosion and reroll dice removed); `isRollEvent` rejects
   malformed, out-of-range, and inline-GLSL input, and accepts every event `createRoll` builds.
 - Packed tarball: ESM and CJS import of all three entries in Node; types resolve under node10
@@ -315,6 +335,8 @@ Chromium uses SwiftShader (`--use-angle=swiftshader --enable-unsafe-swiftshader`
 - Top-down orthographic camera; default `dieScale` 2 with auto-fit; tray insets in die units.
 - Hull-against-hull die contacts; footprint separation; two-phase, collision-aware settle tail.
 - Overlap-free spawn block; gentler throws (5–8 units/s); d4 circumradius 0.95, d20 0.85.
+- 0.4.0: one-layer spawn and auto-fit, later waves on free floor, re-simulation of stacked rolls
+  (≤ 4 attempts), wall/die friction 0.1, gravity-timed settle tail, 1.5× playback.
 - Notation aliases `k`/`d`/`x` and notation v2 (rerolls, explode thresholds, success counting);
   keep/drop ranks explosion dice too; `group` indexes dice terms only.
 - Dropped dice fade after settle; opt-in procedural sound; reactive React `dieScale`/`sound`.
@@ -327,7 +349,9 @@ The full consumer-facing list is in the README under **Known limits**.
 
 - Use as an installed package inside RollKeeper (Next.js app).
 - Mobile GPUs; WebKit locally (CI covers WebKit determinism).
-- Known small issues: in 1–7 of 40
-  crowded rolls a die lifting off a pile clips a neighbour for about 0.1 s during the settle tail;
-  about 2 of 1,200 crowded rolls reach the 720-step cap (the tail still settles them flat); the
-  pre-simulation runs on the main thread before the first frame (≈ 15 ms for 30 dice on a desktop).
+- Known small issues (counts measured in 0.2.0, not re-measured): in 1–7 of 40 crowded rolls a die
+  lifting off a pile clips a neighbour for about 0.1 s during the settle tail (lifts are now rare);
+  about 2 of 1,200 crowded rolls reach the 720-step cap (0 of 9,000 in the 0.4.0 runs above); the
+  pre-simulation runs on the main thread before the first frame (≈ 15 ms for 30 dice on a desktop,
+  times the attempts in the rare re-simulated roll).
+- d20s at full size rest tilted against walls in about 17% of dice and are toppled by the tail.

@@ -4,6 +4,31 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - Unreleased
+
+### Changed
+
+- Physics: dice no longer come to rest on top of each other. Measured over 1,000 rolls per roll
+  type, 18–66% of 3+ dice rolls used to end with a die on another, which then hopped off in the
+  settle tail; now none in 11,000 rolls.
+  - The spawn block fills the tray width before it stacks dice in a second layer, and auto-fit
+    picks a die size where every die spawns side by side. Rolls of 4 or more dice get somewhat
+    smaller dice (4d6 at the default size: 1.75 instead of 2).
+  - Reroll and explosion waves are thrown gently onto the free floor farthest from resting dice.
+  - A roll that still ends with a die resting on another is simulated again from the same seed
+    stream (up to 4 attempts; about 1 extra simulation per 100 rolls). Values are chosen before the
+    simulation, so this cannot bias results.
+- Physics: friction is 0.1 against walls and between dice (0.6 on the floor), so dice slide off
+  walls and neighbours instead of resting cocked against them.
+- The settle tail moves like a falling die: the turn speeds up, rocks once just past flat, and the
+  drop falls freely, instead of turning at constant speed.
+- `pollyroll/render`: rolls play 1.5× faster (dice feel heavier; the simulation is unchanged), the
+  clock starts at the first drawn frame, and impact sounds follow the same clock. Impacts in the last
+  0.3 s of a roll without a settle tail are no longer dropped. A roll received in a hidden tab
+  settles at once instead of replaying when the tab returns.
+- The same `RollEvent` animates differently than in 0.3.0 (values are identical), so clients of a
+  shared roll should run the same minor version to see the same motion.
+
 ## [0.3.0] - Unreleased
 
 ### Added

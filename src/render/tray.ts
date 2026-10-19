@@ -55,6 +55,8 @@ export interface DiceTray {
 }
 
 const FADE_MS = 300;
+// Faster playback reads as heavier dice: k× speed equals k² gravity along the same paths.
+const PLAYBACK = 1.5;
 const DROPPED_OPACITY = 0.35;
 const INST = 9; // floats per die instance: x, y, z, atlas row (−1 = blank), qx, qy, qz, qw, opacity
 const FRAME = 7; // floats per keyframe: x, y, z, qx, qy, qz, qw
@@ -103,7 +105,8 @@ interface Roll {
   eventSkin: SkinRef | undefined;
   skin: SkinGpu;
   scale: number;
-  t0: number;
+  sound: number; // clack volume, 0 = silent
+  t0: number; // first drawn frame's rAF time; −1 until then
   step: number;
   done: boolean;
   text: string;
@@ -608,7 +611,7 @@ export function createDiceTray(
   function settle(r: Roll): void {
     r.step = r.plan.totalSteps;
     r.done = true;
-    // Impacts end ≥ 25 steps before settle; a suspended context must not play them on resume.
+    // Impacts end before the 24-step calm window; a suspended context must not play them on resume.
     silence();
     render();
     show(r.text);
@@ -621,20 +624,27 @@ export function createDiceTray(
     }, fadeAfterMs);
   }
 
-  function tick(): void {
+  function tick(now: number): void {
     frame = 0;
     const r = roll;
     if (r === null) return;
-    const now = performance.now();
     if (!r.done) {
-      const s = (now - r.t0) / 1000 / DT;
+      if (r.t0 < 0) {
+        r.t0 = now;
+        if (r.sound > 0 && audio !== null) {
+          const { ctx, noise } = audio;
+          const list = impacts(r.plan.bodies, r.plan.tailSteps);
+          sources = playImpacts(ctx, noise, list, ctx.currentTime, r.sound, PLAYBACK);
+        }
+      }
+      const s = ((now - r.t0) * PLAYBACK) / 1000 / DT;
       if (s >= r.plan.totalSteps) {
         settle(r);
         return;
       }
-      r.step = s < 0 ? 0 : s;
+      r.step = s;
     } else if (fadeStart >= 0) {
-      alpha = 1 - (now - fadeStart) / FADE_MS;
+      alpha = 1 - (performance.now() - fadeStart) / FADE_MS;
       if (alpha <= 0) {
         tray.clear();
         return;
@@ -683,6 +693,8 @@ export function createDiceTray(
     if (frame !== 0) cancelAnimationFrame(frame);
     frame = 0;
     if (gl !== null) dropGpu(gl, false);
+    // Without a drawn frame there is no clock to resume, so restore shows the final frame.
+    if (roll !== null && !roll.done && roll.t0 < 0) settle(roll);
     // The outcome is known; the dice redraw when the context is restored.
     if (roll !== null && !roll.done) show(roll.text);
     resolvePending();
@@ -724,7 +736,8 @@ export function createDiceTray(
       const skin = skinGpu(resolveSkin(event.skin ?? traySkin));
       if (!lost) program(gl, skin.key, skin.fragment);
       fit();
-      const scale = fitScale(dieScale, slots(event).length, aspect);
+      const radii = slots(event).map((b) => getPolyhedron(shapeOf(b.labelSet)).radius);
+      const scale = fitScale(dieScale, radii, aspect);
       let plan: RollPlan;
       try {
         plan = planRoll(event, trayBounds(aspect, scale));
@@ -755,7 +768,8 @@ export function createDiceTray(
         eventSkin: event.skin,
         skin,
         scale,
-        t0: performance.now(),
+        sound: 0,
+        t0: -1,
         step: 0,
         done: false,
         text: formatRoll(event, summary),
@@ -765,7 +779,8 @@ export function createDiceTray(
         pending = { resolve, summary };
       });
       // While lost the outcome resolves now; the dice draw on restore if this roll is still current.
-      if (reduced() || lost) {
+      // A hidden tab runs no frames, so the roll would otherwise replay in full on return.
+      if (reduced() || lost || document.hidden) {
         settle(r);
         return done;
       }
@@ -775,9 +790,9 @@ export function createDiceTray(
           const ctx = new AudioContext();
           audio = { ctx, noise: noiseBuffer(ctx) };
         }
-        const { ctx, noise } = audio;
-        if (ctx.state === 'suspended') void ctx.resume();
-        sources = playImpacts(ctx, noise, impacts(plan.bodies), ctx.currentTime, sound);
+        // Resume inside the caller's gesture; the clacks are scheduled on the first frame.
+        if (audio.ctx.state === 'suspended') void audio.ctx.resume();
+        r.sound = sound;
       }
       return done;
     },

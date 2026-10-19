@@ -25,6 +25,7 @@ export interface PlannedBody {
 export interface RollPlan {
   totalSteps: number;
   settled: boolean;
+  tailSteps: number; // steps of the settle tail at the end of every track
   hash: string;
   bodies: PlannedBody[];
 }
@@ -93,6 +94,7 @@ export function planRoll(event: RollEvent, bounds: TrayBounds): RollPlan {
   return {
     totalSteps: result.totalSteps,
     settled: result.settled,
+    tailSteps: result.tailSteps,
     hash: trackHash(result),
     bodies,
   };

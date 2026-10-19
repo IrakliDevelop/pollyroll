@@ -5,7 +5,7 @@ import { quatRotate } from '../geometry/vec';
 import type { Quat, Vec3 } from '../geometry/vec';
 import { getBodyShape } from './body';
 import { DT, checkHull, createWorld } from './world';
-import type { TrayBounds, World } from './world';
+import type { TrayBounds, World, WorldConfig } from './world';
 
 const BOUNDS: TrayBounds = { minX: -6, maxX: 6, minZ: -4, maxZ: 4 };
 const ZERO: Vec3 = [0, 0, 0];
@@ -295,6 +295,44 @@ describe('world: collision', () => {
     expect(world.linearSpeedSq(0)).toBeLessThan(0.05 * 0.05);
     expect(prevX).toBeGreaterThan(-3);
     expect(prevX).toBeLessThan(6);
+  });
+
+  it('uses wall friction against walls', () => {
+    // Velocity z after a flat d6 in the air (no damping) bounces off the minX wall at (−5, 0, 3).
+    const vzAfterWall = (config: Partial<WorldConfig>): number => {
+      const world = createWorld(BOUNDS, { linearDamping: 0, angularDamping: 0, ...config });
+      world.add('d6', [-5.45, 5, 0], ID, [-5, 0, 3], ZERO);
+      let prevZ = 0;
+      for (let s = 0; s < 12; s++) {
+        prevZ = poseOf(world, 0).p[2];
+        world.step();
+      }
+      return (poseOf(world, 0).p[2] - prevZ) / DT;
+    };
+    // Coulomb: |Δvz| ≤ μ·Jn, Jn ≤ (1 + 0.35)·5 = 6.75, so μ = 0.1 keeps vz ≥ 3 − 0.675 (± 1e-6).
+    expect(vzAfterWall({})).toBeGreaterThanOrEqual(3 - 0.675 - 1e-6);
+    // μ = 0.6 allows Δvz up to 0.6·6.75 = 4.05 (the face sticks); Δvz > 0.8 is beyond μ = 0.1.
+    expect(vzAfterWall({ wallFriction: 0.6 })).toBeLessThan(2.2);
+  });
+
+  it('uses pair friction between dice', () => {
+    // Velocity z of A after it hits resting B, both flat d6 falling equally (no damping).
+    const vzAfterPair = (config: Partial<WorldConfig>): number => {
+      const world = createWorld(BOUNDS, { linearDamping: 0, angularDamping: 0, ...config });
+      world.add('d6', [-0.525, 5, 0], ID, [5, 0, 3], ZERO);
+      world.add('d6', [0.525, 5, 0], ID, ZERO, ZERO);
+      let prevZ = 0;
+      for (let s = 0; s < 12; s++) {
+        prevZ = poseOf(world, 0).p[2];
+        world.step();
+      }
+      return (poseOf(world, 0).p[2] - prevZ) / DT;
+    };
+    // Reduced mass 1/2: Jn ≤ (1 + 0.35)·5/2 = 3.375, so μ = 0.1 keeps vz ≥ 3 − 0.3375.
+    expect(vzAfterPair({})).toBeGreaterThanOrEqual(3 - 0.3375 - 1e-6);
+    // Sticking caps Δvz at 3/(1 + 1 + 1.5 + 1.5) = 0.6 (r²/I = 1.5 per d6), so vz ≈ 2.4 at μ = 0.6;
+    // Δvz > 0.45 is beyond μ = 0.1.
+    expect(vzAfterPair({ pairFriction: 0.6 })).toBeLessThan(2.55);
   });
 
   it('walls keep a fast die inside the tray', () => {

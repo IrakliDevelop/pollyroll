@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import type { RollEvent } from '../src/core/types';
+import { shapeOf } from '../src/geometry/labels';
+import { getPolyhedron } from '../src/geometry/polyhedra';
 import { planRoll, slots } from '../src/physics/plan';
 import { DT } from '../src/physics/world';
 import { fitScale, trayBounds } from '../src/render/camera';
@@ -36,6 +38,8 @@ const EVENT: RollEvent = {
   seed: '0123456789abcdef0123456789abcdef',
   createdAt: 0,
 };
+
+const PLAYBACK = 1.5; // tray.ts plays the 120 Hz track at 1.5× real time
 
 const INVALID: RollEvent = {
   ...EVENT,
@@ -165,6 +169,25 @@ test.describe('tray context loss', () => {
       return document.getElementById('tray')?.getAttribute('aria-label');
     }, EVENT);
     expect(label).toBe('2d6+3: [2, 5] + 3 = 10');
+  });
+
+  test('shows the final frame on restore for a roll lost before its first frame', async ({
+    page,
+  }) => {
+    await page.clock.install({ time: 0 });
+    await open(page, '');
+    await needsWebGL2(page);
+    await page.clock.pauseAt(20_000);
+    await page.evaluate((event) => void window.__pollyrollTray.playRoll(event), EVENT);
+    await setLost(page, true);
+    await setLost(page, false);
+    const shot = async (): Promise<string> =>
+      (await page.locator('#tray').screenshot()).toString('base64');
+    const restored = await shot();
+    await page.clock.runFor(5000);
+    expect((await shot()) === restored, 'restore draws the settled frame').toBe(true);
+    await page.evaluate(() => window.__pollyrollTray.clear());
+    expect((await shot()) === restored, 'restore draws the dice').toBe(false);
   });
 
   test('resolves playRoll at once while lost and draws the dice on restore', async ({ page }) => {
@@ -559,6 +582,50 @@ test('a failing playRoll leaves the current roll animating and pending', async (
   expect(result.ms).toBeGreaterThan(300);
 });
 
+test('plays the track at 1.5× real time, clocked from the first drawn frame', async ({ page }) => {
+  await page.goto('/smoke.html');
+  await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
+  await needsWebGL2(page);
+  const d20: RollEvent = {
+    ...EVENT,
+    notation: '1d20',
+    dice: [{ type: 'd20', value: 7, group: 0, wave: 0 }],
+    modifier: 0,
+  };
+  const radii = slots(d20).map((b) => getPolyhedron(shapeOf(b.labelSet)).radius);
+  const { totalSteps } = planRoll(d20, trayBounds(4 / 3, fitScale(2, radii, 4 / 3)));
+  // At 1.0× the settle would come at least 0.5 s later than at 1.5×.
+  expect(totalSteps).toBeGreaterThanOrEqual(180);
+  const ms = await page.evaluate(async (event) => {
+    const done = window.__pollyrollTray.playRoll(event);
+    const first = await new Promise<number>(requestAnimationFrame);
+    await done;
+    return performance.now() - first;
+  }, d20);
+  expect(Math.abs(ms / 1000 - (totalSteps * DT) / PLAYBACK)).toBeLessThan(0.15);
+});
+
+test('settles a roll received in a hidden tab without any frame', async ({ page }) => {
+  await page.clock.install({ time: 0 });
+  await page.goto('/smoke.html');
+  await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
+  await needsWebGL2(page);
+  await page.clock.pauseAt(20_000);
+  const result = await page.evaluate(async (event) => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+    // MessageChannel is not faked by page.clock, so this macrotask runs while rAF stays paused.
+    const tick = new Promise<'pending'>((r) => {
+      const { port1, port2 } = new MessageChannel();
+      port1.onmessage = () => r('pending');
+      port2.postMessage(null);
+    });
+    const done = window.__pollyrollTray.playRoll(event).then((s) => s.total);
+    const total = await Promise.race([done, tick]);
+    return { total, label: document.getElementById('tray')?.getAttribute('aria-label') };
+  }, EVENT);
+  expect(result).toEqual({ total: 10, label: '2d6+3: [2, 5] + 3 = 10' });
+});
+
 test.describe('dropped dice', () => {
   test.skip(
     ({ browserName }) => browserName !== 'chromium',
@@ -633,12 +700,15 @@ test.describe('dropped dice', () => {
       modifier: 0,
     };
     const explode: RollEvent = { ...reroll, notation: '1d6x' };
-    const plan = planRoll(reroll, trayBounds(4 / 3, fitScale(2, 2, 4 / 3)));
+    const radii = slots(reroll).map((b) => getPolyhedron(shapeOf(b.labelSet)).radius);
+    const plan = planRoll(reroll, trayBounds(4 / 3, fitScale(2, radii, 4 / 3)));
     const start = plan.bodies[1]?.startStep ?? NaN;
-    // Fake rAF fires on a 16 ms grid, so a multiple of 16 lands both shots on the same step.
-    const atMs = 16 * Math.round((((start + plan.totalSteps) / 2) * DT * 1000) / 16);
-    expect(atMs / 1000 / DT).toBeGreaterThan(start);
-    expect(atMs / 1000 / DT).toBeLessThan(plan.totalSteps);
+    // Fake rAF fires on a 16 ms grid, so a multiple of 16 lands both shots on the same step; the
+    // clock starts at the first frame, 16 ms after playRoll.
+    const atMs = 16 * Math.round((((start + plan.totalSteps) / 2) * DT * 1000) / PLAYBACK / 16);
+    const atStep = ((atMs - 16) * PLAYBACK) / 1000 / DT;
+    expect(atStep).toBeGreaterThan(start);
+    expect(atStep).toBeLessThan(plan.totalSteps);
     await page.clock.install({ time: 0 });
     await page.goto('/smoke.html');
     await page.waitForFunction(() => window.__pollyroll.ready);
@@ -766,16 +836,23 @@ test.describe('sound', () => {
       a.starts = [];
       a.stops = 0;
       void tray.playRoll(event);
+      // rAF callbacks run in order, so the tray has drawn its first frame before this one.
+      await new Promise(requestAnimationFrame);
       const replaced = a.starts.length;
-      const done = tray.playRoll(event);
+      void tray.playRoll(event);
       const stoppedOnReplace = a.stops;
-      const current = a.starts.length - replaced;
+      tray.clear();
+      void tray.playRoll(event);
+      const done = tray.playRoll(event);
+      const beforeFirstFrame = a.starts.length - replaced;
       await done;
+      const current = a.starts.length - replaced;
       const stoppedAtSettle = a.stops - stoppedOnReplace;
       tray.dispose();
       return {
         replaced,
         stoppedOnReplace,
+        beforeFirstFrame,
         current,
         stoppedAtSettle,
         starts: a.starts,
@@ -784,10 +861,14 @@ test.describe('sound', () => {
       };
     }, EVENT);
     // The smoke canvas is 800 × 600 CSS pixels at the default dieScale 2.
-    const bounds = trayBounds(4 / 3, fitScale(2, slots(EVENT).length, 4 / 3));
-    const end = planRoll(EVENT, bounds).totalSteps * DT + 0.1;
-    expect(replay.current).toBeGreaterThan(0);
+    const radii = slots(EVENT).map((b) => getPolyhedron(shapeOf(b.labelSet)).radius);
+    const bounds = trayBounds(4 / 3, fitScale(2, radii, 4 / 3));
+    const end = (planRoll(EVENT, bounds).totalSteps * DT) / PLAYBACK + 0.1;
+    expect(replay.replaced).toBeGreaterThan(0);
     expect(replay.stoppedOnReplace).toBe(replay.replaced);
+    // Rolls replaced or cleared before their first frame schedule nothing.
+    expect(replay.beforeFirstFrame).toBe(0);
+    expect(replay.current).toBeGreaterThan(0);
     expect(replay.stoppedAtSettle).toBe(replay.current);
     for (const when of replay.starts) {
       expect(when).toBeGreaterThanOrEqual(0);

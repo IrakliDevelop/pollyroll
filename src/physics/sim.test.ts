@@ -9,15 +9,17 @@ import { quatRotate } from '../geometry/vec';
 import { FLATTEN_STEPS } from './flatten';
 import { GOLDEN_CASES, GOLDEN_HASH, goldenHash } from './golden';
 import {
+  MAX_ATTEMPTS,
   MAX_STEPS_PER_WAVE,
   SETTLE_ANGULAR,
   SETTLE_LINEAR,
   SETTLE_STEPS,
+  STACK_HEIGHT,
   simulate,
   trackHash,
 } from './sim';
 import type { SimInput, SimResult } from './sim';
-import { throwWave } from './throw';
+import { spawnCapacity, throwWave } from './throw';
 import type { TrayBounds } from './world';
 
 const BOUNDS: TrayBounds = { minX: -6, maxX: 6, minZ: -4, maxZ: 4 };
@@ -59,6 +61,8 @@ describe('constants', () => {
     expect(SETTLE_LINEAR).toBe(0.05);
     expect(SETTLE_ANGULAR).toBe(0.1);
     expect(SETTLE_STEPS).toBe(24);
+    expect(MAX_ATTEMPTS).toBe(4);
+    expect(STACK_HEIGHT).toBe(0.1);
   });
 });
 
@@ -117,6 +121,25 @@ describe('throwWave', () => {
     expect(b?.orientation).toSatisfy((q: number[]) => near(q, [2 / 9, -4 / 9, 5 / 9, -2 / 3]));
     expect(b?.velocity).toSatisfy((v: number[]) => near(v, [0.84, -1.3, 5.5808]));
     expect(b?.angularVelocity).toSatisfy((w: number[]) => near(w, [-13, 19, -9]));
+  });
+
+  it('centres a later wave on the candidate farthest from resting dice, at 0.4× speed', () => {
+    // bx = bz = 0.8 + 0.25 = 1.05, so candidates clamp to x ∈ [−4.95, 4.95], z ∈ [−2.95, 2.95].
+    // Dice rest at the left end; x = 4.95 is farthest, and z = −2.95 and z = 2.95 tie at
+    // min(8.95² + 2.95², 9.95² + 0.05²) = 88.805, so gj = 0 (z = −2.95) wins.
+    const [state] = throwWave(
+      createSeedRng('0123456789abcdef0123456789abcdef'),
+      [0.8],
+      BOUNDS,
+      [-5, -3, -5, 3, -4, 0],
+    );
+    const [x, , z] = state?.position ?? [NaN, NaN, NaN];
+    const [vx, , vz] = state?.velocity ?? [NaN, NaN, NaN];
+    expect(x).toBeGreaterThan(4.5);
+    expect(z).toBeLessThan(-2.5);
+    expect(Math.hypot(vx, vz)).toBeLessThanOrEqual(0.4 * (8 * 1.15 + 1.5));
+    // A full-speed throw moves at least 5·0.85 along its heading.
+    expect(Math.hypot(vx, vz)).toBeLessThan(5 * 0.85);
   });
 
   it('clamps spawn points inside the walls', () => {
@@ -182,6 +205,46 @@ describe('throwWave', () => {
     }
   });
 
+  // trayBounds(608/360, 2); d6 circumradius √3/2: d = 2·0.866 + 0.5 = 2.232, m = 0.866 + 0.25 = 1.116,
+  // fitX = floor((7 − 2.232)/2.232) + 1 = 3, fitZ = floor((3.5 − 2.232)/2.232) + 1 = 1.
+  const ONE_ROW: TrayBounds = { minX: -3.5, maxX: 3.5, minZ: -1.75, maxZ: 1.75 };
+  const D6_R = Math.sqrt(3) / 2;
+
+  it('fills a row before stacking a layer', () => {
+    const states = throwWave(
+      createSeedRng('0123456789abcdef0123456789abcdef'),
+      [D6_R, D6_R, D6_R],
+      ONE_ROW,
+    );
+    const xs = states.map((s) => s.position[0]);
+    for (const s of states) {
+      expect(s.position[1]).toBeGreaterThanOrEqual(2.2);
+      expect(s.position[1]).toBeLessThan(2.8);
+    }
+    // Column spacing 2.232 less the worst jitter 2·0.15.
+    for (let i = 0; i < xs.length; i++) {
+      for (let j = 0; j < i; j++) {
+        expect(Math.abs((xs[i] ?? NaN) - (xs[j] ?? NaN))).toBeGreaterThan(1.93);
+      }
+    }
+  });
+
+  it('stacks a die in a higher layer only once the floor grid is full', () => {
+    const states = throwWave(
+      createSeedRng('0123456789abcdef0123456789abcdef'),
+      [D6_R, D6_R, D6_R, D6_R],
+      ONE_ROW,
+    );
+    // Layer 1 starts at 2.2 + 2·0.866 + 1.1 = 5.032.
+    expect(states.map((s) => s.position[1] >= 5.03)).toEqual([false, false, false, true]);
+  });
+
+  it('reports the one-layer spawn capacity', () => {
+    expect(spawnCapacity(D6_R, ONE_ROW)).toBe(3);
+    // fitX = floor((8.5 − 2.232)/2.232) + 1 = 3, fitZ = floor((4.5 − 2.232)/2.232) + 1 = 2.
+    expect(spawnCapacity(D6_R, { minX: -4.25, maxX: 4.25, minZ: -2.25, maxZ: 2.25 })).toBe(6);
+  });
+
   it('stays within the documented ranges for seeded draws', () => {
     const states = throwWave(
       createSeedRng('fedcba9876543210fedcba9876543210'),
@@ -205,7 +268,14 @@ describe('throwWave', () => {
 describe('simulate', () => {
   it('returns no tracks for no dice', () => {
     const result = simulate({ seed: '0'.repeat(32), shapes: [], waves: [], bounds: BOUNDS });
-    expect(result).toEqual({ totalSteps: 0, tracks: [], settled: true });
+    expect(result).toEqual({
+      totalSteps: 0,
+      tracks: [],
+      settled: true,
+      attempts: 1,
+      stacked: false,
+      tailSteps: 0,
+    });
   });
 
   it('rejects mismatched shapes and waves', () => {
@@ -254,6 +324,24 @@ describe('simulate', () => {
     expect(result.tracks.map((t) => t.wave)).toEqual([0, 1, 2]);
   });
 
+  it('throws a later wave clear of the resting dice', () => {
+    const result = simulate({
+      seed: '00000000000000000000000000000001',
+      shapes: ['d6', 'd6', 'd6', 'd6', 'd6'],
+      waves: [0, 0, 0, 1, 2],
+      bounds: BOUNDS,
+    });
+    const late = result.tracks[3];
+    expect(late?.wave).toBe(1);
+    if (late === undefined) return;
+    for (const t of result.tracks.slice(0, 3)) {
+      const at = (late.startStep - t.startStep) * 7;
+      const dx = (late.frames[0] ?? NaN) - (t.frames[at] ?? NaN);
+      const dz = (late.frames[2] ?? NaN) - (t.frames[at + 2] ?? NaN);
+      expect(Math.hypot(dx, dz)).toBeGreaterThanOrEqual(2 * getPolyhedron('d6').radius);
+    }
+  });
+
   it('orders waves by value and keeps input order for tracks', () => {
     const result = simulate({
       seed: '00000000000000000000000000000002',
@@ -265,6 +353,38 @@ describe('simulate', () => {
     expect(result.tracks[1]?.startStep).toBe(0);
     expect(result.tracks[0]?.startStep).toBeGreaterThan(0);
     expect(result.tracks[0]?.startStep).toBe(result.tracks[2]?.startStep);
+  });
+
+  it('re-simulates a roll that ends with a die resting on another', () => {
+    // Seed 0xee5 found by search: its first attempt ends with a d6 resting on another.
+    const input: SimInput = {
+      seed: '00000000000000000000000000000ee5',
+      shapes: Array<ShapeType>(6).fill('d6'),
+      waves: [0, 0, 0, 0, 0, 0],
+      bounds: { minX: -4.25, maxX: 4.25, minZ: -2.25, maxZ: 2.25 },
+    };
+    const result = simulate(input);
+    expect(result.attempts).toBeGreaterThanOrEqual(2);
+    expect(result.stacked).toBe(false);
+    expect(trackHash(simulate(input))).toBe(trackHash(result));
+  });
+
+  it('stops after four attempts when the dice cannot fit in one layer', () => {
+    // A 2×2 tray holds at most four unit d6 side by side, so a fifth always rests on top.
+    const result = simulate({
+      seed: '0'.repeat(32),
+      shapes: Array<ShapeType>(5).fill('d6'),
+      waves: [0, 0, 0, 0, 0],
+      bounds: { minX: -1, maxX: 1, minZ: -1, maxZ: 1 },
+    });
+    expect(result.attempts).toBe(4);
+    expect(result.stacked).toBe(true);
+  });
+
+  it('keeps the first attempt of a one-die roll', () => {
+    const result = simulate({ seed: '0'.repeat(32), shapes: ['d6'], waves: [0], bounds: BOUNDS });
+    expect(result.attempts).toBe(1);
+    expect(result.stacked).toBe(false);
   });
 
   it('reports settled: false when a wave hits the step cap', () => {
@@ -302,6 +422,14 @@ describe('determinism', () => {
     expect(GOLDEN_HASH).toMatch(/^[0-9a-f]{8}$/);
   });
 
+  it('reports tailSteps 0 for a die that settles flat, FLATTEN_STEPS for the crowded case', () => {
+    const single = simulate({ seed: '0'.repeat(32), shapes: ['d6'], waves: [0], bounds: BOUNDS });
+    const crowded = GOLDEN_CASES[4];
+    if (crowded === undefined) throw new Error('missing crowded golden case');
+    expect(single.tailSteps).toBe(0);
+    expect(simulate(crowded).tailSteps).toBe(FLATTEN_STEPS);
+  });
+
   it('the crowded golden case moves at least one die apart in the flatten tail', () => {
     const input = GOLDEN_CASES[4];
     expect(input?.shapes).toHaveLength(9);
@@ -309,7 +437,7 @@ describe('determinism', () => {
     const result = simulate(input);
     const moved = result.tracks.some((t) => {
       const end = t.frames.length - 7;
-      const rest = end - FLATTEN_STEPS * 7;
+      const rest = end - result.tailSteps * 7;
       const dx = (t.frames[end] ?? 0) - (t.frames[rest] ?? 0);
       const dz = (t.frames[end + 2] ?? 0) - (t.frames[rest + 2] ?? 0);
       // Settled dice drift under 0.05 units/s, far less than 0.05 units over the tail.
@@ -333,10 +461,13 @@ describe('determinism', () => {
     const result: SimResult = {
       totalSteps: 0,
       settled: true,
+      attempts: 1,
+      stacked: false,
+      tailSteps: 0,
       tracks: [{ shape: 'd6', wave: 0, startStep: 0, frames: new Float32Array([1]), upReadout: 0 }],
     };
     expect(trackHash(result)).toBe(h.toString(16).padStart(8, '0'));
-    expect(trackHash({ totalSteps: 0, settled: true, tracks: [] })).toBe('811c9dc5');
+    expect(trackHash({ ...result, tracks: [] })).toBe('811c9dc5');
   });
 });
 

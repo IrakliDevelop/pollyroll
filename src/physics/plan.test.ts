@@ -5,6 +5,7 @@ import { getPolyhedron } from '../geometry/polyhedra';
 import { getRotationGroup } from '../geometry/symmetry';
 import { IDENTITY, quatMul, quatRotate } from '../geometry/vec';
 import type { Quat } from '../geometry/vec';
+import { FLATTEN_STEPS } from './flatten';
 import { MAX_BODIES, planRoll } from './plan';
 import type { PlannedBody } from './plan';
 import type { TrayBounds } from './world';
@@ -179,6 +180,22 @@ describe('planRoll bodies', () => {
     expect(c).toBeGreaterThan(b ?? Infinity);
     for (const body of plan.bodies) expect(shownText(body)).toBe(String(body.value));
     expect(plan.totalSteps).toBeGreaterThan(c ?? Infinity);
+  });
+
+  it('reports tailSteps 0 for a d6 that settles flat, FLATTEN_STEPS for 9 dice in a crowded tray', () => {
+    const single = planRoll(event('1d6', [die('d6', 3)], '0'.repeat(32)), BOUNDS);
+    // The crowded golden case as an event: same seed, shapes, and bounds.
+    const types: DieType[] = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd6', 'd8', 'd10'];
+    const crowded = planRoll(
+      event(
+        '9 dice',
+        types.map((t) => die(t, 1)),
+        '0'.repeat(32),
+      ),
+      { minX: -4.25, maxX: 4.25, minZ: -3, maxZ: 3 },
+    );
+    expect(single.tailSteps).toBe(0);
+    expect(crowded.tailSteps).toBe(FLATTEN_STEPS);
   });
 
   it('is deterministic', () => {
