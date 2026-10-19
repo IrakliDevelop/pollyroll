@@ -62,9 +62,9 @@ export function parse(notation: string): RollAst {
 
   const parseDie = (): DieType => {
     const c = peek();
-    if (c === '%' || c === 'f') {
+    if (c === '%' || c === 'f' || c === 'c') {
       pos++;
-      return c === '%' ? 'd100' : 'dF';
+      return c === '%' ? 'd100' : c === 'f' ? 'dF' : 'dc';
     }
     const sizeAt = pos;
     const size = digits();

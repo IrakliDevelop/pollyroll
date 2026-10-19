@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { SHAPES, getPolyhedron } from './polyhedra';
 import type { ShapeType } from './polyhedra';
+import { labelText, readoutForValue } from './labels';
+import type { LabelSet } from './labels';
 import { findRemap, getRotationGroup } from './symmetry';
 import { quatMul, quatRotate } from './vec';
 import type { Quat, Vec3 } from './vec';
@@ -22,10 +24,18 @@ function inGroup(group: readonly Quat[], q: Quat): boolean {
   return group.some((g) => sameRotation(g, q, 1e-9));
 }
 
-const ORDERS: Record<ShapeType, number> = { d4: 12, d6: 24, d8: 24, d10: 10, d12: 60, d20: 60 };
+const ORDERS: Record<ShapeType, number> = {
+  d4: 12,
+  d6: 24,
+  d8: 24,
+  d10: 10,
+  d12: 60,
+  d20: 60,
+  coin: 32,
+};
 
 describe('rotation groups', () => {
-  it('has the expected order per shape (T 12, O 24, D5 10, I 60)', () => {
+  it('has the expected order per shape (T 12, O 24, D5 10, I 60, D16 32)', () => {
     for (const type of SHAPES) expect(getRotationGroup(type).length, type).toBe(ORDERS[type]);
   });
 
@@ -97,6 +107,34 @@ describe('rotation groups', () => {
   it('throws when no element maps the readouts', () => {
     expect(() => findRemap('d6', 0, 6)).toThrow(Error);
     expect(() => findRemap('d4', -1, 0)).toThrow(Error);
+  });
+
+  it('flips a coin cap to cap with one rotation', () => {
+    const [top = [0, 0, 0], bottom = [0, 0, 0]] = getPolyhedron('coin').readouts;
+    const g = findRemap('coin', 0, 1);
+    expect(close(quatRotate(g, top), bottom, 1e-9)).toBe(true);
+    expect(close(quatRotate(g, bottom), top, 1e-9)).toBe(true);
+  });
+
+  it('shows every d2 and dc value on whichever cap settles up', () => {
+    const readouts = getPolyhedron('coin').readouts;
+    const values: [LabelSet, number, string][] = [
+      ['d2', 1, '1'],
+      ['d2', 2, '2'],
+      ['dc', 0, 'T'],
+      ['dc', 1, 'H'],
+    ];
+    for (const up of [0, 1]) {
+      for (const [set, value, text] of values) {
+        const face = readoutForValue(set, value);
+        expect(labelText(set, face)).toBe(text);
+        const g = findRemap('coin', face, up);
+        const shown = quatRotate(g, readouts[face] ?? [0, 0, 0]);
+        expect(close(shown, readouts[up] ?? [1, 1, 1], 1e-9), `${set} ${value} up ${up}`).toBe(
+          true,
+        );
+      }
+    }
   });
 
   it('remaps a d6 value face onto a settled up-face', () => {

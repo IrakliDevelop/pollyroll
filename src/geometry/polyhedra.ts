@@ -1,7 +1,7 @@
 import { cross, dot, length, normalize, scale, sub } from './vec';
 import type { Vec3 } from './vec';
 
-export type ShapeType = 'd4' | 'd6' | 'd8' | 'd10' | 'd12' | 'd20';
+export type ShapeType = 'd4' | 'd6' | 'd8' | 'd10' | 'd12' | 'd20' | 'coin';
 
 export interface Polyhedron {
   type: ShapeType;
@@ -9,10 +9,10 @@ export interface Polyhedron {
   faces: readonly (readonly number[])[]; // vertex indexes, counter-clockwise seen from outside
   normals: readonly Vec3[]; // unit outward normal per face
   radius: number; // circumradius (max vertex length)
-  readouts: readonly Vec3[]; // unit directions read for "up": face normals; d4: vertex directions
+  readouts: readonly Vec3[]; // unit directions read for "up": face normals; d4: vertex directions; coin: caps
 }
 
-export const SHAPES: readonly ShapeType[] = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20'];
+export const SHAPES: readonly ShapeType[] = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'coin'];
 
 const EPS = 1e-9;
 const PHI = (1 + Math.sqrt(5)) / 2;
@@ -65,6 +65,19 @@ function d10Vertices(): Vec3[] {
   ];
 }
 
+/** 16-sided prism (ring radius 1): vertex k at k * 22.5 degrees counter-clockwise from +X seen
+ *  from +Y, top cap then bottom, with cos/sin from half-angle square roots. */
+function coinVertices(): Vec3[] {
+  const c = Math.sqrt(2 + Math.sqrt(2)) / 2;
+  const s = Math.sqrt(2 - Math.sqrt(2)) / 2;
+  const r = Math.sqrt(0.5);
+  const cos = [1, c, r, s, 0, -s, -r, -c, -1, -c, -r, -s, 0, s, r, c];
+  // 0.65 * h / sqrt(1 + h²) = 0.1 once scaled to circumradius 0.65.
+  const h = 0.1 / Math.sqrt(0.65 * 0.65 - 0.1 * 0.1);
+  const ring = (y: number): Vec3[] => cos.map((x, k): Vec3 => [x, y, -(cos[(k + 12) % 16] ?? 0)]);
+  return [...ring(h), ...ring(-h)];
+}
+
 function rawVertices(type: ShapeType): Vec3[] {
   switch (type) {
     case 'd4':
@@ -89,6 +102,8 @@ function rawVertices(type: ShapeType): Vec3[] {
       ];
     case 'd20':
       return [...signs([0, 1, PHI]), ...signs([1, PHI, 0]), ...signs([PHI, 0, 1])];
+    case 'coin':
+      return coinVertices();
   }
 }
 
@@ -99,6 +114,7 @@ const TARGET_RADIUS: Record<ShapeType, number> = {
   d10: 0.75,
   d12: 0.72,
   d20: 0.85,
+  coin: 0.65,
 };
 
 function vertexAt(vertices: readonly Vec3[], i: number): Vec3 {
@@ -178,7 +194,15 @@ function build(type: ShapeType): Polyhedron {
   let radius = 0;
   for (const v of vertices) radius = Math.max(radius, length(v));
   const { faces, normals } = findFaces(vertices);
-  const readouts = type === 'd4' ? vertices.map(normalize) : normals;
+  const readouts: readonly Vec3[] =
+    type === 'd4'
+      ? vertices.map(normalize)
+      : type === 'coin'
+        ? [
+            [0, 1, 0],
+            [0, -1, 0],
+          ]
+        : normals;
   return { type, vertices, faces, normals, radius, readouts };
 }
 

@@ -5,6 +5,9 @@ import { SHAPES, getPolyhedron } from './polyhedra';
 import { add, cross, dot, length, scale, sub } from './vec';
 import type { Vec3 } from './vec';
 
+// The coin gets its own round mesh in a later task.
+const DICE = SHAPES.filter((s) => s !== 'coin');
+
 interface MeshVertex {
   p: Vec3;
   n: Vec3;
@@ -74,7 +77,7 @@ describe('getDieMesh', () => {
     expect(BEVEL).toBe(0.08);
   });
 
-  it.each(SHAPES)('%s: whole triangles with unit normals inside the hull radius', (shape) => {
+  it.each(DICE)('%s: whole triangles with unit normals inside the hull radius', (shape) => {
     const mesh = getDieMesh(shape);
     const poly = getPolyhedron(shape);
     expect(mesh.shape).toBe(shape);
@@ -87,7 +90,7 @@ describe('getDieMesh', () => {
     }
   });
 
-  it.each(SHAPES)('%s: every triangle is counter-clockwise from outside', (shape) => {
+  it.each(DICE)('%s: every triangle is counter-clockwise from outside', (shape) => {
     for (const [a, b, c] of triangles(getDieMesh(shape))) {
       const g = cross(sub(b.p, a.p), sub(c.p, a.p));
       const ns: Vec3 = [
@@ -99,14 +102,14 @@ describe('getDieMesh', () => {
     }
   });
 
-  it.each(SHAPES)('%s: label cells cover exactly the readout indexes', (shape) => {
+  it.each(DICE)('%s: label cells cover exactly the readout indexes', (shape) => {
     const cells = new Set(vertices(getDieMesh(shape)).map((v) => v.cell));
     const labelled = [...cells].filter((c) => c >= 0).sort((a, b) => a - b);
     expect(labelled).toEqual(getPolyhedron(shape).readouts.map((_, i) => i));
     for (const c of cells) expect(c === -1 || c >= 0).toBe(true);
   });
 
-  it.each(SHAPES)(
+  it.each(DICE)(
     '%s: unlabelled vertices carry (−1, −1); label triangles are not mirrored',
     (shape) => {
       const tris = triangles(getDieMesh(shape));
@@ -163,7 +166,7 @@ describe('getDieMesh', () => {
     });
   });
 
-  it.each(SHAPES.filter((s) => s !== 'd4'))(
+  it.each(DICE.filter((s) => s !== 'd4'))(
     '%s: label square side is 1.45 × the inset face inradius; its glyph circle fits the face',
     (shape) => {
       const byCell = new Map<number, [MeshVertex, MeshVertex, MeshVertex][]>();
@@ -234,7 +237,7 @@ describe('getDieMesh', () => {
     }
   });
 
-  it.each(SHAPES)('%s: corners are cut (no vertex within 0.02 of a hull vertex)', (shape) => {
+  it.each(DICE)('%s: corners are cut (no vertex within 0.02 of a hull vertex)', (shape) => {
     const hull = getPolyhedron(shape).vertices;
     for (const v of vertices(getDieMesh(shape))) {
       for (const h of hull) expect(length(sub(v.p, h))).toBeGreaterThanOrEqual(0.02);

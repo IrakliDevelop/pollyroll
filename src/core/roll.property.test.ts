@@ -32,6 +32,8 @@ const RANGE: Record<DieType, readonly [number, number]> = {
   d20: [1, 20],
   d100: [1, 100],
   dF: [-1, 1],
+  d2: [1, 2],
+  dc: [0, 1],
 };
 const DIES = Object.keys(RANGE) as DieType[];
 const MODES: readonly KeepMode[] = ['kh', 'kl', 'dh', 'dl'];
@@ -65,7 +67,8 @@ const diceArb = (maxCount: number): fc.Arbitrary<TermSpec> =>
       })
       .map(({ sign, keep, fire, success }): TermSpec => {
         const on = { op: fire.op, n: fire.n };
-        const kind = die === 'dF' ? 'none' : fire.kind;
+        // Coins have no threshold in [2, max - 1].
+        const kind = die === 'dF' || RANGE[die][1] < 3 ? 'none' : fire.kind;
         return {
           kind: 'dice',
           sign,

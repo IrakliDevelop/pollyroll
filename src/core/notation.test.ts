@@ -73,6 +73,16 @@ describe('parse', () => {
     expect(parse('4dF')).toEqual({ terms: [dice(1, 4, 'dF')] });
   });
 
+  it('parses d2 and dc coins with every modifier', () => {
+    expect(parse('d2')).toEqual({ terms: [dice(1, 1, 'd2')] });
+    expect(parse('3dc')).toEqual({ terms: [dice(1, 3, 'dc')] });
+    expect(parse('2DC')).toEqual({ terms: [dice(1, 2, 'dc')] });
+    expect(parse('4dc kh2')).toEqual({ terms: [dice(1, 4, 'dc', { mode: 'kh', n: 2 })] });
+    expect(parse('3dc=1')).toEqual({ terms: [dice(1, 3, 'dc', null, { success: cmp('=', 1) })] });
+    expect(parse('d2!')).toEqual({ terms: [dice(1, 1, 'd2', null, { explode: cmp('=', 2) })] });
+    expect(parse('dc!')).toEqual({ terms: [dice(1, 1, 'dc', null, { explode: cmp('=', 1) })] });
+  });
+
   it('is case-insensitive', () => {
     expect(parse('D6')).toEqual({ terms: [dice(1, 1, 'd6')] });
     expect(parse('4D6KH3')).toEqual({ terms: [dice(1, 4, 'd6', { mode: 'kh', n: 3 })] });
@@ -270,6 +280,8 @@ describe('parse errors', () => {
     ['Explosion matches every face', 'd20 ! > 0', 4],
     ['Reroll matches every face', 'd6r<=6', 2],
     ['Reroll matches every face', '2d4ro>=1', 3],
+    ['Reroll matches every face', 'd2r<3', 2],
+    ['Unexpected character "c"', 'dcc', 2],
     ['Expected a number', 'd6r>', 2],
     ['Expected a number', '3d6>=+1', 3],
     ['Expected a number', 'd6!=', 2],
