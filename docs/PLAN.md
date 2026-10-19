@@ -169,6 +169,7 @@ interface TrayOptions {
   fadeAfterMs?: number | null;                              // default null: dice stay until next roll
   labels?: Partial<Record<LabelSet, readonly string[]>>;    // (amended) custom labels, natural order
   sound?: number;                                           // (amended, 0.2.0) clack volume 0–1, default 0
+  announce?: boolean;                                       // (amended, 0.3.0) polite live region; default false
 }
 
 interface DiceTray {
