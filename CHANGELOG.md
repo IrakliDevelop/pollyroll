@@ -12,7 +12,8 @@ All notable changes to this project are documented here. The format follows
   Kenney's CC0 Casino Audio, low-passed at 8 kHz and embedded as one 16 kHz MP3.
 - `pollyroll/render`: `TrayOptions.clacks` plays one recorded clack per physics impact (rotating
   clacks, slight pitch variation, volume from impact strength) and falls back to the procedural
-  sound if the clip cannot be decoded. The demo uses it.
+  sound if the clip cannot be decoded. An invalid clack set throws `RangeError` when the tray is
+  created. The demo uses it.
 
 ## [0.4.0] - Unreleased
 
