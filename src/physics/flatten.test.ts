@@ -171,6 +171,15 @@ describe('flattenTail timing', () => {
     for (let k = 24; k < FLATTEN_STEPS; k++) expect(frameAt(tail, k), `frame ${k}`).toEqual(last);
   });
 
+  it('does not rock a 30° d6 whose tail is lifted, even to its own floor bottom', () => {
+    const tail = flattenTail('d6', tilted, 0, 0, 0);
+    expect(tail).not.toBeNull();
+    if (tail === null) return;
+    const last = quatOf(frameAt(tail, FLATTEN_STEPS - 1));
+    for (let k = FLATTEN_STEPS / 2; k < FLATTEN_STEPS; k++)
+      expect(quatOf(frameAt(tail, k)), `frame ${k}`).toEqual(last);
+  });
+
   it('drops a d6 stacked on another faster each step, without a rock', () => {
     const top = new Float64Array([0, 1.5, 0, 0, 0, 0, 1]);
     const square = footprint('d6', [0, 0, 0, 1]);

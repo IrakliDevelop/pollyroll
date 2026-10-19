@@ -206,8 +206,7 @@ export function flattenTail(
   const low = lowestY(poly.vertices, fx, fy, fz, fw);
   const bottom = bottomOf(shape, pose);
   const clear = lift === undefined ? bottom : Math.max(bottom, lift);
-  // A lift always clears the floor by CLEARANCE, so only unlifted floor topples rock.
-  const rocks = turning && clear < 0.001;
+  const rocks = turning && lift === undefined && bottom < 0.001;
   const sign = qx * fx + qy * fy + qz * fz + qw * fw < 0 ? -1 : 1;
   const half = FLATTEN_STEPS / 2;
   const rise = lift === undefined ? 0 : RISE_STEPS;
