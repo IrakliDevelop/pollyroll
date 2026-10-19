@@ -27,5 +27,12 @@
     "import": "*",
     "limit": "0.5 KB",
     "gzip": true
+  },
+  {
+    "name": "pollyroll/sounds",
+    "path": "dist/sounds.js",
+    "import": "*",
+    "limit": "1.5 KB",
+    "gzip": true
   }
 ]

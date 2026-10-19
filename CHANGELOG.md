@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - Unreleased
+
+### Added
+
+- `pollyroll/sounds` (opt-in entry, about 1.3 kB): `diceClacks`, seven real dice clacks cut from
+  Kenney's CC0 Casino Audio, low-passed at 8 kHz and embedded as one 16 kHz MP3.
+- `pollyroll/render`: `TrayOptions.clacks` plays one recorded clack per physics impact (rotating
+  clacks, slight pitch variation, volume from impact strength) and falls back to the procedural
+  sound if the clip cannot be decoded. An invalid clack set throws `RangeError` when the tray is
+  created. The demo uses it.
+- Demo: a notation key under the examples lists every modifier with a one-click example.
+
 ## [0.4.0] - Unreleased
 
 ### Changed

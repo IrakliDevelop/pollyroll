@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RollEvent } from '../core/types';
+import { diceClacks } from '../sounds';
+import type { ClackSet } from './sound';
 import { createDiceTray, materialPresets } from './tray';
 
 const event: RollEvent = {
@@ -87,6 +89,66 @@ describe('createDiceTray without WebGL2', () => {
       expect(() => createDiceTray(host, { dieScale: bad })).toThrow(RangeError);
     }
     expect(host.querySelector('canvas')).toBeNull();
+  });
+
+  it.each<[string, ClackSet['clacks']]>([
+    ['no clacks', []],
+    [
+      'a NaN length',
+      [
+        [10, 40],
+        [0, NaN],
+      ],
+    ],
+    [
+      'a negative length',
+      [
+        [10, 40],
+        [0, -5],
+      ],
+    ],
+    [
+      'a zero length',
+      [
+        [10, 40],
+        [0, 0],
+      ],
+    ],
+    [
+      'an infinite length',
+      [
+        [10, 40],
+        [0, Infinity],
+      ],
+    ],
+    [
+      'a NaN start',
+      [
+        [10, 40],
+        [NaN, 40],
+      ],
+    ],
+    [
+      'an infinite start',
+      [
+        [10, 40],
+        [-Infinity, 40],
+      ],
+    ],
+  ])('rejects a clack set with %s before adding an overlay', (_, clacks) => {
+    noWebGl();
+    const host = document.createElement('div');
+    expect(() => createDiceTray(host, { clacks: { audio: diceClacks.audio, clacks } })).toThrow(
+      RangeError,
+    );
+    expect(host.querySelector('canvas')).toBeNull();
+  });
+
+  it('accepts the recorded diceClacks', () => {
+    noWebGl();
+    expect(createDiceTray(document.createElement('canvas'), { clacks: diceClacks }).supported).toBe(
+      false,
+    );
   });
 
   it('labels the canvas and updates the label with the result', async () => {

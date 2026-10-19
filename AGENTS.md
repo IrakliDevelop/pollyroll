@@ -28,7 +28,8 @@ physics, result-first rolls built for multiplayer). The approved build specifica
 - Zero runtime dependencies. `react` is an optional peer dependency used only by `pollyroll/react`.
 - The core entry (`pollyroll`) is DOM-free and WebGL-free; it must run in Node and in a server.
 - Zero asset files: no models, textures, fonts, HDRs, or WASM. Geometry, labels, patterns, and
-  lighting are generated in code.
+  lighting are generated in code. One owner-approved exception: the opt-in `pollyroll/sounds` entry
+  embeds CC0 recorded dice clacks as base64 data in code (no separate files); no other entry may.
 - Physics determinism: the simulation step uses only `+ - * /` and `Math.sqrt`. No `Math.sin`,
   `Math.cos`, `Math.exp`, `Math.pow`, `Math.random`, or `Date` inside `src/physics/`.
 - Result-first: roll values are decided before simulation; physics never decides an outcome.

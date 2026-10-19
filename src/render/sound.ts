@@ -1,6 +1,12 @@
 import type { PlannedBody } from '../physics/plan';
 import { DEFAULT_CONFIG, DT } from '../physics/world';
 
+/** Recorded clacks: base64 audio plus [start ms after its first sound, length ms] per clack. */
+export interface ClackSet {
+  readonly audio: string;
+  readonly clacks: readonly (readonly [number, number])[];
+}
+
 const MIN_STRENGTH = 2; // units/s
 const COOLDOWN = 6; // steps between two impacts of one body
 const MAX_IMPACTS = 48;
@@ -52,7 +58,7 @@ export function noiseBuffer(ctx: AudioContext): AudioBuffer {
   return buffer;
 }
 
-/** Schedules a band-passed `noise` burst per impact at `start + step · DT / rate`; returns them. */
+/** Schedules a band-passed `noise` burst per impact at `start + step · DT / rate`, skipping past ones; returns them. */
 export function playImpacts(
   ctx: AudioContext,
   noise: AudioBuffer,
@@ -63,6 +69,8 @@ export function playImpacts(
 ): AudioBufferSourceNode[] {
   const sources: AudioBufferSourceNode[] = [];
   for (let i = 0; i < list.length / 2; i++) {
+    const when = start + ((list[i * 2] ?? 0) * DT) / rate;
+    if (when < ctx.currentTime) continue;
     const src = ctx.createBufferSource();
     src.buffer = noise;
     const filter = ctx.createBiquadFilter();
@@ -72,7 +80,43 @@ export function playImpacts(
     const gain = ctx.createGain();
     gain.gain.value = volume * Math.min(1, (list[i * 2 + 1] ?? 0) / FULL_STRENGTH);
     src.connect(filter).connect(gain).connect(ctx.destination);
-    src.start(start + ((list[i * 2] ?? 0) * DT) / rate);
+    src.start(when);
+    sources.push(src);
+  }
+  return sources;
+}
+
+/** Clack starts (s) from the first sample at 20% of peak, above MP3 pre-echo: decoders differ in trimming the encoder delay. */
+export function clackStarts(data: Float32Array, sampleRate: number, set: ClackSet): number[] {
+  let peak = 0;
+  for (const x of data) peak = Math.max(peak, Math.abs(x));
+  const anchor = data.findIndex((x) => Math.abs(x) > 0.2 * peak) / sampleRate;
+  return set.clacks.map(([ms]) => Math.max(0, anchor + ms / 1000));
+}
+
+/** Schedules one recorded clack per impact at `start + step · DT / rate`, skipping past ones; returns them. */
+export function playClacks(
+  ctx: AudioContext,
+  buffer: AudioBuffer,
+  starts: readonly number[],
+  set: ClackSet,
+  list: Float32Array,
+  start: number,
+  volume: number,
+  rate: number,
+): AudioBufferSourceNode[] {
+  const sources: AudioBufferSourceNode[] = [];
+  for (let i = 0; i < list.length / 2; i++) {
+    const when = start + ((list[i * 2] ?? 0) * DT) / rate;
+    if (when < ctx.currentTime) continue;
+    const k = (i * 5 + 1) % set.clacks.length;
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.playbackRate.value = 0.94 + (0.12 * ((i * 7) % 13)) / 12;
+    const gain = ctx.createGain();
+    gain.gain.value = volume * Math.min(1, (list[i * 2 + 1] ?? 0) / FULL_STRENGTH);
+    src.connect(gain).connect(ctx.destination);
+    src.start(when, starts[k] ?? 0, (set.clacks[k]?.[1] ?? 0) / 1000);
     sources.push(src);
   }
   return sources;
