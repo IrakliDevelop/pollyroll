@@ -6,6 +6,7 @@ import { getPolyhedron } from '../src/geometry/polyhedra';
 import { planRoll, slots } from '../src/physics/plan';
 import { DT } from '../src/physics/world';
 import { fitScale, trayBounds } from '../src/render/camera';
+import type { ClackSet } from '../src/render/sound';
 import type { Skin } from '../src/skins/types';
 
 interface AudioRecord {
@@ -16,6 +17,7 @@ interface AudioRecord {
   stops: number;
   gains: { value: number }[];
   closes: number;
+  decodes: number;
   /** How decodeAudioData settles: at once, by rejecting, or when `release` is called. */
   decode: 'resolve' | 'reject' | 'hold';
   release: () => void;
@@ -772,6 +774,7 @@ test.describe('sound', () => {
         stops: 0,
         gains: [],
         closes: 0,
+        decodes: 0,
         decode: 'resolve',
         release: () => undefined,
       };
@@ -812,6 +815,7 @@ test.describe('sound', () => {
           return node({ gain });
         }
         decodeAudioData(): Promise<unknown> {
+          rec.decodes++;
           // 16 kHz clip whose first sound is at 66 ms.
           const data = new Float32Array(8000);
           data[1056] = 1;
@@ -941,9 +945,20 @@ test.describe('sound', () => {
   });
 
   /** Plays EVENT to settle on a fresh 800 × 600 tray with recorded clacks; returns what was scheduled. */
-  const clackRoll = (page: Page, decode: AudioRecord['decode']) =>
+  const clackRoll = (
+    page: Page,
+    decode: AudioRecord['decode'],
+    clacks: ClackSet = {
+      audio: 'AAAA',
+      clacks: [
+        [-0.8, 61],
+        [70.2, 47],
+        [127.2, 36],
+      ],
+    },
+  ) =>
     page.evaluate(
-      async ({ event, decode }) => {
+      async ({ event, decode, clacks }) => {
         const a = window.__audio;
         a.decode = decode;
         a.starts = [];
@@ -956,20 +971,13 @@ test.describe('sound', () => {
           labelFont: 'sans-serif',
           reducedMotion: 'never',
           sound: 1,
-          clacks: {
-            audio: 'AAAA',
-            clacks: [
-              [-0.8, 61],
-              [70.2, 47],
-              [127.2, 36],
-            ],
-          },
+          clacks,
         });
-        await tray.playRoll(event);
+        const { total } = await tray.playRoll(event);
         tray.dispose();
-        return { args: a.startArgs, filters: a.filters };
+        return { args: a.startArgs, filters: a.filters, decodes: a.decodes, total };
       },
-      { event: EVENT, decode },
+      { event: EVENT, decode, clacks },
     );
 
   test('plays recorded clacks from TrayOptions.clacks instead of noise bursts', async ({
@@ -993,10 +1001,25 @@ test.describe('sound', () => {
   test('falls back to noise bursts when the clacks cannot be decoded', async ({ page }) => {
     await settled(page, '');
     await needsWebGL2(page);
-    const { args, filters } = await clackRoll(page, 'reject');
+    const { args, filters, decodes } = await clackRoll(page, 'reject');
+    expect(decodes).toBe(1);
     expect(args.length).toBeGreaterThanOrEqual(3);
     expect(filters).toBe(args.length);
     for (const a of args) expect(a).toHaveLength(1);
+  });
+
+  test('resolves the roll with noise bursts when the clacks audio is not base64', async ({
+    page,
+  }) => {
+    await settled(page, '');
+    await needsWebGL2(page);
+    const { args, filters, total } = await clackRoll(page, 'resolve', {
+      audio: '!',
+      clacks: [[0, 50]],
+    });
+    expect(total).toBe(10);
+    expect(args.length).toBeGreaterThanOrEqual(3);
+    expect(filters).toBe(args.length);
   });
 
   test('schedules nothing for a roll replaced before its clacks decode', async ({ page }) => {

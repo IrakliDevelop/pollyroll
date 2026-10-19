@@ -112,6 +112,33 @@ describe('playImpacts', () => {
     expect(starts).toHaveLength(1);
     expect(starts[0]).toBeCloseTo(10 + 2 / 3, 9);
   });
+
+  it('skips impacts that fall before currentTime', () => {
+    const starts: number[] = [];
+    const node = <T extends object>(props: T) => ({ ...props, connect: <N>(n: N): N => n });
+    const ctx = {
+      currentTime: 10.5,
+      destination: {},
+      createBufferSource: () =>
+        node({ buffer: null, start: (when: number) => starts.push(when), stop: () => undefined }),
+      createBiquadFilter: () => node({ type: '', frequency: { value: 0 }, Q: { value: 0 } }),
+      createGain: () => node({ gain: { value: 0 } }),
+    };
+    // Boundary fake: only the AudioContext members playImpacts uses.
+    const fake = ctx as unknown as AudioContext;
+    // At start 10 and rate 1.5, steps 0 and 120 fall at 10 and 10.667 s.
+    const sources = playImpacts(
+      fake,
+      {} as AudioBuffer,
+      new Float32Array([0, 15, 120, 15]),
+      10,
+      1,
+      1.5,
+    );
+    expect(sources).toHaveLength(1);
+    expect(starts).toHaveLength(1);
+    expect(starts[0]).toBeCloseTo(10 + 2 / 3, 9);
+  });
 });
 
 describe('clackStarts', () => {

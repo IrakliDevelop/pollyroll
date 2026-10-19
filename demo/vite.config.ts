@@ -10,6 +10,7 @@ export default defineConfig({
       { find: /^pollyroll$/, replacement: src('index.ts') },
       { find: /^pollyroll\/render$/, replacement: src('render/index.ts') },
       { find: /^pollyroll\/react$/, replacement: src('react/index.ts') },
+      { find: /^pollyroll\/sounds$/, replacement: src('sounds/index.ts') },
     ],
   },
 });

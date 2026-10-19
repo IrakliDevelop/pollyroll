@@ -58,7 +58,7 @@ export function noiseBuffer(ctx: AudioContext): AudioBuffer {
   return buffer;
 }
 
-/** Schedules a band-passed `noise` burst per impact at `start + step · DT / rate`; returns them. */
+/** Schedules a band-passed `noise` burst per impact at `start + step · DT / rate`, skipping past ones; returns them. */
 export function playImpacts(
   ctx: AudioContext,
   noise: AudioBuffer,
@@ -69,6 +69,8 @@ export function playImpacts(
 ): AudioBufferSourceNode[] {
   const sources: AudioBufferSourceNode[] = [];
   for (let i = 0; i < list.length / 2; i++) {
+    const when = start + ((list[i * 2] ?? 0) * DT) / rate;
+    if (when < ctx.currentTime) continue;
     const src = ctx.createBufferSource();
     src.buffer = noise;
     const filter = ctx.createBiquadFilter();
@@ -78,7 +80,7 @@ export function playImpacts(
     const gain = ctx.createGain();
     gain.gain.value = volume * Math.min(1, (list[i * 2 + 1] ?? 0) / FULL_STRENGTH);
     src.connect(filter).connect(gain).connect(ctx.destination);
-    src.start(start + ((list[i * 2] ?? 0) * DT) / rate);
+    src.start(when);
     sources.push(src);
   }
   return sources;

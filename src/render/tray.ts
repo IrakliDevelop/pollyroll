@@ -818,18 +818,24 @@ export function createDiceTray(
           audio = { ctx, noise: noiseBuffer(ctx) };
           if (clacks !== undefined) {
             decoded = undefined;
-            const bytes = Uint8Array.from(atob(clacks.audio), (c) => c.charCodeAt(0));
-            decoding = ctx.decodeAudioData(bytes.buffer).then(
-              (buffer) => {
-                decoded = {
-                  buffer,
-                  starts: clackStarts(buffer.getChannelData(0), buffer.sampleRate, clacks),
-                };
-              },
-              () => {
-                decoded = null;
-              },
-            );
+            // Inside the chain, so invalid base64 falls back to noise instead of throwing here.
+            decoding = Promise.resolve()
+              .then(() =>
+                ctx.decodeAudioData(
+                  Uint8Array.from(atob(clacks.audio), (c) => c.charCodeAt(0)).buffer,
+                ),
+              )
+              .then(
+                (buffer) => {
+                  decoded = {
+                    buffer,
+                    starts: clackStarts(buffer.getChannelData(0), buffer.sampleRate, clacks),
+                  };
+                },
+                () => {
+                  decoded = null;
+                },
+              );
           }
         }
         // Resume inside the caller's gesture; the clacks are scheduled on the first frame.

@@ -2,7 +2,7 @@ import { createRoll, evaluate, isRollEvent, PollyrollSyntaxError, redact } from 
 import type { RollEvent } from 'pollyroll';
 import { classic, createDiceTray } from 'pollyroll/render';
 import type { DiceTray, Skin } from 'pollyroll/render';
-import { diceClacks } from '../src/sounds';
+import { diceClacks } from 'pollyroll/sounds';
 import { byId, createSkinEditor } from './editor';
 
 const form = byId('controls', HTMLFormElement);
