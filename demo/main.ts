@@ -1,4 +1,4 @@
-import { createRoll, evaluate, isRollEvent, parse, PollyrollSyntaxError, redact } from 'pollyroll';
+import { createRoll, evaluate, isRollEvent, PollyrollSyntaxError, redact } from 'pollyroll';
 import type { RollEvent } from 'pollyroll';
 import { classic, createDiceTray } from 'pollyroll/render';
 import type { DiceTray, Skin } from 'pollyroll/render';
@@ -33,7 +33,6 @@ function showError(text: string | null): void {
 /** One results line: total (or "hidden") and kept or success count, plus dropped, per group. */
 function describe(event: RollEvent): string {
   const summary = evaluate(event);
-  const counted = parse(event.notation).terms.filter((t) => t.kind === 'dice');
   const parts = [`Total: ${summary.total === null ? 'hidden' : String(summary.total)}`];
   summary.groups.forEach((g, i) => {
     if (g.subtotal === null) {
@@ -42,7 +41,7 @@ function describe(event: RollEvent): string {
     }
     const pick = (indices: number[]): string => indices.map((k) => String(g.dice[k])).join(', ');
     let text = `#${i + 1} ${g.die}: `;
-    text += counted[i]?.success ? `successes ${g.subtotal}` : `kept [${pick(g.kept)}]`;
+    text += g.success ? `successes ${g.subtotal}` : `kept [${pick(g.kept)}]`;
     if (g.dropped.length > 0) text += ` dropped [${pick(g.dropped)}]`;
     parts.push(text);
   });

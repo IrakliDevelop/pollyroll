@@ -47,10 +47,14 @@ export interface RollEvent {
 }
 export interface RollGroupSummary {
   die: DieType;
+  /** Sign of the notation term: -1 for a subtracted group. */
+  sign: 1 | -1;
   dice: (number | null)[];
   kept: number[];
   dropped: number[];
   subtotal: number | null;
+  /** Success comparison of the term; when set, `subtotal` is the signed success count. */
+  success: Compare | null;
 }
 export interface RollSummary {
   total: number | null;

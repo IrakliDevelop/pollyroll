@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { evaluate } from './evaluate';
+import { redact } from './event';
+import { createRoll } from './roll';
 import type { DieType, RollEvent } from './types';
 
 /** Event for `notation` with the given dice; bare numbers are wave-0 dice of group 0. */
@@ -24,7 +26,17 @@ describe('evaluate', () => {
     expect(evaluate(ev('2d20kh1+5', 'd20', [7, 15], 5))).toEqual({
       total: 20,
       modifier: 5,
-      groups: [{ die: 'd20', dice: [7, 15], kept: [1], dropped: [0], subtotal: 15 }],
+      groups: [
+        {
+          die: 'd20',
+          sign: 1,
+          dice: [7, 15],
+          kept: [1],
+          dropped: [0],
+          subtotal: 15,
+          success: null,
+        },
+      ],
     });
   });
 
@@ -94,10 +106,12 @@ describe('evaluate', () => {
     // Live dice 5, 6, 3, 4: kl2 keeps 3 and 4, never the rerolled 1.
     expect(evaluate(ev('4d6r<3kl2', 'd6', [1, 5, 6, 3, 4], 0, [0, 0, 0, 0, 1])).groups[0]).toEqual({
       die: 'd6',
+      sign: 1,
       dice: [1, 5, 6, 3, 4],
       kept: [3, 4],
       dropped: [0, 1, 2],
       subtotal: 7,
+      success: null,
     });
   });
 
@@ -182,7 +196,17 @@ describe('evaluate', () => {
     expect(evaluate(ev('2d20kh1+5', 'd20', [null, null], 5))).toEqual({
       total: null,
       modifier: 5,
-      groups: [{ die: 'd20', dice: [null, null], kept: [], dropped: [], subtotal: null }],
+      groups: [
+        {
+          die: 'd20',
+          sign: 1,
+          dice: [null, null],
+          kept: [],
+          dropped: [],
+          subtotal: null,
+          success: null,
+        },
+      ],
     });
   });
 
@@ -192,6 +216,29 @@ describe('evaluate', () => {
     const summary = evaluate(event);
     expect(summary.total).toBeNull();
     expect(summary.groups.map((g) => g.subtotal)).toEqual([null, 3]);
+  });
+
+  it('reports the term sign of each group', () => {
+    const event = ev('1d20-1d4+2', 'd20', [12], 2);
+    event.dice.push({ type: 'd4', value: 4, group: 1, wave: 0 });
+    expect(evaluate(event).groups.map((g) => g.sign)).toEqual([1, -1]);
+  });
+
+  it('reports the success comparison of a counting group', () => {
+    expect(evaluate(ev('5d10>=7', 'd10', [8, 3, 9, 7, 1])).groups[0]).toMatchObject({
+      success: { op: '>=', n: 7 },
+      subtotal: 3,
+    });
+    expect(evaluate(ev('2d6', 'd6', [2, 5])).groups[0]?.success).toBeNull();
+  });
+
+  it('keeps sign and success on a redacted group', () => {
+    const event = redact(createRoll('-3d6>=5', { rng: () => 0 }));
+    expect(evaluate(event).groups[0]).toMatchObject({
+      sign: -1,
+      success: { op: '>=', n: 5 },
+      subtotal: null,
+    });
   });
 
   it('throws on a group out of range', () => {
