@@ -15,6 +15,7 @@ import { ATLAS_MAX_LEVEL, buildAtlas, LABEL_SETS } from './atlas';
 import { cameraPosition, fitScale, trayBounds, viewProjection } from './camera';
 import { attrib, createBuffer, createProgram } from './gl';
 import { DIE_VERTEX, dieFragment, LIGHT_DIR, SHADOW_FRAGMENT, SHADOW_VERTEX } from './shaders';
+import { impacts, noiseBuffer, playImpacts } from './sound';
 
 export interface TrayOptions {
   skin?: SkinRef;
@@ -31,6 +32,8 @@ export interface TrayOptions {
    * blank faces, 2 = the +1 faces. Missing entries use the default text.
    */
   labels?: Partial<Record<LabelSet, readonly string[]>>;
+  /** Volume 0–1 of procedural impact sounds; default 0 (silent). */
+  sound?: number;
 }
 
 export interface DiceTray {
@@ -39,6 +42,8 @@ export interface DiceTray {
   setSkin(skin: SkinRef): void;
   /** Sets the die size for subsequent rolls; the dice already on screen keep their size. */
   setDieScale(scale: number): void;
+  /** Sets the impact sound volume (clamped to 0–1, 0 mutes) for subsequent rolls. */
+  setSound(volume: number): void;
   clear(): void;
   resize(): void;
   dispose(): void;
@@ -46,7 +51,8 @@ export interface DiceTray {
 }
 
 const FADE_MS = 300;
-const INST = 8; // floats per die instance: x, y, z, atlas row (−1 = blank), qx, qy, qz, qw
+const DROPPED_OPACITY = 0.35;
+const INST = 9; // floats per die instance: x, y, z, atlas row (−1 = blank), qx, qy, qz, qw, opacity
 const FRAME = 7; // floats per keyframe: x, y, z, qx, qy, qz, qw
 // Floor shift per unit height away from the key light: −L.xz / L.y.
 const SHADOW_X = -LIGHT_DIR[0] / LIGHT_DIR[1];
@@ -89,6 +95,7 @@ interface Group {
 interface Roll {
   plan: RollPlan;
   groups: Group[];
+  dropped: Set<number>; // event dice indices dropped by keep/drop
   eventSkin: SkinRef | undefined;
   skin: SkinGpu;
   scale: number;
@@ -117,20 +124,30 @@ interface Program {
 let colorCtx: CanvasRenderingContext2D | null | undefined;
 const colors = new Map<string, readonly number[]>();
 
-/** Linear RGB of a CSS color, resolved through a shared 2D context and cached per string. */
+/** Linear RGB of a CSS color, normalized by a shared 1×1 2D canvas and cached per string. */
 function linearColor(css: string): readonly number[] {
   let c = colors.get(css);
   if (c === undefined) {
-    colorCtx ??= document.createElement('canvas').getContext('2d');
-    let text = '#000000';
+    colorCtx ??= Object.assign(document.createElement('canvas'), {
+      width: 1,
+      height: 1,
+    }).getContext('2d', { willReadFrequently: true });
+    let srgb: ArrayLike<number> = [0, 0, 0];
     if (colorCtx !== null) {
       colorCtx.fillStyle = '#000';
       colorCtx.fillStyle = css;
-      text = String(colorCtx.fillStyle);
+      // Parse the serialized colour first; some browsers block or randomize canvas readback.
+      const s = String(colorCtx.fillStyle);
+      const hex = /^#(..)(..)(..)$/.exec(s);
+      const rgb = /^rgba?\(([\d.]+), ([\d.]+), ([\d.]+)/.exec(s);
+      if (hex !== null) srgb = hex.slice(1).map((h) => parseInt(h, 16));
+      else if (rgb !== null) srgb = rgb.slice(1).map(Number);
+      else {
+        colorCtx.clearRect(0, 0, 1, 1);
+        colorCtx.fillRect(0, 0, 1, 1);
+        srgb = colorCtx.getImageData(0, 0, 1, 1).data;
+      }
     }
-    const srgb = text.startsWith('#')
-      ? [1, 3, 5].map((i) => parseInt(text.slice(i, i + 2), 16))
-      : (text.match(/[\d.]+/g) ?? []).map(Number);
     c = [0, 1, 2].map((i) => Math.pow((srgb[i] ?? 0) / 255, 2.2));
     colors.set(css, c);
   }
@@ -162,6 +179,13 @@ function skinGpu(skin: Skin): SkinGpu {
       m.sparkle ?? 0,
     ]),
   };
+}
+
+function checkScale(scale: number): number {
+  if (!Number.isFinite(scale) || scale <= 0) {
+    throw new RangeError(`dieScale must be a positive finite number, got ${scale}`);
+  }
+  return scale;
 }
 
 function at(f: Float32Array, i: number): number {
@@ -216,16 +240,20 @@ export function createDiceTray(
   target: HTMLCanvasElement | HTMLElement,
   opts: TrayOptions = {},
 ): DiceTray {
+  let dieScale = checkScale(opts.dieScale ?? 2);
   const own = !(target instanceof HTMLCanvasElement);
   const canvas = own ? document.createElement('canvas') : target;
   if (own) {
+    // The overlay is absolute; a static target would let it escape to a positioned ancestor.
+    if (getComputedStyle(target).position === 'static') target.style.position = 'relative';
     canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none';
     target.appendChild(canvas);
   }
-  let dieScale = opts.dieScale ?? 2;
   const shadows = opts.shadows ?? true;
   const maxDpr = opts.maxDpr ?? 2;
-  const fadeAfterMs = opts.fadeAfterMs ?? null;
+  const fadeMs = opts.fadeAfterMs ?? NaN;
+  // setTimeout fires at once for delays beyond 2^31 − 1 ms.
+  const fadeAfterMs = Number.isFinite(fadeMs) && fadeMs <= 2147483647 ? fadeMs : null;
   const gl = canvas.getContext('webgl2', {
     alpha: true,
     premultipliedAlpha: true,
@@ -248,6 +276,9 @@ export function createDiceTray(
   let fadeStart = -1;
   let alpha = 1;
   let aspect = 1;
+  let sound = 0;
+  let audio: { ctx: AudioContext; noise: AudioBuffer } | null = null;
+  let sources: AudioBufferSourceNode[] = [];
   const vp = new Float32Array(16);
   const shadowData = new Float32Array(MAX_BODIES * 4);
   const instances = new Map<LabelSet, Float32Array>(); // reused across rolls, one per label set
@@ -258,6 +289,7 @@ export function createDiceTray(
   const sets = new Map<LabelSet, { vao: WebGLVertexArrayObject; buf: WebGLBuffer }>();
   let shadowGpu: { vao: WebGLVertexArrayObject; quad: WebGLBuffer; buf: WebGLBuffer } | null = null;
   let atlasTex: WebGLTexture | null = null;
+  const loading = new Set<string>(); // fonts already checked for a pending load
 
   /** Cached program for `key`; `fragment` is compiled with the die vertex shader on first use. */
   function program(g: WebGL2RenderingContext, key: string, fragment: string): Program {
@@ -298,6 +330,7 @@ export function createDiceTray(
       const buf = createBuffer(g, MAX_BODIES * INST * 4);
       attrib(g, 3, 4, INST, 0, 1);
       attrib(g, 4, 4, INST, 4, 1);
+      attrib(g, 5, 1, INST, 8, 1);
       g.bindVertexArray(null);
       s = { vao, buf };
       sets.set(set, s);
@@ -351,12 +384,36 @@ export function createDiceTray(
   }
 
   /** Rebuilds the atlas canvas for `font` and releases the texture made from the previous one. */
-  function atlasFor(g: WebGL2RenderingContext, font: string): void {
-    if (font === atlasFont) return;
+  function rebuildAtlas(g: WebGL2RenderingContext, font: string): void {
     atlasFont = font;
     atlas = buildAtlas(font, opts.labels, labelFont);
     if (atlasTex !== null) g.deleteTexture(atlasTex);
     atlasTex = null;
+    awaitFont(g, font);
+  }
+
+  function atlasFor(g: WebGL2RenderingContext, font: string): void {
+    if (font !== atlasFont) rebuildAtlas(g, font);
+  }
+
+  /** Redraws the atlas once a web font that was not ready when it was drawn finishes loading. */
+  function awaitFont(g: WebGL2RenderingContext, font: string): void {
+    if (loading.has(font)) return;
+    loading.add(font);
+    const spec = `bold 64px ${font}`;
+    try {
+      if (document.fonts.check(spec)) return;
+    } catch {
+      return; // no FontFaceSet, or a font string it cannot parse
+    }
+    document.fonts.load(spec).then(
+      () => {
+        if (disposed || atlasFont !== font) return;
+        rebuildAtlas(g, font);
+        if (frame === 0) render();
+      },
+      () => undefined,
+    );
   }
 
   /** True when the skin's program compiles (or is cached); a failing skin is not cached. */
@@ -417,13 +474,15 @@ export function createDiceTray(
         if (b === undefined || b.startStep > s) continue;
         const o = n * INST;
         writePose(b, s, b.value === null ? -1 : grp.row, grp.data, o);
+        const opacity = r.done && r.dropped.has(b.die) ? DROPPED_OPACITY : 1;
+        grp.data[o + 8] = opacity;
         const h = at(grp.data, o + 1) * scale;
         const fade = 1 - h / 4;
         // Seen from straight above, a blob under the die is hidden; offset it as the light would.
         shadowData[ns * 4] = at(grp.data, o) * scale + h * SHADOW_X;
         shadowData[ns * 4 + 1] = at(grp.data, o + 2) * scale + h * SHADOW_Z;
         shadowData[ns * 4 + 2] = 1.3 * grp.radius * scale;
-        shadowData[ns * 4 + 3] = 0.45 * (fade < 0 ? 0 : fade > 1 ? 1 : fade);
+        shadowData[ns * 4 + 3] = 0.45 * (fade < 0 ? 0 : fade > 1 ? 1 : fade) * opacity;
         n++;
         ns++;
       }
@@ -515,12 +574,20 @@ export function createDiceTray(
     fadeTimer = undefined;
     fadeStart = -1;
     alpha = 1;
+    silence();
+  }
+
+  function silence(): void {
+    for (const src of sources) src.stop();
+    sources = [];
   }
 
   /** Shows the final frame, resolves the roll, and schedules the fade. */
   function settle(r: Roll): void {
     r.step = r.plan.totalSteps;
     r.done = true;
+    // Impacts end ≥ 25 steps before settle; a suspended context must not play them on resume.
+    silence();
     render();
     resolvePending();
     if (fadeAfterMs === null) return;
@@ -571,6 +638,11 @@ export function createDiceTray(
     if (canvas.width !== w || canvas.height !== h) {
       canvas.width = w;
       canvas.height = h;
+      // CSS size follows the buffer attributes: pin it, or every resize would grow the canvas.
+      if (!own && (canvas.clientWidth !== cw || canvas.clientHeight !== ch)) {
+        canvas.style.width = `${cw}px`;
+        canvas.style.height = `${ch}px`;
+      }
     }
   }
 
@@ -619,15 +691,20 @@ export function createDiceTray(
     async playRoll(event: RollEvent): Promise<RollSummary> {
       const summary = evaluate(event);
       if (disposed || gl === null) return summary;
-      // Compile first: a skin whose shader fails rejects here and leaves the current roll alone.
+      // Build first: a failing skin shader or invalid event rejects and leaves the current roll alone.
       // While lost the skin compiles on restore, falling back to the tray skin if it fails.
       const skin = skinGpu(resolveSkin(event.skin ?? traySkin));
       if (!lost) program(gl, skin.key, skin.fragment);
-      stop();
-      resolvePending();
       fit();
       const scale = fitScale(dieScale, slots(event).length, aspect);
-      const plan = planRoll(event, trayBounds(aspect, scale));
+      let plan: RollPlan;
+      try {
+        plan = planRoll(event, trayBounds(aspect, scale));
+      } catch (e) {
+        // fit() may have resized, and so cleared, the buffer of a settled roll.
+        if (frame === 0) render();
+        throw e;
+      }
       const groups: Group[] = [];
       LABEL_SETS.forEach((set, row) => {
         const bodies = plan.bodies.filter((b) => b.labelSet === set);
@@ -640,9 +717,20 @@ export function createDiceTray(
         }
         groups.push({ set, row, bodies, radius, data, count: 0 });
       });
+      // Summary indices are group-local: die i is the k-th die of its group.
+      const dropped = new Set<number>();
+      const seen: number[] = [];
+      event.dice.forEach((d, i) => {
+        const k = seen[d.group] ?? 0;
+        seen[d.group] = k + 1;
+        if (summary.groups[d.group]?.dropped.includes(k)) dropped.add(i);
+      });
+      stop();
+      resolvePending();
       const r: Roll = {
         plan,
         groups,
+        dropped,
         eventSkin: event.skin,
         skin,
         scale,
@@ -655,8 +743,20 @@ export function createDiceTray(
         pending = { resolve, summary };
       });
       // While lost the outcome resolves now; the dice draw on restore if this roll is still current.
-      if (reduced() || lost) settle(r);
-      else loop();
+      if (reduced() || lost) {
+        settle(r);
+        return done;
+      }
+      loop();
+      if (sound > 0 && typeof AudioContext === 'function') {
+        if (audio === null) {
+          const ctx = new AudioContext();
+          audio = { ctx, noise: noiseBuffer(ctx) };
+        }
+        const { ctx, noise } = audio;
+        if (ctx.state === 'suspended') void ctx.resume();
+        sources = playImpacts(ctx, noise, impacts(plan.bodies), ctx.currentTime, sound);
+      }
       return done;
     },
 
@@ -680,10 +780,14 @@ export function createDiceTray(
     },
 
     setDieScale(scale: number): void {
-      if (!Number.isFinite(scale) || scale <= 0) {
-        throw new RangeError(`dieScale must be a positive finite number, got ${scale}`);
+      dieScale = checkScale(scale);
+    },
+
+    setSound(volume: number): void {
+      if (!Number.isFinite(volume)) {
+        throw new RangeError(`sound must be a finite number, got ${volume}`);
       }
-      dieScale = scale;
+      sound = Math.min(1, Math.max(0, volume));
     },
 
     clear(): void {
@@ -703,6 +807,7 @@ export function createDiceTray(
       stop();
       roll = null;
       resolvePending();
+      render(); // a user canvas would otherwise keep showing the last frame
       disposed = true;
       canvas.removeEventListener('webglcontextlost', onLost);
       canvas.removeEventListener('webglcontextrestored', onRestored);
@@ -710,10 +815,14 @@ export function createDiceTray(
       observer = null;
       if (gl !== null) dropGpu(gl, !lost && !gl.isContextLost());
       if (own) canvas.remove();
+      void audio?.ctx.close();
+      audio = null;
     },
   };
+  tray.setSound(opts.sound ?? 0);
 
   if (gl !== null) {
+    awaitFont(gl, atlasFont);
     canvas.addEventListener('webglcontextlost', onLost);
     canvas.addEventListener('webglcontextrestored', onRestored);
     observer = new ResizeObserver(() => tray.resize());

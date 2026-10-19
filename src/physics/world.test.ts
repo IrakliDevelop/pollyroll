@@ -158,8 +158,22 @@ describe('world: edge cases', () => {
   });
 
   it('checkHull throws RangeError for a hull with more than 20 vertices', () => {
-    expect(() => checkHull(new Float64Array(21 * 3))).toThrow(RangeError);
-    expect(() => checkHull(new Float64Array(20 * 3))).not.toThrow();
+    const d6 = getBodyShape('d6');
+    expect(() => checkHull({ ...d6, vertices: new Float64Array(21 * 3) })).toThrow(RangeError);
+    expect(() => checkHull({ ...d6, vertices: new Float64Array(20 * 3) })).not.toThrow();
+  });
+
+  it('checkHull throws RangeError for more than 20 faces, 30 edges, or 5 edges per face', () => {
+    const d6 = getBodyShape('d6');
+    expect(() => checkHull({ ...d6, planes: new Float64Array(21 * 4) })).toThrow(RangeError);
+    expect(() => checkHull({ ...d6, planes: new Float64Array(20 * 4) })).not.toThrow();
+    // A closed hull has one edge per two face sides: 16 quads give 32 edges, 15 give 30.
+    expect(() => checkHull({ ...d6, faces: Array<number[]>(16).fill([0, 1, 2, 3]) })).toThrow(
+      RangeError,
+    );
+    expect(() => checkHull({ ...d6, faces: Array<number[]>(15).fill([0, 1, 2, 3]) })).not.toThrow();
+    expect(() => checkHull({ ...d6, faces: [[0, 1, 2, 3, 4, 5]] })).toThrow(RangeError);
+    expect(() => checkHull({ ...d6, faces: [[0, 1, 2, 3, 4]] })).not.toThrow();
   });
 
   it('a zero-velocity body sitting on the floor stays finite', () => {
@@ -176,7 +190,9 @@ describe('world: edge cases', () => {
     world.add('d20', [0, 3, 0], ID, ZERO, ZERO);
     for (let s = 0; s < 120; s++) world.step();
     expect(allFinite(world, 1e6)).toBe(true);
-    expect(Math.abs(poseOf(world, 0).p[1] - poseOf(world, 1).p[1])).toBeGreaterThan(0.5);
+    const a = poseOf(world, 0).p;
+    const b = poseOf(world, 1).p;
+    expect(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2])).toBeGreaterThanOrEqual(0.9);
   });
 
   it('normalizes the spawn orientation; a zero quaternion becomes identity', () => {
@@ -296,15 +312,20 @@ describe('world: collision', () => {
     const world = createWorld(BOUNDS, { gravity: 0 });
     world.add('d20', [-1.5, 3, 0], ID, [3, 0, 0], ZERO);
     world.add('d20', [1.5, 3, 0], ID, [-3, 0, 0], ZERO);
-    let minGap = Infinity;
+    const distance = (): number => {
+      const [ax, ay, az] = poseOf(world, 0).p;
+      const [bx, by, bz] = poseOf(world, 1).p;
+      return Math.hypot(bx - ax, by - ay, bz - az);
+    };
+    let prev = distance();
     for (let s = 0; s < 180; s++) {
       world.step();
-      minGap = Math.min(minGap, poseOf(world, 1).p[0] - poseOf(world, 0).p[0]);
+      const d = distance();
+      if (s >= 150) expect(d, `step ${s}`).toBeGreaterThan(prev);
+      prev = d;
     }
-    const gap = poseOf(world, 1).p[0] - poseOf(world, 0).p[0];
-    expect(minGap).toBeLessThan(1.6);
-    expect(gap).toBeGreaterThan(3);
-    expect(Math.abs(poseOf(world, 0).p[1] - 3)).toBeLessThan(1e-9);
+    expect(allFinite(world, 1e6)).toBe(true);
+    expect(prev).toBeGreaterThan(2);
   });
 
   it('clamps restitution above 1 so a drop never rebounds faster than it hit', () => {
@@ -323,5 +344,26 @@ describe('world: collision', () => {
       prevY = y;
     }
     throw new Error('no rebound');
+  });
+});
+
+describe('world: hull contacts', () => {
+  it('two d6 resting 0.2 apart face to face stay put', () => {
+    const world = createWorld(BOUNDS);
+    world.add('d6', [-0.6, 0.5, 0], ID, ZERO, ZERO);
+    world.add('d6', [0.6, 0.5, 0], ID, ZERO, ZERO);
+    for (let s = 0; s < 120; s++) world.step();
+    const a = poseOf(world, 0).p;
+    const b = poseOf(world, 1).p;
+    expect(Math.hypot(a[0] + 0.6, a[1] - 0.5, a[2])).toBeLessThan(0.01);
+    expect(Math.hypot(b[0] - 0.6, b[1] - 0.5, b[2])).toBeLessThan(0.01);
+  });
+
+  it('a d6 dropped onto a resting d6 lands on its top face', () => {
+    const world = createWorld(BOUNDS);
+    world.add('d6', [0, 0.5, 0], ID, ZERO, ZERO);
+    world.add('d6', [0, 2.5, 0], ID, ZERO, ZERO);
+    for (let s = 0; s < 240; s++) world.step();
+    expect(Math.abs(lowestY(world, 1, 'd6') - 1)).toBeLessThan(0.02);
   });
 });

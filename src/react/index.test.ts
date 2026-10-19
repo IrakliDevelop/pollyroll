@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, renderHook } from '@testing-library/react';
-import { createElement, createRef, StrictMode } from 'react';
+import { createElement, createRef, StrictMode, useEffect, useState } from 'react';
 import { afterEach, assert, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { DiceTray as Tray } from 'pollyroll/render';
 import type { Skin, SkinRef } from '../skins/types';
@@ -107,6 +107,83 @@ describe('useDiceTray', () => {
     expect(setSkin).toHaveBeenLastCalledWith(oak);
     rerender({ skin: undefined });
     expect(setSkin).toHaveBeenCalledTimes(2);
+  });
+
+  it.each<['dieScale' | 'sound', 'setDieScale' | 'setSound']>([
+    ['dieScale', 'setDieScale'],
+    ['sound', 'setSound'],
+  ])(
+    'applies a changed %s through %s once and ignores equal or undefined values',
+    (key, method) => {
+      const ref = { current: document.createElement('div') };
+      const { result, rerender } = renderHook<Tray | null, { value?: number }>(
+        ({ value }) => useDiceTray(ref, { [key]: value }),
+        { initialProps: { value: 1 } },
+      );
+      assert.isNotNull(result.current);
+      const set = vi.spyOn(result.current, method);
+      rerender({ value: 1 });
+      expect(set).not.toHaveBeenCalled();
+      rerender({ value: 0.5 });
+      rerender({ value: 0.5 });
+      expect(set).toHaveBeenCalledTimes(1);
+      expect(set).toHaveBeenCalledWith(0.5);
+      rerender({ value: undefined });
+      expect(set).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('creates a tray when an element target appears, recreates it on a new element, and disposes once on unmount', () => {
+    const trays: Tray[] = [];
+    function Host({ id }: { id: string | null }) {
+      const [el, setEl] = useState<HTMLElement | null>(null);
+      const tray = useDiceTray(el);
+      useEffect(() => {
+        if (tray) trays.push(tray);
+      }, [tray]);
+      return id === null ? null : createElement('div', { key: id, id, ref: setEl });
+    }
+    const view = render(createElement(Host, { id: null }));
+    expect(trays).toHaveLength(0);
+    view.rerender(createElement(Host, { id: 'a' }));
+    expect(trays).toHaveLength(1);
+    const [first] = trays;
+    assert.isDefined(first);
+    expect(document.querySelectorAll('#a canvas')).toHaveLength(1);
+    const disposeFirst = vi.spyOn(first, 'dispose');
+    view.rerender(createElement(Host, { id: 'b' }));
+    expect(disposeFirst).toHaveBeenCalledTimes(1);
+    expect(trays).toHaveLength(2);
+    const second = trays[1];
+    assert.isDefined(second);
+    expect(document.querySelectorAll('#b canvas')).toHaveLength(1);
+    const disposeSecond = vi.spyOn(second, 'dispose');
+    view.unmount();
+    expect(disposeSecond).toHaveBeenCalledTimes(1);
+    expect(disposeFirst).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps one live tray for an element target under StrictMode and disposes every tray it created', () => {
+    // Each tray asks its own canvas for webgl2 once and removes that canvas on dispose.
+    const getContext = vi.mocked(HTMLCanvasElement.prototype.getContext);
+    getContext.mockClear();
+    const remove = vi.spyOn(HTMLCanvasElement.prototype, 'remove');
+    const created = (): number => getContext.mock.calls.filter(([id]) => id === 'webgl2').length;
+    function Host() {
+      const [el, setEl] = useState<HTMLElement | null>(null);
+      useDiceTray(el);
+      return createElement('div', { id: 'host', ref: setEl });
+    }
+    const view = render(createElement(StrictMode, null, createElement(Host)));
+    const host = document.getElementById('host');
+    assert.isNotNull(host);
+    expect(host.querySelectorAll('canvas')).toHaveLength(1);
+    expect(created()).toBeGreaterThanOrEqual(1);
+    expect(remove).toHaveBeenCalledTimes(created() - 1);
+    view.unmount();
+    expect(host.querySelectorAll('canvas')).toHaveLength(0);
+    expect(remove).toHaveBeenCalledTimes(created());
+    remove.mockRestore();
   });
 });
 

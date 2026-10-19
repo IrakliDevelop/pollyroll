@@ -72,6 +72,101 @@ describe('evaluate', () => {
     expect(summary.total).toBe(15);
   });
 
+  it('replaces rerolled dice with their rerolls', () => {
+    const summary = evaluate(ev('4d6r1', 'd6', [1, 4, 1, 6, 1, 3, 2], 0, [0, 0, 0, 0, 1, 1, 2]));
+    expect(summary.groups[0]).toMatchObject({
+      kept: [1, 3, 5, 6],
+      dropped: [0, 2, 4],
+      subtotal: 15,
+    });
+    expect(summary.total).toBe(15);
+  });
+
+  it('rerolls once and keeps a matching reroll', () => {
+    expect(evaluate(ev('2d20ro1', 'd20', [1, 1, 1, 5], 0, [0, 0, 1, 1])).groups[0]).toMatchObject({
+      kept: [2, 3],
+      dropped: [0, 1],
+      subtotal: 6,
+    });
+  });
+
+  it('keeps among the live dice after rerolls', () => {
+    // Live dice 5, 6, 3, 4: kl2 keeps 3 and 4, never the rerolled 1.
+    expect(evaluate(ev('4d6r<3kl2', 'd6', [1, 5, 6, 3, 4], 0, [0, 0, 0, 0, 1])).groups[0]).toEqual({
+      die: 'd6',
+      dice: [1, 5, 6, 3, 4],
+      kept: [3, 4],
+      dropped: [0, 1, 2],
+      subtotal: 7,
+    });
+  });
+
+  it('keeps a matching die in the last wave live', () => {
+    const waves = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    expect(
+      evaluate(
+        ev(
+          '1d6r',
+          'd6',
+          waves.map(() => 1),
+          0,
+          waves,
+        ),
+      ).groups[0],
+    ).toMatchObject({
+      kept: [10],
+      dropped: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+      subtotal: 1,
+    });
+  });
+
+  it('keeps a firing die live when no reroll follows it', () => {
+    expect(evaluate(ev('2d6r', 'd6', [1, 1, 4], 0, [0, 0, 1])).groups[0]).toMatchObject({
+      kept: [1, 2],
+      dropped: [0],
+      subtotal: 5,
+    });
+  });
+
+  it('counts explosion dice that match a threshold', () => {
+    const summary = evaluate(ev('1d6!>=5', 'd6', [5, 6, 2], 0, [0, 1, 2]));
+    expect(summary.groups[0]).toMatchObject({ kept: [0, 1, 2], dropped: [], subtotal: 13 });
+  });
+
+  it('counts successes and adds the modifier', () => {
+    const summary = evaluate(ev('5d10>=7+1', 'd10', [7, 3, 10, 6, 9], 1));
+    expect(summary.groups[0]).toMatchObject({ kept: [0, 1, 2, 3, 4], subtotal: 3 });
+    expect(summary.total).toBe(4);
+  });
+
+  it.each([
+    ['6d6>4', [5, 4, 6, 1, 6, 2], 3],
+    ['3d20<5', [4, 5, 1], 2],
+    ['4d6=6', [6, 6, 1, 5], 2],
+    ['2d6<=2', [2, 3], 1],
+  ])('counts successes for %s', (notation, values, count) => {
+    const type = notation.includes('d20') ? 'd20' : 'd6';
+    expect(evaluate(ev(notation, type, values)).groups[0]?.subtotal).toBe(count);
+  });
+
+  it('counts successes among kept dice only', () => {
+    expect(evaluate(ev('4d6kh3>=5', 'd6', [6, 5, 1, 4])).groups[0]).toMatchObject({
+      kept: [0, 1, 3],
+      dropped: [2],
+      subtotal: 2,
+    });
+  });
+
+  it('counts successes of rerolled dice after the reroll', () => {
+    expect(evaluate(ev('2d6r1>=5', 'd6', [1, 5, 6], 0, [0, 0, 1])).groups[0]?.subtotal).toBe(2);
+  });
+
+  it('negates the success count of a negative term', () => {
+    const summary = evaluate(ev('-2d6>=5', 'd6', [5, 6]));
+    expect(summary.groups[0]?.subtotal).toBe(-2);
+    expect(summary.total).toBe(-2);
+  });
+
   it('collects dice per group in event order', () => {
     const event = ev('2d6!+1d4', 'd6', [6, 1, 2], 0, [0, 0, 1]);
     event.dice.splice(2, 0, { type: 'd4', value: 3, group: 1, wave: 0 });

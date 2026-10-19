@@ -10,7 +10,7 @@ export interface ThrowState {
 }
 
 /** Clamps `value` into [lo, hi]; when the interval is empty (die wider than the tray), the midpoint. */
-function clampInto(value: number, lo: number, hi: number): number {
+export function clampInto(value: number, lo: number, hi: number): number {
   if (lo > hi) return (lo + hi) / 2;
   return value < lo ? lo : value > hi ? hi : value;
 }
@@ -21,13 +21,13 @@ function clampInto(value: number, lo: number, hi: number): number {
  *
  * 1. Heading h = (hx, hz): repeat hx = 2f − 1, hz = 2f − 1 until 0.04 < hx² + hz² ≤ 1 (rejection
  *    sampling of the unit disc minus a small core), then normalize.
- * 2. Speed s = 9 + 5f.
+ * 2. Speed s = 5 + 3f.
  * 3. Per body, in index order: jitter x, jitter z, y, orientation (repeat 4 draws u = 2f − 1 until
  *    1e-6 < |u|² ≤ 1, normalized, as [x, y, z, w]: a uniform random rotation by rejection sampling
  *    of the 4-ball), speed factor, lateral, vy, ωx, ωy, ωz.
  *
- * Bodies sit on a grid of `cols` columns (smallest cols with cols² ≥ count) across the heading,
- * behind the tray centre; each spawn x/z is clamped into [min + r, max − r] of the bounds.
+ * Bodies sit in an axis-aligned block behind the tray centre, spaced 2·rMax + 0.5 and stacked in
+ * layers when the tray is full, so no bounding spheres overlap; each x/z is clamped into the walls.
  */
 export function throwWave(
   rng: SeedRng,
@@ -45,24 +45,39 @@ export function throwWave(
   const hLen = Math.sqrt(lenSq);
   hx /= hLen;
   hz /= hLen;
-  const speed = 9 + 5 * rng.float();
+  const speed = 5 + 3 * rng.float();
   const px = -hz;
   const pz = hx;
 
   const count = radii.length;
-  let cols = 0;
-  while (cols * cols < count) cols++;
+  const rMax = Math.max(0, ...radii);
+  const d = 2 * rMax + 0.5;
+  // Margin covers the worst jitter offset 0.15·√2.
+  const m = rMax + 0.25;
+  const fitX = Math.max(1, Math.floor((bounds.maxX - bounds.minX - 2 * m) / d) + 1);
+  const fitZ = Math.max(1, Math.floor((bounds.maxZ - bounds.minZ - 2 * m) / d) + 1);
+  let k = 0;
+  while (k * k < count) k++;
+  const c = Math.min(fitX, k);
+  const r = Math.min(fitZ, Math.ceil(count / c));
+  const perLayer = c * r;
+  const back = 0.35 * Math.min((bounds.maxX - bounds.minX) / 2, (bounds.maxZ - bounds.minZ) / 2);
+  const bx = ((c - 1) / 2) * d + m;
+  const bz = ((r - 1) / 2) * d + m;
   const centerX = (bounds.minX + bounds.maxX) / 2;
   const centerZ = (bounds.minZ + bounds.maxZ) / 2;
-  const back = 0.35 * Math.min((bounds.maxX - bounds.minX) / 2, (bounds.maxZ - bounds.minZ) / 2);
+  const cx = clampInto(centerX - hx * back, bounds.minX + bx, bounds.maxX - bx);
+  const cz = clampInto(centerZ - hz * back, bounds.minZ + bz, bounds.maxZ - bz);
 
-  return radii.map((r, i): ThrowState => {
-    const col = i % cols;
-    const row = Math.floor(i / cols);
-    const across = (col - (cols - 1) / 2) * 1.3;
-    const x = centerX - hx * back + px * across - hx * (row * 1.3) + (2 * rng.float() - 1) * 0.15;
-    const z = centerZ - hz * back + pz * across - hz * (row * 1.3) + (2 * rng.float() - 1) * 0.15;
-    const y = 2.2 + 0.6 * rng.float();
+  return radii.map((radius, i): ThrowState => {
+    const layer = Math.floor(i / perLayer);
+    const j = i - layer * perLayer;
+    const col = j % c;
+    const row = Math.floor(j / c);
+    const x = cx + (col - (c - 1) / 2) * d + (2 * rng.float() - 1) * 0.15;
+    const z = cz + (row - (r - 1) / 2) * d + (2 * rng.float() - 1) * 0.15;
+    // Layer gap covers the 0.6 y jitter.
+    const y = 2.2 + 0.6 * rng.float() + layer * (2 * rMax + 1.1);
     let ux = 0;
     let uy = 0;
     let uz = 0;
@@ -84,9 +99,9 @@ export function throwWave(
     const wz = (2 * rng.float() - 1) * 25;
     return {
       position: [
-        clampInto(x, bounds.minX + r, bounds.maxX - r),
+        clampInto(x, bounds.minX + radius, bounds.maxX - radius),
         y,
-        clampInto(z, bounds.minZ + r, bounds.maxZ - r),
+        clampInto(z, bounds.minZ + radius, bounds.maxZ - radius),
       ],
       orientation: [ux / uLen, uy / uLen, uz / uLen, uw / uLen],
       velocity: [hx * along + px * lateral, vy, hz * along + pz * lateral],

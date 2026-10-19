@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { evaluate } from './evaluate';
 import { isRollEvent, redact } from './event';
 import { createRoll } from './roll';
-import type { DieType, KeepMode, RollEvent } from './types';
+import type { Compare, CompareOp, DieType, KeepMode, RollEvent } from './types';
 
 interface DiceSpec {
   kind: 'dice';
@@ -11,7 +11,9 @@ interface DiceSpec {
   count: number;
   die: DieType;
   keep: { mode: KeepMode; n: number } | null;
-  explode: boolean;
+  explode: Compare | null;
+  reroll: { on: Compare; once: boolean } | null;
+  success: Compare | null;
 }
 interface ConstantSpec {
   kind: 'constant';
@@ -33,30 +35,49 @@ const RANGE: Record<DieType, readonly [number, number]> = {
 };
 const DIES = Object.keys(RANGE) as DieType[];
 const MODES: readonly KeepMode[] = ['kh', 'kl', 'dh', 'dl'];
+const OPS: readonly CompareOp[] = ['=', '<', '<=', '>', '>='];
 const SEED = '0123456789abcdef0123456789abcdef';
 
 const signArb = fc.constantFrom<1 | -1>(1, -1);
 
 const diceArb = (maxCount: number): fc.Arbitrary<TermSpec> =>
-  fc.integer({ min: 1, max: maxCount }).chain((count) =>
+  fc.tuple(fc.integer({ min: 1, max: maxCount }), fc.constantFrom(...DIES)).chain(([count, die]) =>
     fc
       .record({
         sign: signArb,
-        die: fc.constantFrom(...DIES),
         keep: fc.option(
           fc.record({ mode: fc.constantFrom(...MODES), n: fc.integer({ min: 1, max: count }) }),
           { nil: null },
         ),
-        explode: fc.boolean(),
+        // Thresholds in [2, max - 1] never match every face.
+        fire: fc.record({
+          kind: fc.constantFrom('none', 'explode', 'reroll', 'rerollOnce'),
+          op: fc.constantFrom(...OPS),
+          n: fc.integer({ min: 2, max: Math.max(2, RANGE[die][1] - 1) }),
+        }),
+        success: fc.option(
+          fc.record({
+            op: fc.constantFrom(...OPS),
+            n: fc.integer({ min: 0, max: RANGE[die][1] + 1 }),
+          }),
+          { nil: null },
+        ),
       })
-      .map(({ sign, die, keep, explode }): TermSpec => ({
-        kind: 'dice',
-        sign,
-        count,
-        die,
-        keep,
-        explode: explode && die !== 'dF',
-      })),
+      .map(({ sign, keep, fire, success }): TermSpec => {
+        const on = { op: fire.op, n: fire.n };
+        const kind = die === 'dF' ? 'none' : fire.kind;
+        return {
+          kind: 'dice',
+          sign,
+          count,
+          die,
+          keep,
+          explode: kind === 'explode' ? on : null,
+          reroll:
+            kind === 'none' || kind === 'explode' ? null : { on, once: kind === 'rerollOnce' },
+          success,
+        };
+      }),
   );
 
 const constantArb: fc.Arbitrary<TermSpec> = fc
@@ -78,13 +99,30 @@ const termsArb: fc.Arbitrary<TermSpec[]> = fc.integer({ min: 1, max: 20 }).chain
 /** Values RNG cycling through a generated integer list, each reduced into [0, maxExclusive). */
 const rngArb = fc.array(fc.nat(), { minLength: 1, maxLength: 64 });
 
+const cmp = (c: Compare): string => `${c.op}${c.n}`;
+
+/** Independent comparison oracle. */
+function satisfies(c: Compare, v: number): boolean {
+  if (c.op === '=') return v === c.n;
+  if (c.op === '<') return v < c.n;
+  if (c.op === '<=') return v <= c.n;
+  if (c.op === '>') return v > c.n;
+  return v >= c.n;
+}
+
 function notationOf(terms: readonly TermSpec[]): string {
   return terms
     .map((t, i) => {
       const sign = t.sign < 0 ? '-' : i > 0 ? '+' : '';
       if (t.kind === 'constant') return `${sign}${t.value}`;
       const keep = t.keep ? `${t.keep.mode}${t.keep.n}` : '';
-      return `${sign}${t.count}d${t.die === 'dF' ? 'F' : t.die.slice(1)}${keep}${t.explode ? '!' : ''}`;
+      const fire = t.explode
+        ? `!${cmp(t.explode)}`
+        : t.reroll
+          ? `r${t.reroll.once ? 'o' : ''}${cmp(t.reroll.on)}`
+          : '';
+      const success = t.success ? cmp(t.success) : '';
+      return `${sign}${t.count}d${t.die === 'dF' ? 'F' : t.die.slice(1)}${keep}${fire}${success}`;
     })
     .join('');
 }
@@ -95,8 +133,10 @@ function roll(terms: readonly TermSpec[], stream: readonly number[]): RollEvent 
   return createRoll(notationOf(terms), { rng, seed: SEED });
 }
 
-/** Expected total: signed constants plus, per dice term, the signed sum of the dice its keep rule
- *  keeps (dice of a term grouped by index among the dice terms). */
+/** Expected total: signed constants plus, per dice term, the signed sum (or, with a success
+ *  comparison, the signed count of matches) of the dice its keep rule keeps among the dice that were
+ *  not rerolled (dice of a term grouped by index among the dice terms). A matching die is rerolled
+ *  unless it is in the last wave: wave 10, or wave 1 for reroll-once. */
 function oracleTotal(terms: readonly TermSpec[], event: RollEvent): number {
   let total = 0;
   let group = 0;
@@ -106,8 +146,11 @@ function oracleTotal(terms: readonly TermSpec[], event: RollEvent): number {
       continue;
     }
     const g = group++;
+    const { reroll } = term;
+    const last = reroll?.once ? 1 : 10;
     const desc = event.dice
       .filter((d) => d.group === g)
+      .filter((d) => !reroll || d.wave === last || !satisfies(reroll.on, d.value ?? 0))
       .map((d) => {
         if (d.value === null) throw new Error('unexpected null value');
         return d.value;
@@ -121,12 +164,26 @@ function oracleTotal(terms: readonly TermSpec[], event: RollEvent): number {
       else if (mode === 'dh') kept = desc.slice(n);
       else kept = desc.slice(0, desc.length - n);
     }
-    for (const v of kept) total += term.sign * v;
+    for (const v of kept) {
+      if (!term.success) total += term.sign * v;
+      else if (satisfies(term.success, v)) total += term.sign;
+    }
   }
   return total;
 }
 
 const maxed = (n: number): number[] => [n - 1];
+const eq = (n: number): Compare => ({ op: '=', n });
+const REROLL_ONES: TermSpec = {
+  kind: 'dice',
+  sign: 1,
+  count: 3,
+  die: 'd8',
+  keep: { mode: 'kl', n: 2 },
+  explode: null,
+  reroll: { on: eq(1), once: false },
+  success: { op: '<=', n: 1 },
+};
 
 describe('roll properties', () => {
   it('every die carries its term type and a value within that die range', () => {
@@ -143,8 +200,36 @@ describe('roll properties', () => {
       }),
       {
         examples: [
-          [[{ kind: 'dice', sign: 1, count: 3, die: 'dF', keep: null, explode: false }], [0, 1, 2]],
-          [[{ kind: 'dice', sign: 1, count: 1, die: 'd100', keep: null, explode: true }], [99]],
+          [
+            [
+              {
+                kind: 'dice',
+                sign: 1,
+                count: 3,
+                die: 'dF',
+                keep: null,
+                explode: null,
+                reroll: null,
+                success: null,
+              },
+            ],
+            [0, 1, 2],
+          ],
+          [
+            [
+              {
+                kind: 'dice',
+                sign: 1,
+                count: 1,
+                die: 'd100',
+                keep: null,
+                explode: eq(100),
+                reroll: null,
+                success: null,
+              },
+            ],
+            [99],
+          ],
         ],
       },
     );
@@ -167,7 +252,9 @@ describe('roll properties', () => {
                 count: 2,
                 die: 'd6',
                 keep: { mode: 'kl', n: 2 },
-                explode: true,
+                explode: eq(6),
+                reroll: null,
+                success: null,
               },
               { kind: 'constant', sign: -1, value: 7 },
             ],
@@ -181,7 +268,9 @@ describe('roll properties', () => {
                 count: 4,
                 die: 'd20',
                 keep: { mode: 'dh', n: 1 },
-                explode: false,
+                explode: null,
+                reroll: null,
+                success: null,
               },
               {
                 kind: 'dice',
@@ -189,10 +278,30 @@ describe('roll properties', () => {
                 count: 4,
                 die: 'd8',
                 keep: { mode: 'dl', n: 3 },
-                explode: false,
+                explode: null,
+                reroll: null,
+                success: null,
               },
             ],
             [3, 17, 9, 0, 5, 2, 7, 1],
+          ],
+          // Every die rerolls through all ten waves; the last wave stays live.
+          [[REROLL_ONES], [0]],
+          // Reroll once, then count successes among the kept dice.
+          [
+            [
+              {
+                kind: 'dice',
+                sign: -1,
+                count: 4,
+                die: 'd6',
+                keep: { mode: 'kh', n: 3 },
+                explode: null,
+                reroll: { on: { op: '<', n: 3 }, once: true },
+                success: { op: '>=', n: 2 },
+              },
+            ],
+            [0, 4, 1, 5, 0, 1, 3],
           ],
         ],
       },
@@ -211,7 +320,21 @@ describe('roll properties', () => {
       }),
       {
         examples: [
-          [[{ kind: 'dice', sign: 1, count: 1, die: 'd4', keep: null, explode: true }], maxed(4)],
+          [
+            [
+              {
+                kind: 'dice',
+                sign: 1,
+                count: 1,
+                die: 'd4',
+                keep: null,
+                explode: eq(4),
+                reroll: null,
+                success: null,
+              },
+            ],
+            maxed(4),
+          ],
         ],
       },
     );
@@ -227,9 +350,21 @@ describe('roll properties', () => {
       {
         examples: [
           [
-            [{ kind: 'dice', sign: -1, count: 100, die: 'd12', keep: null, explode: true }],
+            [
+              {
+                kind: 'dice',
+                sign: -1,
+                count: 100,
+                die: 'd12',
+                keep: null,
+                explode: eq(12),
+                reroll: null,
+                success: null,
+              },
+            ],
             maxed(12),
           ],
+          [[REROLL_ONES], [0]],
         ],
       },
     );

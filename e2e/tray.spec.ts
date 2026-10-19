@@ -1,12 +1,26 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import type { RollEvent } from '../src/core/types';
+import { planRoll, slots } from '../src/physics/plan';
+import { DT } from '../src/physics/world';
+import { fitScale, trayBounds } from '../src/render/camera';
 import type { Skin } from '../src/skins/types';
+
+interface AudioRecord {
+  constructed: number;
+  starts: number[];
+  stops: number;
+  gains: { value: number }[];
+  closes: number;
+}
 
 declare global {
   interface Window {
     __loseContext: WEBGL_lose_context;
     __atlasFonts: string[];
+    __audio: AudioRecord;
+    __fontLoad: { spec: string; drawnBefore: number; done: boolean };
+    __getImageData: CanvasRenderingContext2D['getImageData'];
   }
 }
 
@@ -23,6 +37,12 @@ const EVENT: RollEvent = {
   createdAt: 0,
 };
 
+const INVALID: RollEvent = {
+  ...EVENT,
+  notation: '1d6',
+  dice: [{ type: 'd6', value: 7, group: 0, wave: 0 }],
+};
+
 const BROKEN: Skin = {
   material: 'plastic',
   color: '#fff',
@@ -30,8 +50,20 @@ const BROKEN: Skin = {
   pattern: { glsl: 'BROKEN' },
 };
 
-/** Shares of #tray pixels that are clearly darker than the white page, and clearly red. */
-async function coverage(page: Page): Promise<{ ink: number; red: number }> {
+const SIX: RollEvent = {
+  ...EVENT,
+  notation: '6d6',
+  dice: [1, 2, 3, 4, 5, 6].map((value) => ({ type: 'd6', value, group: 0, wave: 0 })),
+  modifier: 0,
+};
+
+/**
+ * Shares of #tray pixels that are clearly darker than the white page, and clearly red; mean colour
+ * of the darker ones.
+ */
+async function coverage(
+  page: Page,
+): Promise<{ ink: number; red: number; mean: { r: number; g: number; b: number } }> {
   const png = await page.locator('#tray').screenshot();
   return page.evaluate(async (b64) => {
     const img = new Image();
@@ -46,16 +78,29 @@ async function coverage(page: Page): Promise<{ ink: number; red: number }> {
     const { data } = ctx.getImageData(0, 0, c.width, c.height);
     let ink = 0;
     let red = 0;
+    const sum = { r: 0, g: 0, b: 0 };
     for (let i = 0; i < data.length; i += 4) {
       const r = data[i] ?? 255;
       const g = data[i + 1] ?? 255;
       const b = data[i + 2] ?? 255;
-      if (r + g + b < 3 * 235) ink++;
+      if (r + g + b < 3 * 235) {
+        ink++;
+        sum.r += r;
+        sum.g += g;
+        sum.b += b;
+      }
       if (r > 120 && g < 60 && b < 60) red++;
     }
     const n = data.length / 4;
-    return { ink: ink / n, red: red / n };
+    const k = ink || 1;
+    return { ink: ink / n, red: red / n, mean: { r: sum.r / k, g: sum.g / k, b: sum.b / k } };
   }, png.toString('base64'));
+}
+
+/** Skips the test when the open page has no WebGL2, as in CI's headless Firefox. */
+async function needsWebGL2(page: Page): Promise<void> {
+  const ok = await page.evaluate(() => !!document.createElement('canvas').getContext('webgl2'));
+  test.skip(!ok, 'needs WebGL2');
 }
 
 /** Opens the smoke page, waits for its roll to settle, and collects page errors. */
@@ -257,6 +302,41 @@ test.describe('tray label font', () => {
     expect(await drawn(page)).toEqual(['sans-serif']);
   });
 
+  test('rebuilds the atlas once a font that was not ready finishes loading', async ({ page }) => {
+    await page.addInitScript(() => {
+      const rec = { spec: '', drawnBefore: -1, done: false };
+      window.__fontLoad = rec;
+      const fonts = document.fonts;
+      const check = fonts.check.bind(fonts);
+      let first = true;
+      fonts.check = (font, text) => {
+        if (!first) return check(font, text);
+        first = false;
+        return false;
+      };
+      fonts.load = (font) =>
+        new Promise((resolve) => {
+          rec.spec = font;
+          setTimeout(() => {
+            rec.drawnBefore = window.__atlasFonts.length;
+            rec.done = true;
+            resolve([]);
+          }, 200);
+        });
+    });
+    await open(page, '?reduced');
+    await page.waitForFunction(() => window.__fontLoad.done);
+    const { spec, before, after } = await page.evaluate(() => {
+      const fonts = window.__atlasFonts;
+      const n = window.__fontLoad.drawnBefore;
+      return { spec: window.__fontLoad.spec, before: fonts.slice(0, n), after: fonts.slice(n) };
+    });
+    expect(spec).toBe('bold 64px sans-serif');
+    expect(before.length).toBeGreaterThan(0);
+    expect(new Set(before)).toEqual(new Set(['sans-serif']));
+    expect(after).toEqual(before);
+  });
+
   test('defaults the atlas font to system-ui', async ({ page }) => {
     await open(page, '?reduced');
     await drawn(page);
@@ -291,5 +371,387 @@ test.describe('tray die scale', () => {
     const large = (await coverage(page)).ink;
     expect(small).toBeGreaterThan(0.001);
     expect(large / small).toBeGreaterThan(2.5);
+  });
+});
+
+test.describe('tray canvas sizing at devicePixelRatio 2', () => {
+  test.use({ deviceScaleFactor: 2 });
+
+  /** Opens the smoke page, then disposes its tray and drops its fixed canvas CSS. */
+  async function blank(page: Page): Promise<void> {
+    await page.goto('/smoke.html?reduced');
+    await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
+    await page.evaluate(() => {
+      window.__pollyrollTray.dispose();
+      document.querySelector('style')?.remove();
+    });
+  }
+
+  test('pins the CSS size of a canvas sized by its attributes instead of growing it', async ({
+    page,
+  }) => {
+    await blank(page);
+    await needsWebGL2(page);
+    const size = await page.evaluate(async () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 300;
+      canvas.height = 150;
+      document.body.append(canvas);
+      window.__pollyrollCreate(canvas);
+      await new Promise((r) => setTimeout(r, 600));
+      return { width: canvas.width, clientWidth: canvas.clientWidth };
+    });
+    expect(size).toEqual({ width: 600, clientWidth: 300 });
+  });
+
+  test('leaves a stylesheet-sized canvas responsive', async ({ page }) => {
+    await blank(page);
+    await needsWebGL2(page);
+    const size = await page.evaluate(async () => {
+      const style = document.createElement('style');
+      style.textContent = '.fill { width: 100%; }';
+      const box = document.createElement('div');
+      box.style.width = '400px';
+      const canvas = document.createElement('canvas');
+      canvas.className = 'fill';
+      box.append(canvas);
+      document.body.append(style, box);
+      window.__pollyrollCreate(canvas);
+      await new Promise((r) => setTimeout(r, 300));
+      box.style.width = '500px';
+      await new Promise((r) => setTimeout(r, 300));
+      return { width: canvas.width, inline: canvas.style.width };
+    });
+    expect(size).toEqual({ width: 1000, inline: '' });
+  });
+});
+
+test.describe('tray robustness', () => {
+  test.skip(({ browserName }) => browserName !== 'chromium', 'pixel coverage checked in Chromium');
+
+  test('renders a modern CSS color like its hex equivalent', async ({ page }) => {
+    await open(page, '?reduced');
+    const mean = async (color: string): Promise<{ r: number; g: number; b: number }> => {
+      await page.evaluate(
+        async ([event, c]) => {
+          await window.__pollyrollTray.playRoll({
+            ...event,
+            skin: { material: 'plastic', color: c, labelColor: '#000' },
+          });
+        },
+        [EVENT, color] as const,
+      );
+      return (await coverage(page)).mean;
+    };
+    const hex = await mean('#ff7f50');
+    const modern = await mean('color(srgb 1 0.498 0.314)');
+    for (const c of ['r', 'g', 'b'] as const) expect(Math.abs(modern[c] - hex[c])).toBeLessThan(8);
+  });
+
+  test('renders a hex colour when canvas readback is blocked', async ({ page, context }) => {
+    const mean = async (p: Page): Promise<{ r: number; g: number; b: number }> => {
+      await p.evaluate(async (event) => {
+        await window.__pollyrollTray.playRoll({
+          ...event,
+          skin: { material: 'plastic', color: '#ff7f50', labelColor: '#000' },
+        });
+        CanvasRenderingContext2D.prototype.getImageData = window.__getImageData;
+      }, EVENT);
+      return (await coverage(p)).mean;
+    };
+    const blocked = await context.newPage();
+    await blocked.addInitScript(() => {
+      const proto = CanvasRenderingContext2D.prototype;
+      window.__getImageData = proto.getImageData;
+      proto.getImageData = () => {
+        throw new Error('canvas readback blocked');
+      };
+    });
+    const errors = await open(blocked, '?reduced');
+    const stubbed = await mean(blocked);
+    await page.addInitScript(() => {
+      window.__getImageData = CanvasRenderingContext2D.prototype.getImageData;
+    });
+    await open(page, '?reduced');
+    const plain = await mean(page);
+    expect(errors).toEqual([]);
+    for (const c of ['r', 'g', 'b'] as const)
+      expect(Math.abs(stubbed[c] - plain[c])).toBeLessThan(8);
+  });
+
+  test('never fades the dice when fadeAfterMs is Infinity', async ({ page }) => {
+    await open(page, '?reduced');
+    await page.evaluate(async (event) => {
+      window.__pollyrollTray.dispose();
+      const canvas = document.getElementById('tray');
+      if (!(canvas instanceof HTMLCanvasElement)) throw new Error('missing #tray');
+      const tray = window.__pollyrollCreate(canvas, {
+        labelFont: 'sans-serif',
+        reducedMotion: 'always',
+        fadeAfterMs: Infinity,
+      });
+      await tray.playRoll(event);
+      await new Promise((r) => setTimeout(r, 800));
+    }, EVENT);
+    expect((await coverage(page)).ink).toBeGreaterThan(0.005);
+  });
+
+  test('redraws the settled roll when a failing playRoll resized the drawing buffer', async ({
+    page,
+  }) => {
+    await open(page, '?reduced');
+    const error = await page.evaluate(async (invalid) => {
+      // A DPR change resizes the buffer in playRoll without a ResizeObserver callback.
+      Object.defineProperty(window, 'devicePixelRatio', { value: 2, configurable: true });
+      return window.__pollyrollTray.playRoll(invalid).then(
+        () => 'resolved',
+        (e: unknown) => (e instanceof Error ? e.name : String(e)),
+      );
+    }, INVALID);
+    expect(error).toBe('RangeError');
+    expect((await coverage(page)).ink).toBeGreaterThan(0.005);
+  });
+
+  test('clears a user canvas on dispose', async ({ page }) => {
+    await open(page, '?reduced');
+    expect((await coverage(page)).ink).toBeGreaterThan(0.005);
+    await page.evaluate(() => window.__pollyrollTray.dispose());
+    expect((await coverage(page)).ink).toBe(0);
+  });
+});
+
+test('a failing playRoll leaves the current roll animating and pending', async ({ page }) => {
+  await page.goto('/smoke.html');
+  await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
+  await needsWebGL2(page);
+  const result = await page.evaluate(
+    async ([six, invalid]) => {
+      const tray = window.__pollyrollTray;
+      const t0 = performance.now();
+      const first = tray
+        .playRoll(six)
+        .then((s) => ({ total: s.total, ms: performance.now() - t0 }));
+      await new Promise((r) => setTimeout(r, 100));
+      const error = await tray.playRoll(invalid).then(
+        () => 'resolved',
+        (e: unknown) => (e instanceof Error ? e.name : String(e)),
+      );
+      return { error, ...(await first) };
+    },
+    [SIX, INVALID] as const,
+  );
+  expect(result.error).toBe('RangeError');
+  expect(result.total).toBe(21);
+  expect(result.ms).toBeGreaterThan(300);
+});
+
+test.describe('dropped dice', () => {
+  test.skip(
+    ({ browserName }) => browserName !== 'chromium',
+    'pixel comparison checked in Chromium',
+  );
+
+  test('fades the dropped die after settle and leaves kept dice unchanged', async ({ page }) => {
+    const shot = async (query: string): Promise<string> => {
+      await open(page, `?reduced&event=${query}`);
+      return (await page.locator('#tray').screenshot()).toString('base64');
+    };
+    const all = await shot('all');
+    const adv = await shot('adv');
+    const dis = await shot('dis');
+    const diff = await page.evaluate(
+      async (shots) => {
+        const pixels = async (b64: string): Promise<Uint8ClampedArray> => {
+          const img = new Image();
+          img.src = `data:image/png;base64,${b64}`;
+          await img.decode();
+          const c = document.createElement('canvas');
+          c.width = img.width;
+          c.height = img.height;
+          const ctx = c.getContext('2d');
+          if (ctx === null) throw new Error('no 2D context');
+          ctx.drawImage(img, 0, 0);
+          return ctx.getImageData(0, 0, c.width, c.height).data;
+        };
+        const [pa, pb, pc] = await Promise.all(shots.map(pixels));
+        if (pa === undefined || pb === undefined || pc === undefined) throw new Error('no pixels');
+        const n = pa.length / 4;
+        const masks = [pb, pc].map((p) => {
+          const mask = new Uint8Array(n);
+          let lighter = 0;
+          for (let i = 0; i < n; i++) {
+            const sa = (pa[4 * i] ?? 0) + (pa[4 * i + 1] ?? 0) + (pa[4 * i + 2] ?? 0);
+            const sb = (p[4 * i] ?? 0) + (p[4 * i + 1] ?? 0) + (p[4 * i + 2] ?? 0);
+            if (Math.abs(sb - sa) <= 30) continue;
+            mask[i] = 1;
+            if (sb > sa) lighter++;
+          }
+          const changed = mask.reduce((sum, m) => sum + m, 0);
+          return { mask, changed, lighter: changed === 0 ? 0 : lighter / changed };
+        });
+        const [adv, dis] = masks;
+        if (adv === undefined || dis === undefined) throw new Error('no masks');
+        let both = 0;
+        for (let i = 0; i < n; i++) both += (adv.mask[i] ?? 0) & (dis.mask[i] ?? 0);
+        return {
+          changed: [adv.changed / n, dis.changed / n],
+          lighter: [adv.lighter, dis.lighter],
+          overlap: both / Math.max(1, Math.min(adv.changed, dis.changed)),
+        };
+      },
+      [all, adv, dis],
+    );
+    for (const changed of diff.changed) expect(changed).toBeGreaterThan(0.003);
+    for (const lighter of diff.lighter) expect(lighter).toBeGreaterThan(0.95);
+    // adv and dis fade different dice, so their changed pixels barely meet.
+    expect(diff.overlap).toBeLessThan(0.2);
+  });
+});
+
+test.describe('sound', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      const rec: AudioRecord = { constructed: 0, starts: [], stops: 0, gains: [], closes: 0 };
+      window.__audio = rec;
+      const node = <T extends object>(props: T): T & { connect: <N>(n: N) => N } => ({
+        ...props,
+        connect: (n) => n,
+      });
+      class StubAudioContext {
+        currentTime = 0;
+        sampleRate = 48000;
+        state = 'suspended';
+        destination = {};
+        constructor() {
+          rec.constructed++;
+        }
+        createBuffer(_channels: number, length: number) {
+          return { getChannelData: () => new Float32Array(length) };
+        }
+        createBufferSource() {
+          return node({
+            buffer: null,
+            start: (when: number) => rec.starts.push(when),
+            stop: () => rec.stops++,
+          });
+        }
+        createBiquadFilter() {
+          return node({ type: '', frequency: { value: 0 }, Q: { value: 0 } });
+        }
+        createGain() {
+          const gain = { value: 0 };
+          rec.gains.push(gain);
+          return node({ gain });
+        }
+        resume() {
+          this.state = 'running';
+          return Promise.resolve();
+        }
+        close() {
+          rec.closes++;
+          return Promise.resolve();
+        }
+      }
+      Object.defineProperty(window, 'AudioContext', { value: StubAudioContext });
+    });
+  });
+
+  const settled = async (page: Page, query: string): Promise<void> => {
+    await page.goto(`/smoke.html${query}`);
+    await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
+  };
+
+  test('schedules impact clacks within the roll, stops them on replace and settle, and closes on dispose', async ({
+    page,
+  }) => {
+    await settled(page, '?sound');
+    await needsWebGL2(page);
+    const first = await page.evaluate(() => ({
+      constructed: window.__audio.constructed,
+      starts: window.__audio.starts.length,
+      stops: window.__audio.stops,
+      gains: window.__audio.gains.map((g) => g.value),
+    }));
+    expect(first.constructed).toBe(1);
+    expect(first.starts).toBeGreaterThanOrEqual(3);
+    expect(first.starts).toBeLessThanOrEqual(48);
+    // A suspended context must not play a settled roll's clacks on a later resume.
+    expect(first.stops).toBe(first.starts);
+    for (const g of first.gains) {
+      expect(g).toBeGreaterThan(0);
+      expect(g).toBeLessThanOrEqual(1);
+    }
+
+    const replay = await page.evaluate(async (event) => {
+      const tray = window.__pollyrollTray;
+      const a = window.__audio;
+      a.starts = [];
+      a.stops = 0;
+      void tray.playRoll(event);
+      const replaced = a.starts.length;
+      const done = tray.playRoll(event);
+      const stoppedOnReplace = a.stops;
+      const current = a.starts.length - replaced;
+      await done;
+      const stoppedAtSettle = a.stops - stoppedOnReplace;
+      tray.dispose();
+      return {
+        replaced,
+        stoppedOnReplace,
+        current,
+        stoppedAtSettle,
+        starts: a.starts,
+        stops: a.stops,
+        closes: a.closes,
+      };
+    }, EVENT);
+    // The smoke canvas is 800 × 600 CSS pixels at the default dieScale 2.
+    const bounds = trayBounds(4 / 3, fitScale(2, slots(EVENT).length, 4 / 3));
+    const end = planRoll(EVENT, bounds).totalSteps * DT + 0.1;
+    expect(replay.current).toBeGreaterThan(0);
+    expect(replay.stoppedOnReplace).toBe(replay.replaced);
+    expect(replay.stoppedAtSettle).toBe(replay.current);
+    for (const when of replay.starts) {
+      expect(when).toBeGreaterThanOrEqual(0);
+      expect(when).toBeLessThanOrEqual(end);
+    }
+    // Settle already stopped every source, so dispose only closes the context.
+    expect(replay.stops).toBe(replay.replaced + replay.current);
+    expect(replay.closes).toBe(1);
+  });
+
+  test('setSound clamps to 1, mutes at 0, and rejects non-finite volumes', async ({ page }) => {
+    await settled(page, '?sound');
+    await needsWebGL2(page);
+    const result = await page.evaluate(async (event) => {
+      const tray = window.__pollyrollTray;
+      const a = window.__audio;
+      const gains = async (): Promise<number[]> => {
+        a.gains = [];
+        await tray.playRoll(event);
+        return a.gains.map((g) => g.value);
+      };
+      const atOne = await gains();
+      tray.setSound(5);
+      const atFive = await gains();
+      tray.setSound(0);
+      const muted = await gains();
+      let error = '';
+      try {
+        tray.setSound(Number.NaN);
+      } catch (e) {
+        error = e instanceof RangeError ? 'RangeError' : String(e);
+      }
+      return { atOne, atFive, muted, error };
+    }, EVENT);
+    expect(result.atOne.length).toBeGreaterThan(0);
+    expect(result.atFive).toEqual(result.atOne);
+    expect(result.muted).toEqual([]);
+    expect(result.error).toBe('RangeError');
+  });
+
+  test('creates no AudioContext by default', async ({ page }) => {
+    await settled(page, '');
+    expect(await page.evaluate(() => window.__audio.constructed)).toBe(0);
   });
 });

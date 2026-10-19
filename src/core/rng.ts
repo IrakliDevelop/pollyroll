@@ -15,19 +15,26 @@ function rejectionInt(max: number, draw: () => number): number {
 
 /** Unbiased integer in [0, maxExclusive) from crypto.getRandomValues with rejection sampling. */
 export function cryptoInt(maxExclusive: number): number {
-  return rejectionInt(maxExclusive, () => {
-    let u = 0;
-    for (const w of globalThis.crypto.getRandomValues(word)) u = w;
-    return u;
-  });
+  return rejectionInt(maxExclusive, () => globalThis.crypto.getRandomValues(word)[0] ?? 0);
 }
+
+/** 16 random bytes as 32 lowercase hex characters, each byte passed through `set` first. */
+const randomHex = (set: (byte: number, i: number) => number): string =>
+  Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)), (b, i) =>
+    set(b, i).toString(16).padStart(2, '0'),
+  ).join('');
 
 /** 128-bit seed as 32 lowercase hex characters, from crypto.getRandomValues. */
 export function generateSeed(): string {
-  const words = globalThis.crypto.getRandomValues(new Uint32Array(4));
-  let seed = '';
-  for (const w of words) seed += w.toString(16).padStart(8, '0');
-  return seed;
+  return randomHex((b) => b);
+}
+
+/** v4 UUID; randomUUID exists only in secure contexts, getRandomValues everywhere. */
+export function generateId(): string {
+  const { crypto } = globalThis;
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const hex = randomHex((b, i) => (i === 6 ? (b & 15) | 64 : i === 8 ? (b & 63) | 128 : b));
+  return hex.replace(/^(.{8})(.{4})(.{4})(.{4})/, '$1-$2-$3-$4-');
 }
 
 /** True when `value` is a string of exactly 32 lowercase hex characters. */

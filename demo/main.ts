@@ -1,5 +1,5 @@
-import { createRoll, evaluate, isRollEvent, PollyrollSyntaxError, redact } from 'pollyroll';
-import type { RollEvent, RollSummary } from 'pollyroll';
+import { createRoll, evaluate, isRollEvent, parse, PollyrollSyntaxError, redact } from 'pollyroll';
+import type { RollEvent } from 'pollyroll';
 import { classic, createDiceTray } from 'pollyroll/render';
 import type { DiceTray, Skin } from 'pollyroll/render';
 import { byId, createSkinEditor } from './editor';
@@ -9,6 +9,8 @@ const notationInput = byId('notation', HTMLInputElement);
 const sizeInput = byId('size', HTMLInputElement);
 const sizeValue = byId('size-value', HTMLOutputElement);
 const hiddenBox = byId('hidden', HTMLInputElement);
+const soundBox = byId('sound', HTMLInputElement);
+const examples = byId('examples', HTMLDivElement);
 const errorEl = byId('error', HTMLPreElement);
 const noticeEl = byId('notice', HTMLParagraphElement);
 const resultA = byId('result-a', HTMLParagraphElement);
@@ -28,8 +30,10 @@ function showError(text: string | null): void {
   errorEl.textContent = text ?? '';
 }
 
-/** One results line: total (or "hidden") and kept/dropped values per notation group. */
-function describe(summary: RollSummary): string {
+/** One results line: total (or "hidden") and kept or success count, plus dropped, per group. */
+function describe(event: RollEvent): string {
+  const summary = evaluate(event);
+  const counted = parse(event.notation).terms.filter((t) => t.kind === 'dice');
   const parts = [`Total: ${summary.total === null ? 'hidden' : String(summary.total)}`];
   summary.groups.forEach((g, i) => {
     if (g.subtotal === null) {
@@ -37,7 +41,8 @@ function describe(summary: RollSummary): string {
       return;
     }
     const pick = (indices: number[]): string => indices.map((k) => String(g.dice[k])).join(', ');
-    let text = `#${i + 1} ${g.die}: kept [${pick(g.kept)}]`;
+    let text = `#${i + 1} ${g.die}: `;
+    text += counted[i]?.success ? `successes ${g.subtotal}` : `kept [${pick(g.kept)}]`;
     if (g.dropped.length > 0) text += ` dropped [${pick(g.dropped)}]`;
     parts.push(text);
   });
@@ -50,7 +55,7 @@ function play(tray: DiceTray, event: RollEvent, out: HTMLElement, id: number): v
   out.textContent = 'Rolling…';
   tray.playRoll(event).then(
     () => {
-      if (id === rollId) out.textContent = describe(evaluate(event));
+      if (id === rollId) out.textContent = describe(event);
     },
     (error: unknown) => {
       if (id === rollId) out.textContent = `Error: ${String(error)}`;
@@ -104,6 +109,31 @@ sizeInput.addEventListener('input', () => {
   trayA.setDieScale(Number(sizeInput.value));
   trayB.setDieScale(Number(sizeInput.value));
 });
+
+// Only tray A clacks: tray B replays the same roll, so two sounding trays would double every hit.
+soundBox.addEventListener('change', () => trayA.setSound(soundBox.checked ? 1 : 0));
+
+for (const notation of [
+  'adv',
+  '4d6dl1',
+  '4d6r1',
+  '2d20ro1',
+  '5d10>=7',
+  '3d6!',
+  'd6!>=5',
+  'd%+d10',
+  '4dF',
+  '30d6',
+]) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = notation;
+  button.addEventListener('click', () => {
+    notationInput.value = notation;
+    roll();
+  });
+  examples.append(button);
+}
 
 form.addEventListener('submit', (e) => {
   e.preventDefault();

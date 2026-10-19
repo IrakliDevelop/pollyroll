@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DieType, RollEvent } from '../core/types';
-import { getPolyhedron } from '../geometry/polyhedra';
+import { penetration } from '../physics/penetration';
 import { planRoll } from '../physics/plan';
 import { cameraPosition, fitScale, trayBounds, viewProjection } from './camera';
 
@@ -145,7 +145,7 @@ describe('fitScale', () => {
     }
   });
 
-  it('leaves 9 mixed dice at 4:3 resting apart at the fitted scale (seeds 0–49)', () => {
+  it('leaves 9 mixed dice at 4:3 resting without overlap at the fitted scale (seeds 0–49)', () => {
     const types: DieType[] = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20'];
     const bounds = trayBounds(4 / 3, fitScale(2, 9, 4 / 3));
     for (let i = 0; i < 50; i++) {
@@ -163,18 +163,14 @@ describe('fitScale', () => {
         seed: i.toString(16).padStart(32, '0'),
         createdAt: 0,
       };
-      const rest = planRoll(event, bounds).bodies.map((b) => {
-        const n = b.frames.length;
-        return {
-          x: b.frames[n - 7] ?? NaN,
-          z: b.frames[n - 5] ?? NaN,
-          r: getPolyhedron(b.shape).radius,
-        };
-      });
+      const rest = planRoll(event, bounds).bodies.map((b) => ({
+        shape: b.shape,
+        pose: b.frames.subarray(b.frames.length - 7),
+      }));
       rest.forEach((a, j) => {
         for (const b of rest.slice(j + 1)) {
-          const gap = Math.hypot(a.x - b.x, a.z - b.z) - 0.8 * (a.r + b.r);
-          expect(gap, `seed ${i}`).toBeGreaterThan(-0.05);
+          const depth = penetration(a.shape, a.pose, b.shape, b.pose);
+          expect(depth, `seed ${i}`).toBeLessThanOrEqual(0.005);
         }
       });
     }

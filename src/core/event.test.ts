@@ -25,6 +25,7 @@ const mutate = (event: RollEvent, change: (e: Loose) => void): unknown => {
 };
 
 const d = (value: unknown, wave: number, group = 0, type = 'd6') => ({ type, value, group, wave });
+const brief = (event: RollEvent) => event.dice.map((die) => [die.value, die.wave]);
 
 /** '2d20kh1+5' with values 7 and 15. */
 const base = (): RollEvent => createRoll('2d20kh1+5', { rng: seq(6, 14), seed: S });
@@ -344,6 +345,59 @@ describe('isRollEvent', () => {
     const chain = Array.from({ length: 11 }, (_, w) => d(6, w));
     expect(bad(chain)).toBe(true);
     expect(bad([...chain, d(6, 11)])).toBe(false);
+  });
+
+  it('checks explosion structure against the explode threshold', () => {
+    const ex = createRoll('1d6!>=5', { rng: seq(4, 1), seed: S });
+    expect(isRollEvent(ex)).toBe(true);
+    const bad = (dice: ReturnType<typeof d>[]): boolean =>
+      isRollEvent(mutate(ex, (e) => (e.dice = dice)));
+    expect(bad([d(5, 0), d(2, 1)])).toBe(true);
+    expect(bad([d(4, 0), d(2, 1)])).toBe(false);
+    expect(bad([d(5, 0)])).toBe(false);
+  });
+
+  it('checks reroll structure', () => {
+    const rr = createRoll('2d6r<3', { rng: seq(0, 4, 1, 3), seed: S });
+    expect(brief(rr)).toEqual([
+      [1, 0],
+      [5, 0],
+      [2, 1],
+      [4, 2],
+    ]);
+    expect(isRollEvent(rr)).toBe(true);
+    const bad = (dice: ReturnType<typeof d>[]): boolean =>
+      isRollEvent(mutate(rr, (e) => (e.dice = dice)));
+    // missing reroll die
+    expect(bad([d(1, 0), d(5, 0), d(2, 1)])).toBe(false);
+    // extra reroll die
+    expect(bad([d(1, 0), d(5, 0), d(2, 1), d(4, 2), d(3, 2)])).toBe(false);
+    // firing count mismatch: two matching dice, one reroll
+    expect(bad([d(1, 0), d(2, 0), d(5, 1)])).toBe(false);
+    // a reroll for a die that does not match
+    expect(bad([d(3, 0), d(5, 0), d(4, 1)])).toBe(false);
+  });
+
+  it('rerolls once only from the first wave', () => {
+    const ro = createRoll('1d6ro1', { rng: seq(0, 0), seed: S });
+    expect(brief(ro)).toEqual([
+      [1, 0],
+      [1, 1],
+    ]);
+    expect(isRollEvent(ro)).toBe(true);
+    const bad = (dice: ReturnType<typeof d>[]): boolean =>
+      isRollEvent(mutate(ro, (e) => (e.dice = dice)));
+    expect(bad([d(1, 0), d(1, 1), d(3, 2)])).toBe(false);
+    expect(bad([d(null, 0), d(null, 1), d(null, 2)])).toBe(false);
+    expect(bad([d(null, 0), d(null, 1)])).toBe(true);
+  });
+
+  it('allows a reroll chain up to wave 10 and no further', () => {
+    const chain = Array.from({ length: 11 }, (_, w) => d(1, w));
+    const rr = createRoll('1d6r', { rng: () => 0, seed: S });
+    expect(rr.dice).toEqual(chain);
+    expect(isRollEvent(rr)).toBe(true);
+    expect(isRollEvent(mutate(rr, (e) => e.dice.push(d(1, 11))))).toBe(false);
   });
 
   it('rejects explosion dice on a non-exploding term', () => {

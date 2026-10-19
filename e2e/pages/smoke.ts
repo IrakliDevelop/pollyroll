@@ -38,6 +38,20 @@ const event: RollEvent = {
   createdAt: 0,
 };
 
+// ?event=adv drops the 4, ?event=dis the 15; ?event=all rolls the same dice and seed, none dropped.
+const pair = (notation: string): RollEvent => ({
+  v: 1,
+  id: 'smoke-adv',
+  notation,
+  dice: [
+    { type: 'd20', value: 15, group: 0, wave: 0 },
+    { type: 'd20', value: 4, group: 0, wave: 0 },
+  ],
+  modifier: 0,
+  seed: '0123456789abcdef0123456789abcdef',
+  createdAt: 0,
+});
+
 const state: SmokeState = {
   ready: false,
   settled: false,
@@ -55,13 +69,16 @@ const tray = createDiceTray(canvas, {
   labelFont: 'sans-serif',
   reducedMotion: reduced ? 'always' : 'never',
   skin: params.get('skin') ?? 'classic',
+  sound: params.has('sound') ? 1 : 0,
   ...(params.get('labels') === 'custom' ? { labels: { d6: ['A', 'B', 'C', 'D', 'E', 'F'] } } : {}),
 });
 window.__pollyrollTray = tray;
 window.__pollyrollCreate = createDiceTray;
 state.supported = tray.supported;
 const start = performance.now();
-const done = tray.playRoll(event);
+const pairs: Partial<Record<string, string>> = { adv: '2d20kh1', dis: '2d20kl1', all: '2d20' };
+const notation = pairs[params.get('event') ?? ''];
+const done = tray.playRoll(notation === undefined ? event : pair(notation));
 state.ready = true;
 void done.then((summary) => {
   state.elapsedMs = performance.now() - start;

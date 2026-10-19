@@ -3,7 +3,15 @@ import { getPolyhedron } from '../geometry/polyhedra';
 import type { ShapeType } from '../geometry/polyhedra';
 import { quatMul, quatRotate } from '../geometry/vec';
 import type { Quat } from '../geometry/vec';
-import { FLATTEN_STEPS, flattenTail, separate } from './flatten';
+import {
+  FLATTEN_STEPS,
+  flatOrientation,
+  flattenTail,
+  footprint,
+  liftTails,
+  separate,
+} from './flatten';
+import { penetration } from './penetration';
 import { simulate } from './sim';
 import type { SimResult } from './sim';
 import type { TrayBounds } from './world';
@@ -60,9 +68,9 @@ describe('flattenTail', () => {
     expect(Math.abs(top[2])).toBeLessThan(1e-6);
     expect(Math.abs((last[1] ?? NaN) - 0.5)).toBeLessThan(1e-3);
     expect([last[0], last[2]]).toEqual([1.5, -2]);
-    // Halfway the tilt about Z halves to 10°, so the die rests at 0.5·(cos10° + sin10°) ≈ 0.5792,
-    // above the linear 0.5704.
-    const mid = frameAt(tail, FLATTEN_STEPS / 2 - 1);
+    // Halfway through the 18-step flatten phase the tilt about Z halves to 10°, so the die rests at
+    // 0.5·(cos10° + sin10°) ≈ 0.5792, above the linear 0.5704.
+    const mid = frameAt(tail, FLATTEN_STEPS / 4 - 1);
     expect(Math.abs((mid[1] ?? NaN) - 0.5792)).toBeLessThan(1e-3);
     expect(quatRotate(quatOf(mid), [0, 1, 0])[1]).toBeCloseTo(Math.cos(half), 3);
     expectAboveFloor('d6', tail);
@@ -92,6 +100,26 @@ describe('flattenTail', () => {
     if (tail !== null) expectAboveFloor('d8', tail);
   });
 
+  it('slides a d6 stacked on another off it before dropping it to the floor', () => {
+    const bottom = new Float64Array([0, 0.5, 0, 0, 0, 0, 1]);
+    const top = new Float64Array([0, 1.5, 0, 0, 0, 0, 1]);
+    const square = footprint('d6', [0, 0, 0, 1]);
+    const xz = new Float64Array([0, 0, 0, 0]);
+    separate(xz, [square, square], { minX: -4, maxX: 4, minZ: -4, maxZ: 4 });
+    const lower = flattenTail('d6', bottom, xz[0] ?? NaN, xz[1] ?? NaN);
+    const upper = flattenTail('d6', top, xz[2] ?? NaN, xz[3] ?? NaN);
+    expect(lower).not.toBeNull();
+    expect(upper).not.toBeNull();
+    if (lower === null || upper === null) return;
+    for (let k = 0; k < FLATTEN_STEPS; k++) {
+      const depth = penetration('d6', frameAt(lower, k), 'd6', frameAt(upper, k));
+      expect(depth, `frame ${k}`).toBeLessThanOrEqual(0.005);
+    }
+    const last = frameAt(upper, FLATTEN_STEPS - 1);
+    expect(last[1]).toBeCloseTo(0.5, 9);
+    expect(penetration('d6', frameAt(lower, FLATTEN_STEPS - 1), 'd6', last)).toBe(0);
+  });
+
   it('leaves a die within 0.5° of flat alone', () => {
     const quarter = (0.2 * Math.PI) / 180;
     const pose = new Float64Array([0, 0.5, 0, Math.sin(quarter), 0, 0, Math.cos(quarter)]);
@@ -100,19 +128,19 @@ describe('flattenTail', () => {
 });
 
 describe('separate', () => {
-  // d6 circumradius √3/2, so two d6 must end 0.8·√3 ≈ 1.3856 apart.
-  const GAP = 0.8 * Math.sqrt(3);
-  const R = Math.sqrt(3) / 2;
+  // Flat identity d6 footprints are squares ±0.5; pairs end GAP 0.05 apart, so centres 1.05.
+  const square = footprint('d6', [0, 0, 0, 1]);
   const bounds: TrayBounds = { minX: -3, maxX: 3, minZ: -2, maxZ: 2 };
 
   it('moves two overlapping flat d6 apart and tails them to the new centres', () => {
     const a = new Float64Array([0, 0.5, 0, 0, 0, 0, 1]);
-    const b = new Float64Array([0.4, 0.5, 0, 0, 0, 0, 1]);
-    const xz = new Float64Array([0, 0, 0.4, 0]);
-    separate(xz, [R, R], bounds);
-    // Each moves (1.3856 − 0.4) / 2 ≈ 0.4928 along x.
-    expect(xz[0]).toBeCloseTo(-0.4928, 4);
-    expect(xz[2]).toBeCloseTo(0.8928, 4);
+    const b = new Float64Array([0.6, 0.5, 0, 0, 0, 0, 1]);
+    const xz = new Float64Array([0, 0, 0.6, 0]);
+    separate(xz, [square, square], bounds);
+    // Overlap on x is 1 − 0.6 = 0.4; each moves (0.4 + 0.05) / 2 = 0.225.
+    expect(xz[0]).toBeCloseTo(-0.225, 12);
+    expect(xz[2]).toBeCloseTo(0.825, 12);
+    expect([xz[1], xz[3]]).toEqual([0, 0]);
     for (const [pose, k] of [
       [a, 0],
       [b, 2],
@@ -127,26 +155,109 @@ describe('separate', () => {
     }
   });
 
-  it('pushes coincident centres apart along +x', () => {
-    const xz = new Float64Array([1, -1, 1, -1]);
-    separate(xz, [R, R], bounds);
-    expect([xz[1], xz[3]]).toEqual([-1, -1]);
-    expect((xz[2] ?? NaN) - (xz[0] ?? NaN)).toBeCloseTo(GAP, 9);
+  it('pushes coincident centres 1.05 apart along one axis', () => {
+    const xz = new Float64Array([1, 0, 1, 0]);
+    separate(xz, [square, square], bounds);
+    const dx = Math.abs((xz[2] ?? NaN) - (xz[0] ?? NaN));
+    const dz = Math.abs((xz[3] ?? NaN) - (xz[1] ?? NaN));
+    expect(Math.min(dx, dz)).toBe(0);
+    expect(Math.max(dx, dz)).toBeCloseTo(1.05, 9);
   });
 
-  it('keeps moved centres inside the walls inset by 0.8·R', () => {
-    // Against the +x wall the right die is clamped to 3 − 0.6928; each pass halves the left gap.
+  it('keeps moved footprints inside the walls', () => {
+    // Against the +x wall the right die stops at 3 − 0.5; each pass halves the remaining overlap.
     const xz = new Float64Array([2, 0, 2.2, 0]);
-    separate(xz, [R, R], bounds);
-    expect(xz[2]).toBeCloseTo(3 - 0.8 * R, 9);
-    expect((xz[2] ?? NaN) - (xz[0] ?? NaN)).toBeGreaterThan(GAP - 0.01);
+    separate(xz, [square, square], bounds);
+    expect(xz[2]).toBe(2.5);
+    expect((xz[2] ?? NaN) - (xz[0] ?? NaN)).toBeGreaterThanOrEqual(1.05 - 0.01);
   });
 
-  it('leaves dice already far enough apart alone', () => {
-    const xz = new Float64Array([-1, 0, 1, 0]);
-    separate(xz, [R, R], bounds);
-    expect(Array.from(xz)).toEqual([-1, 0, 1, 0]);
+  it('leaves dice already 1.1 apart alone', () => {
+    const xz = new Float64Array([0, 0, 1.1, 0]);
+    separate(xz, [square, square], bounds);
+    expect(Array.from(xz)).toEqual([0, 0, 1.1, 0]);
   });
+});
+
+describe('simulate ends without overlap', () => {
+  const wide: TrayBounds = { minX: -6.5, maxX: 6.5, minZ: -3.5, maxZ: 3.5 };
+  const cases: [string, ShapeType[], TrayBounds][] = [
+    [
+      'A',
+      [
+        ...Array<ShapeType>(6).fill('d20'),
+        ...Array<ShapeType>(6).fill('d12'),
+        ...Array<ShapeType>(6).fill('d8'),
+      ],
+      wide,
+    ],
+    ['B', Array<ShapeType>(30).fill('d6'), { minX: -8.25, maxX: 8.25, minZ: -4.75, maxZ: 4.75 }],
+    [
+      'C',
+      Array.from({ length: 24 }, (_, k) => CYCLE[k % 6] ?? 'd6'),
+      // trayBounds(608 / 360, fitScale(2, 24, 608 / 360)): the auto-fitted tray for 24 dice.
+      { minX: -7.5, maxX: 7.5, minZ: -4.25, maxZ: 4.25 },
+    ],
+  ];
+
+  it('lifts a d6 cocked on the edge of a flat d6 over it by at most 1.5', () => {
+    // B is turned −30° about z with its bottom face on A's top edge (0.5, 1) at face point
+    // (−0.2, −0.5): centre (0.5, 1) − R(−0.2, −0.5) = (0.5 + 0.4232, 1 + 0.3333); its lowest vertex
+    // R(0.5, −0.5) = (0.183, −0.683) sits at y 0.650, beside A. Flattened in place it would sink
+    // into A, and separate() pushes A too, so both have tails.
+    const a = new Float64Array([0, 0.5, 0, 0, 0, 0, 1]);
+    const half = (-15 * Math.PI) / 180;
+    const b = new Float64Array([0.9232, 1.3333, 0, 0, 0, Math.sin(half), Math.cos(half)]);
+    const xz = new Float64Array([0, 0, 0.9232, 0]);
+    const bounds: TrayBounds = { minX: -4, maxX: 4, minZ: -4, maxZ: 4 };
+    separate(
+      xz,
+      [footprint('d6', [0, 0, 0, 1]), footprint('d6', flatOrientation('d6', b))],
+      bounds,
+    );
+    const tails = [
+      flattenTail('d6', a, xz[0] ?? NaN, xz[1] ?? NaN),
+      flattenTail('d6', b, xz[2] ?? NaN, xz[3] ?? NaN),
+    ];
+    const plain = tails[1];
+    expect(plain).not.toBeNull();
+    if (plain === null || plain === undefined) return;
+    const sunk = Math.max(
+      ...Array.from({ length: FLATTEN_STEPS }, (_, k) =>
+        penetration('d6', frameAt(tails[0] ?? a, k), 'd6', frameAt(plain, k)),
+      ),
+    );
+    expect(sunk).toBeGreaterThan(0.005);
+    liftTails(['d6', 'd6'], [a, b], xz, tails);
+    const [ta, tb] = tails;
+    expect(ta).not.toBeNull();
+    expect(tb).not.toBeNull();
+    if (!ta || !tb) return;
+    for (let k = 0; k < FLATTEN_STEPS; k++) {
+      const depth = penetration('d6', frameAt(ta, k), 'd6', frameAt(tb, k));
+      expect(depth, `frame ${k}`).toBeLessThanOrEqual(0.005);
+      expect((ta[k * 7 + 1] ?? NaN) - 0.5, `A frame ${k}`).toBeLessThanOrEqual(1.5);
+      expect((tb[k * 7 + 1] ?? NaN) - 1.3333, `B frame ${k}`).toBeLessThanOrEqual(1.5);
+    }
+  });
+
+  it('no two dice interpenetrate at the final frame of crowded rolls', () => {
+    for (const [name, shapes, bounds] of cases) {
+      for (let i = 0; i < 30; i++) {
+        const seed = i.toString(16).padStart(32, '0');
+        const result = simulate({ seed, shapes, waves: shapes.map(() => 0), bounds });
+        const last = result.tracks.map((t) => frameAt(t.frames, t.frames.length / 7 - 1));
+        result.tracks.forEach((a, j) => {
+          for (let k = j + 1; k < result.tracks.length; k++) {
+            const b = result.tracks[k];
+            if (b === undefined) continue;
+            const depth = penetration(a.shape, last[j] ?? [], b.shape, last[k] ?? []);
+            expect(depth, `case ${name} seed ${i} dice ${j},${k}`).toBeLessThanOrEqual(0.005);
+          }
+        });
+      }
+    }
+  }, 300_000);
 });
 
 describe('simulate ends flat', () => {
