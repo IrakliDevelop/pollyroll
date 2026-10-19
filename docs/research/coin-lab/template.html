@@ -1,0 +1,142 @@
+<title>Coin Flip Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one-column workbench, sibling of the Dice Clack Lab; each flip is a card of four takes with waveform strips. */
+:root {
+  --bg: #efeee9; --panel: #f9f8f4; --fg: #1f1d18; --muted: #625d52; --line: #d6d2c6;
+  --brass: #8a6a1c; --brass-ink: #fbf8f0; --synth: #8a6a1c; --clink: #2f5f86; --metal: #7a3f5c; --hybrid: #3c6b45; --online: #b0502a;
+  --sans: "Instrument Sans", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #141310; --panel: #1c1b17; --fg: #ebe7dc; --muted: #a39d8f; --line: #333027;
+  --brass: #d4ab52; --brass-ink: #16130b; --synth: #d4ab52; --clink: #74a9d6; --metal: #d48aae; --hybrid: #7cc08a; --online: #e8916b; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #141310; --panel: #1c1b17; --fg: #ebe7dc; --muted: #a39d8f; --line: #333027;
+  --brass: #d4ab52; --brass-ink: #16130b; --synth: #d4ab52; --clink: #74a9d6; --metal: #d48aae; --hybrid: #7cc08a; --online: #e8916b; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 960px; margin: 0 auto; padding-inline: 16px; padding-block: 28px 56px; display: grid; gap: 28px; }
+section { display: grid; gap: 12px; min-width: 0; }
+h1 { font-size: 28px; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+h2 { font-size: 13px; margin: 0; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; }
+h3 { font-size: 15px; margin: 0; }
+p { margin: 0; max-width: 68ch; color: var(--muted); }
+code, .mono { font-family: var(--mono); font-size: 12.5px; }
+.card { display: grid; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+.take { display: grid; grid-template-columns: 170px 1fr; gap: 12px; align-items: center; }
+button.play { font: 600 13px var(--sans); border: 1px solid var(--line); background: var(--bg); color: var(--fg); border-radius: 999px; padding: 7px 12px; cursor: pointer; display: flex; gap: 8px; align-items: center; justify-content: flex-start; }
+button.play:hover { border-color: var(--fg); }
+button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+canvas { width: 100%; height: 46px; display: block; min-width: 0; }
+.grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+.clip { display: grid; gap: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+.clip label { display: flex; gap: 8px; align-items: center; font-size: 13px; font-weight: 600; }
+.clip small { color: var(--muted); font-size: 12px; }
+.clip canvas { height: 34px; }
+.controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px 24px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+.ctl { display: grid; gap: 4px; min-width: 0; }
+.ctl label { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; }
+.ctl output { font-family: var(--mono); font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ctl small { color: var(--muted); font-size: 12px; }
+input[type=range] { width: 100%; accent-color: var(--brass); }
+input[type=checkbox] { accent-color: var(--brass); }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.chip { font: 600 13px var(--sans); border: 0; border-radius: 999px; padding: 8px 14px; cursor: pointer; background: var(--brass); color: var(--brass-ink); }
+.chip.ghost, .chip[aria-checked=false] { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+pre { margin: 0; overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; font-family: var(--mono); font-size: 12px; }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; gap: 6px; align-items: center; }
+.table-wrap { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+tr:last-child td { border-bottom: 0; }
+td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+a { color: var(--clink); }
+.pill { display: inline-block; font-size: 11.5px; font-weight: 600; border-radius: 999px; padding: 1px 8px; border: 1px solid var(--line); white-space: nowrap; }
+.pill.ok { color: var(--hybrid); border-color: var(--hybrid); }
+.pill.warn { color: var(--metal); border-color: var(--metal); }
+ul { margin: 0; padding-left: 20px; color: var(--muted); max-width: 68ch; display: grid; gap: 4px; }
+@media (max-width: 520px) { .take { grid-template-columns: 1fr; } }
+</style>
+
+<div class="wrap">
+  <header style="display:grid;gap:8px">
+    <h1>Coin Flip Lab</h1>
+    <p>A coin thrown into the tray, five ways. Each flip below plays the same timing (land, bounce, wobble, lie flat) through a sound synthesized in code, through a blend of that synth with Kenney coin clinks, through a hybrid (clink landing, synth wobble), through the clinks alone, and through hits cut from three coin recordings found online. The metal tap is gone. Every recording is CC0 or public domain. Pick by ear; the settings box at the bottom records your choices.</p>
+    <div class="legend">
+      <span><i class="dot" style="background:var(--synth)"></i>Synth (no audio files)</span>
+      <span><i class="dot" style="background:var(--clink)"></i>Coin clinks (RPG Audio)</span>
+      <span><i class="dot" style="background:var(--metal)"></i>Blend: synth with a clink layered on each landing</span>
+      <span><i class="dot" style="background:var(--hybrid)"></i>Hybrid: clink landing, synth wobble</span>
+      <span><i class="dot" style="background:var(--online)"></i>Online recordings: drop hits, €2 coin rim contacts</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>Same flip, five takes</h2>
+    <div class="row"><button class="chip" id="surface" type="button">Surface: wooden table</button><button class="chip" id="flick" type="button" role="switch" aria-checked="false">Thumb flick before the throw</button></div>
+    <div id="flips" style="display:grid;gap:12px"></div>
+  </section>
+
+  <section>
+    <h2>Recordings on their own</h2>
+    <p>Eight single clinks cut from Kenney's two coin-handling clips. Untick any that sound wrong; the blend, hybrid and coin-clink takes above then use only the ticked ones.</p>
+    <h3>Coin clinks</h3>
+    <div class="grid" id="clinks"></div>
+    <h3>Full source clips</h3>
+    <div class="grid" id="sources"></div>
+  </section>
+
+  <section>
+    <h2>Online recordings</h2>
+    <p>The three recordings downloaded for this lab, trimmed to the part with the coin. The online take above lands and bounces on the drop hits and wobbles on the €2 coin's rim contacts. Untick any that sound wrong.</p>
+    <h3>Whole recordings</h3>
+    <div class="grid" id="online-sources"></div>
+    <h3>Drop hits (landing and bounces)</h3>
+    <div class="grid" id="hits"></div>
+    <h3>Rim contacts (wobble)</h3>
+    <div class="grid" id="grains"></div>
+  </section>
+
+  <section>
+    <h2>Tune it</h2>
+    <div class="controls" id="controls"></div>
+    <div class="row"><button class="chip ghost" id="reset" type="button">Reset to fitted values</button></div>
+    <p>Settings to send back if you change anything:</p>
+    <pre id="settings"></pre>
+  </section>
+
+  <section>
+    <h2>Free coin recordings online</h2>
+    <p>The three marked "in this lab" are embedded above. The rest cannot play here, because this page may not load audio from other sites: listen on their pages. Freesound needs a free account to download, so for any you want added, download it and tell me the folder.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Recording</th><th>What it is</th><th>Length</th><th>License</th></tr></thead>
+        <tbody id="online"></tbody>
+      </table>
+    </div>
+    <p>Ruled out because their licenses forbid shipping the raw sound inside a package: Pixabay, Sonniss GDC bundles, Zapsplat, Mixkit, BBC Sound Effects. InspectorJ's popular coin flip on Freesound is CC-BY, so it would need credit.</p>
+  </section>
+
+  <section>
+    <h2>What was measured</h2>
+    <ul>
+      <li>A single coin clink rings at about 4.9, 8.5, 13.2 and 17.5 kHz. The ratio of the first two, 1.73, is the textbook ratio of a free thin disc's first two modes, so the synth uses those four.</li>
+      <li>Each mode is split into two close tones (4875 and 4992 Hz in one clink). That beating is the shimmer that makes metal sound like a coin; the split control sets it.</li>
+      <li>The online coins ring differently: the small coin on the floor (Wikimedia) at 10 and 17.8 kHz, close to the textbook value for a 24 mm coin; the €2 coin on varnished wood mostly through the table, at 0.6 to 2.4 kHz; the table drop (OpenGameArt) at 0.7 to 1.1 and 3.1 to 3.8 kHz.</li>
+      <li>The €2 recording wobbles with rim contacts about 40 ms apart (25 a second) for its first half second, the same rhythm the synth wobble starts from.</li>
+            <li>A wobbling coin is an Euler's disk: its rim contact rate rises as it settles, roughly as (time left)<sup>−1/3</sup>, then stops dead. The wobble here climbs from 16 contacts a second to the end-rate control.</li>
+      <li>Why our first takes sounded so metallic: the real coins on wood put 63–85% of their energy at 1–4 kHz and almost none above 8 kHz; the Kenney clinks and the first synth put 81% at 4–8 kHz. The Kenney clips are coins striking coins in a hand. Metal on metal touches for a few microseconds, which excites every ring mode. A coin on wood stays in contact far longer, because wood gives, and a long contact cannot excite fast vibrations, so the coin's ring is barely started; the wood also drains it while the coin rests on it. What you hear is the table, ringing at 0.6–2.4 kHz. The €2 coin is also bimetallic, and the joint between its two metals damps its ring further.</li>
+      <li>The wooden-table surface (now the default) models that: the strike is softened above the contact-softness control, the table's own modes ring under it, and the blend's clinks are low-passed the same way. It measures 72% at 1–4 kHz and nothing above 8 kHz, like the recordings. The hard surface is the original bright model.</li>
+      <li>Size: a coin's ring sits at 4 to 17 kHz, but on wood almost nothing above 8 kHz survives, so recorded clinks could use the same 16 kHz MP3 as the dice clacks. The synth costs a few hundred bytes of code.</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+__CORE__
+const CLIPS = __CLIPS__;
+__LAB__
+</script>
