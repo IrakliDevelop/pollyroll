@@ -1,6 +1,6 @@
 # Coin die design (0.6.0)
 
-Status: draft for owner review. Sound research and measurements: [docs/research/sound.md](../research/sound.md).
+Status: built in 0.6.0 without the sound section: after listening in the demo the owner chose to ship coins silent (2026-10-19). The sound design below is kept as the record of what was built (commits 80d1992, 196f17e, 0e2941f, 9a44497, 0eef0f4). Sound research and measurements: [docs/research/sound.md](../research/sound.md).
 
 ## Intent
 

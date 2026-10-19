@@ -141,28 +141,16 @@ import { diceClacks } from 'pollyroll/sounds';
 const tray = createDiceTray(el, { sound: 0.6, clacks: diceClacks });
 ```
 
-Coins (`dc`, `d2`) sound like a coin landing on a wooden table even without this entry: the tray
-synthesizes a short metallic ring and the table's knock. `coinClinks` (about 0.6 kB) layers six
-recorded clinks on each landing and bounce:
-
-```ts
-import { coinClinks, diceClacks } from 'pollyroll/sounds';
-
-const tray = createDiceTray(el, { sound: 0.6, clacks: diceClacks, coinClinks });
-```
-
-Each export is budgeted and tree-shaken on its own, so an app pays only for what it imports.
-
 Seven real dice clacks in one tiny embedded MP3 (no audio file to host). The tray plays one at each
 physics impact, rotating through them with a slight pitch change, louder for harder hits. Without
 `clacks` the tray keeps its procedural sound, so apps that never import this entry pay nothing. If
 the browser cannot decode the clip, the tray falls back to the procedural sound. Any `ClackSet`
 works: base64 audio plus, per clack, its start (ms after the clip's first sample at 20% of its peak, so decoders that keep the MP3
-encoder delay still line up) and length.
+encoder delay still line up) and length. Coins (`dc`, `d2`) make no sound.
 
-The clacks are cut from Kenney's [Casino Audio](https://kenney.nl/assets/casino-audio) and the clinks
-from Kenney's [RPG Audio](https://kenney.nl/assets/rpg-audio) (both CC0). How the sounds were chosen and
-measured: [docs/research/sound.md](docs/research/sound.md).
+The clacks are cut from Kenney's [Casino Audio](https://kenney.nl/assets/casino-audio) (CC0). How the
+sounds were chosen and measured, including a coin sound that did not ship:
+[docs/research/sound.md](docs/research/sound.md).
 
 ## Renderer (`pollyroll/render`)
 

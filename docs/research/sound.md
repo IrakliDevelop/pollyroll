@@ -4,7 +4,9 @@ What was tried, measured, and chosen for Pollyroll's impact sounds, so a later c
 from evidence instead of from scratch. Dates are when the work was done.
 
 - Dice: recorded clacks in `pollyroll/sounds` (0.5.0, 2026-10-19).
-- Coin: modal synth with recorded clinks blended in (chosen 2026-10-19 for the coin die).
+- Coin: modal synth with recorded clinks blended in, chosen in the lab on 2026-10-19, built, then
+  **not shipped**: in the demo the owner judged it "not great", so 0.6.0 coins are silent. See
+  [Coin sound in the tray (not shipped)](#coin-sound-in-the-tray-not-shipped).
 
 The Coin Flip Lab's source is in [coin-lab/](coin-lab/) and rebuilds locally (see
 [Rebuilding the coin lab](#rebuilding-the-coin-lab)).
@@ -182,6 +184,32 @@ In the tray, the physics supplies these events.
     settle, not per impact.
 - **More clinks for the blend**, cut from the online drops, which are already measured.
 - **Per-surface models:** the lab has hard (glass, stone) and felt variants.
+
+### Coin sound in the tray (not shipped)
+
+Built for 0.6.0 and removed before release. To restore it, start from these commits on
+`feat/0.6.0`:
+
+- 80d1992: the synth port, the bank of buffers, the rim contacts and the tray wiring.
+- 196f17e: per-coin tap timing, the shared rim-contact cap and separate decode states.
+- 0eef0f4: taps stopped when audio is suspended.
+- 0e2941f and 9a44497: the `coinClinks` data, 6 clinks in a 578 B MP3.
+
+What the tray version did:
+
+- **Events:**
+  - Coin impacts played the synth hit, plus a clink at −4 dB.
+  - Each change of a coin's lowest hull vertex played a rim tick, while the coin was tilted
+    more than 2° and its lowest point was within 0.02 of the floor.
+  - A soft tap played at each coin's rest frame.
+- **Measured in real rolls:**
+  - Rim contacts were sparse: a median of 3 per coin for `1dc`, and 14 of 50 coins had none.
+  - The simulated wobble is short (median 167 ms), so the lab's long Euler-disk rattle never
+    happened.
+- **Owner verdict in the demo:** "the sound is not great".
+- **Untested guesses for a next attempt:**
+  - The short, sparse physics events may matter more than the timbre.
+  - The synth's level relative to the dice clacks was never tuned by ear in the tray.
 
 ## Rebuilding the coin lab
 

@@ -24,7 +24,7 @@ built for shared (multiplayer) rolls from day one. Independent of Fieldnotes and
 | Physics   | Custom fixed-step rigid-body solver in TypeScript. No rapier, cannon, or ammo.                                                                                                                                                                                                                                       |
 | Outcome   | **Result-first.** Values are chosen by RNG before simulation; physics only animates.                                                                                                                                                                                                                                 |
 | Remap     | Simulate headless, read the settled up-face, then post-multiply the die's orientation for the whole trajectory by a **rotation symmetry** of its polyhedron that moves the chosen value's face to the settled up-face. Geometry is invariant, so the motion is unchanged and the real-die label layout is preserved. |
-| Assets    | None. Geometry generated in code; labels from a runtime Canvas2D glyph atlas; patterns procedural in GLSL; environment lighting analytic. _(amended, 0.5.0)_ `pollyroll/sounds` embeds 7 CC0 clacks (Kenney) as one base64 MP3; _(amended, 0.6.0)_ and 6 CC0 coin clinks (Kenney) as a second.                       |
+| Assets    | None. Geometry generated in code; labels from a runtime Canvas2D glyph atlas; patterns procedural in GLSL; environment lighting analytic. _(amended, 0.5.0)_ `pollyroll/sounds` embeds 7 CC0 clacks (Kenney) as one base64 MP3.                                                                                      |
 | Transport | The library never touches the network. It creates and plays plain `RollEvent` objects.                                                                                                                                                                                                                               |
 | Fallback  | No WebGL2, or reduced motion → `playRoll` resolves immediately with the summary, no animation.                                                                                                                                                                                                                       |
 | Package   | Single package at the repo root with subpath exports: `pollyroll` (core, DOM-free), `pollyroll/render`, `pollyroll/react`; _(amended, 0.3.0)_ `pollyroll/format` (DOM-free); _(amended, 0.5.0)_ `pollyroll/sounds` (opt-in clack data).                                                                              |
@@ -32,14 +32,13 @@ built for shared (multiplayer) rolls from day one. Independent of Fieldnotes and
 
 ### Budgets (min+gzip, hard limits in `size-limit`)
 
-| Entry                                                                       | Limit   |
-| --------------------------------------------------------------------------- | ------- |
-| `pollyroll` (core)                                                          | 4 KB    |
-| `pollyroll/render` (renderer + physics + geometry + shaders + skin presets) | 30 KB   |
-| `pollyroll/react` (excluding react)                                         | 1 KB    |
-| `pollyroll/format` _(amended, 0.3.0)_                                       | 0.5 KB  |
-| `pollyroll/sounds` `diceClacks` _(amended, 0.5.0; per export, 0.6.0)_       | 1.5 KB  |
-| `pollyroll/sounds` `coinClinks` _(amended, 0.6.0)_                          | 0.75 KB |
+| Entry                                                                       | Limit  |
+| --------------------------------------------------------------------------- | ------ |
+| `pollyroll` (core)                                                          | 4 KB   |
+| `pollyroll/render` (renderer + physics + geometry + shaders + skin presets) | 30 KB  |
+| `pollyroll/react` (excluding react)                                         | 1 KB   |
+| `pollyroll/format` _(amended, 0.3.0)_                                       | 0.5 KB |
+| `pollyroll/sounds` `diceClacks` _(amended, 0.5.0; per export, 0.6.0)_       | 1.5 KB |
 
 Baseline being replaced: dice-box JS plus 2.1 MB of `public/assets` (ammo.js + themes).
 
@@ -197,7 +196,6 @@ interface TrayOptions {
   sound?: number;                                           // (amended, 0.2.0) clack volume 0–1, default 0
   announce?: boolean;                                       // (amended, 0.3.0) polite live region; default false
   clacks?: ClackSet;                                        // (amended, 0.5.0) recorded clacks, e.g. diceClacks from pollyroll/sounds
-  coinClinks?: ClackSet;                                    // (amended, 0.6.0) recorded clinks layered on the coin synth, e.g. coinClinks
 }
 
 interface DiceTray {
@@ -214,10 +212,9 @@ interface DiceTray {
   dice draw at 35% opacity; _(amended, 0.3.0)_ a rerolled die drops to 35% when its replacement
   wave is thrown. An unpositioned host element gets `position: relative`.
 - An `HTMLElement` target gets an absolutely positioned, transparent, pointer-events-none canvas.
-- _(amended, 0.6.0)_ Coins sound like a coin on a wooden table, not a dice clack: a modal synth
-  (ring modes rolled off by contact time, table modes at 0.6–2.4 kHz), with a short recorded clink
-  layered on each landing and bounce when `coinClinks` is given, and a rattle from the rim
-  contacts of a wobbling coin. Research: [research/sound.md](research/sound.md).
+- _(amended, 0.6.0)_ Coins are silent; dice keep their sound. A coin sound was built and judged not
+  good enough by the owner; the research and the removed code's commits are in
+  [research/sound.md](research/sound.md).
 - Forward pass, GGX PBR (base color, metalness, roughness, clearcoat). _(amended)_ Fixed
   orthographic camera looking straight down (visible half height 5.1 world units at every aspect),
   so every die's up face is seen face-on; walls inset 0.6 die units; blob shadows offset away from
@@ -270,7 +267,7 @@ src/skins/                   types, presets, patterns (GLSL strings)
 src/render/index.ts          render entry; tray, gl, shaders, atlas, env
 src/react/index.ts           react entry
 src/format/index.ts          format entry (amended, 0.3.0): formatRoll, type-only imports
-src/sounds/index.ts          sounds entry (amended, 0.5.0): diceClacks (0.6.0: and coinClinks) data, type-only imports
+src/sounds/index.ts          sounds entry (amended, 0.5.0): diceClacks data, type-only imports
 demo/                        Vite playground: notation input, skin picker, two-tray shared-roll demo
 e2e/                         Playwright: render smoke, screenshots, cross-browser determinism
 ```
