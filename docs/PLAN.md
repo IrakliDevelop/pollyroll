@@ -4,7 +4,7 @@ Approved specification for the initial build. Decisions here are fixed; an agent
 genuine gap records its choice in [DECISIONS.md](DECISIONS.md) and continues (see
 [agents/delegation.md](agents/delegation.md) § Autonomous run).
 
-> **Amended 2026-10-06 by the owner after the 0.1.0 build, 2026-10-19 for 0.2.0, 2026-10-19 for 0.3.0, and 2026-10-19 for 0.4.0.** Sections below describe the shipped
+> **Amended 2026-10-06 by the owner after the 0.1.0 build, 2026-10-19 for 0.2.0, 2026-10-19 for 0.3.0, 2026-10-19 for 0.4.0, and 2026-10-19 for 0.5.0.** Sections below describe the shipped
 > behavior; lines marked _(amended)_ replace the original text, and the reason for each is in
 > [DECISIONS.md](DECISIONS.md). § 12 separates what is verified from what was decided and what is
 > still unverified.
@@ -13,7 +13,8 @@ Goal: a lightweight, customizable 3D dice library to replace `@3d-dice/dice-box`
 built for shared (multiplayer) rolls from day one. Independent of Fieldnotes and RollKeeper.
 
 - Repo: `IrakliDevelop/pollyroll`, default branch `master` · npm: `pollyroll` (unscoped) · MIT
-- Zero runtime dependencies. Zero asset files.
+- Zero runtime dependencies. Zero asset files _(amended, 0.5.0: except the opt-in `pollyroll/sounds`
+  entry, which embeds recorded CC0 clacks as base64 data in code)_.
 
 ## 1. Fixed decisions
 
@@ -23,10 +24,10 @@ built for shared (multiplayer) rolls from day one. Independent of Fieldnotes and
 | Physics   | Custom fixed-step rigid-body solver in TypeScript. No rapier, cannon, or ammo.                                                                                                                                                                                                                                       |
 | Outcome   | **Result-first.** Values are chosen by RNG before simulation; physics only animates.                                                                                                                                                                                                                                 |
 | Remap     | Simulate headless, read the settled up-face, then post-multiply the die's orientation for the whole trajectory by a **rotation symmetry** of its polyhedron that moves the chosen value's face to the settled up-face. Geometry is invariant, so the motion is unchanged and the real-die label layout is preserved. |
-| Assets    | None. Geometry generated in code; labels from a runtime Canvas2D glyph atlas; patterns procedural in GLSL; environment lighting analytic.                                                                                                                                                                            |
+| Assets    | None. Geometry generated in code; labels from a runtime Canvas2D glyph atlas; patterns procedural in GLSL; environment lighting analytic. _(amended, 0.5.0)_ `pollyroll/sounds` embeds 7 CC0 clacks (Kenney) as one base64 MP3.                                                                                      |
 | Transport | The library never touches the network. It creates and plays plain `RollEvent` objects.                                                                                                                                                                                                                               |
 | Fallback  | No WebGL2, or reduced motion → `playRoll` resolves immediately with the summary, no animation.                                                                                                                                                                                                                       |
-| Package   | Single package at the repo root with subpath exports: `pollyroll` (core, DOM-free), `pollyroll/render`, `pollyroll/react`; _(amended, 0.3.0)_ `pollyroll/format` (DOM-free).                                                                                                                                         |
+| Package   | Single package at the repo root with subpath exports: `pollyroll` (core, DOM-free), `pollyroll/render`, `pollyroll/react`; _(amended, 0.3.0)_ `pollyroll/format` (DOM-free); _(amended, 0.5.0)_ `pollyroll/sounds` (opt-in clack data).                                                                              |
 | Tooling   | pnpm 10, Node ≥ 20.19, TypeScript strict (`tsconfig.base.json`), tsup (ESM + CJS + DTS), Vitest, Playwright, size-limit (`@size-limit/preset-small-lib`), fast-check (property tests), ESLint + Prettier (configs at repo root), husky + lint-staged.                                                                |
 
 ### Budgets (min+gzip, hard limits in `size-limit`)
@@ -37,6 +38,7 @@ built for shared (multiplayer) rolls from day one. Independent of Fieldnotes and
 | `pollyroll/render` (renderer + physics + geometry + shaders + skin presets) | 30 KB  |
 | `pollyroll/react` (excluding react)                                         | 1 KB   |
 | `pollyroll/format` _(amended, 0.3.0)_                                       | 0.5 KB |
+| `pollyroll/sounds` _(amended, 0.5.0)_                                       | 1.5 KB |
 
 Baseline being replaced: dice-box JS plus 2.1 MB of `public/assets` (ammo.js + themes).
 
@@ -183,6 +185,7 @@ interface TrayOptions {
   labels?: Partial<Record<LabelSet, readonly string[]>>;    // (amended) custom labels, natural order
   sound?: number;                                           // (amended, 0.2.0) clack volume 0–1, default 0
   announce?: boolean;                                       // (amended, 0.3.0) polite live region; default false
+  clacks?: ClackSet;                                        // (amended, 0.5.0) recorded clacks, e.g. diceClacks from pollyroll/sounds
 }
 
 interface DiceTray {
@@ -251,6 +254,7 @@ src/skins/                   types, presets, patterns (GLSL strings)
 src/render/index.ts          render entry; tray, gl, shaders, atlas, env
 src/react/index.ts           react entry
 src/format/index.ts          format entry (amended, 0.3.0): formatRoll, type-only imports
+src/sounds/index.ts          sounds entry (amended, 0.5.0): diceClacks data, type-only imports
 demo/                        Vite playground: notation input, skin picker, two-tray shared-roll demo
 e2e/                         Playwright: render smoke, screenshots, cross-browser determinism
 ```
