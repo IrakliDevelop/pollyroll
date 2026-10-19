@@ -1060,17 +1060,18 @@ test.describe('sound', () => {
     expect(result.replaced).toBe(result.decoded);
   });
 
+  const COIN: RollEvent = {
+    ...EVENT,
+    notation: '1dc',
+    dice: [{ type: 'dc', value: 1, group: 0, wave: 0 }],
+    modifier: 0,
+  };
+
   test('plays coins on the synth, layers a clink on each coin hit, and drops the clinks when they cannot be decoded', async ({
     page,
   }) => {
     await settled(page, '');
     await needsWebGL2(page);
-    const coin: RollEvent = {
-      ...EVENT,
-      notation: '1dc',
-      dice: [{ type: 'dc', value: 1, group: 0, wave: 0 }],
-      modifier: 0,
-    };
     const roll = (decode: AudioRecord['decode']) =>
       page.evaluate(
         async ({ event, decode, clinks }) => {
@@ -1078,6 +1079,7 @@ test.describe('sound', () => {
           a.decode = decode;
           a.startArgs = [];
           a.filters = 0;
+          a.stops = 0;
           const canvas = document.createElement('canvas');
           canvas.style.cssText = 'width: 800px; height: 600px';
           document.body.append(canvas);
@@ -1088,10 +1090,11 @@ test.describe('sound', () => {
             coinClinks: clinks,
           });
           await tray.playRoll(event);
+          const settleStops = a.stops;
           tray.dispose();
-          return { args: a.startArgs, filters: a.filters };
+          return { args: a.startArgs, filters: a.filters, settleStops, stops: a.stops };
         },
-        { event: coin, decode, clinks: STUB_CLACKS },
+        { event: COIN, decode, clinks: STUB_CLACKS },
       );
     // Clinks start at the stub clip's offsets; synth hits last 300 ms per clip.
     const offsets = [0.0652, 0.1362, 0.1932];
@@ -1106,6 +1109,52 @@ test.describe('sound', () => {
     expect(alone.filters).toBe(0);
     expect(alone.args.filter(isClink)).toEqual([]);
     expect(alone.args).toEqual(layered.args.filter((a) => !isClink(a)));
+    // Settle lets the coin's soft tap ring out; dispose stops it.
+    expect(layered.settleStops).toBe(layered.args.length - 1);
+    expect(layered.stops).toBe(layered.args.length);
+  });
+
+  test('plays dice without waiting for the coin clinks, and coins without waiting for the clacks', async ({
+    page,
+  }) => {
+    await settled(page, '');
+    await needsWebGL2(page);
+    const firstFrame = await page.evaluate(
+      async ({ dice, coin, set }) => {
+        const a = window.__audio;
+        a.decode = 'hold';
+        const scheduled = async (
+          event: RollEvent,
+          opts: Partial<Record<'clacks' | 'coinClinks', ClackSet>>,
+        ) => {
+          a.startArgs = [];
+          const canvas = document.createElement('canvas');
+          canvas.style.cssText = 'width: 800px; height: 600px';
+          document.body.append(canvas);
+          const tray = window.__pollyrollCreate(canvas, {
+            labelFont: 'sans-serif',
+            reducedMotion: 'never',
+            sound: 1,
+            ...opts,
+          });
+          const done = tray.playRoll(event);
+          // The tray draws its first frame, and schedules, before this callback; the set is still decoding.
+          await new Promise(requestAnimationFrame);
+          const n = a.startArgs.length;
+          a.release();
+          await done;
+          tray.dispose();
+          return n;
+        };
+        return {
+          dice: await scheduled(dice, { coinClinks: set }),
+          coin: await scheduled(coin, { clacks: set }),
+        };
+      },
+      { dice: EVENT, coin: COIN, set: STUB_CLACKS },
+    );
+    expect(firstFrame.dice).toBeGreaterThanOrEqual(3);
+    expect(firstFrame.coin).toBeGreaterThan(0);
   });
 
   test('creates no AudioContext by default', async ({ page }) => {

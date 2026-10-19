@@ -1,6 +1,4 @@
 import { getPolyhedron } from '../geometry/polyhedra';
-import { quatRotate } from '../geometry/vec';
-import type { Quat } from '../geometry/vec';
 import type { PlannedBody } from '../physics/plan';
 import { DEFAULT_CONFIG, DT } from '../physics/world';
 
@@ -17,6 +15,7 @@ const FULL_STRENGTH = 15; // units/s at full volume
 const G_DT = DEFAULT_CONFIG.gravity * DT;
 const MAX_RIMS = 120;
 const COS_2DEG = Math.cos(Math.PI / 90);
+const STILL = 0.05 * DT; // units per frame
 const SR = 48000;
 const db = (d: number): number => 10 ** (d / 20);
 const PITCH = 4900; // Hz
@@ -88,15 +87,25 @@ export function rimContacts(body: Pick<PlannedBody, 'startStep' | 'frames'>): Fl
   const steps: number[] = [];
   let last = -1;
   for (let k = 0; k < f.length / 7; k++) {
-    const q: Quat = [f[k * 7 + 3] ?? 0, f[k * 7 + 4] ?? 0, f[k * 7 + 5] ?? 0, f[k * 7 + 6] ?? 1];
+    const x = f[k * 7 + 3] ?? 0;
+    const y = f[k * 7 + 4] ?? 0;
+    const z = f[k * 7 + 5] ?? 0;
+    const w = f[k * 7 + 6] ?? 1;
+    // The y row of the rotation matrix gives each vertex's height without a rotated copy.
+    const a = 2 * (x * y + w * z);
+    const b = 1 - 2 * (x * x + z * z);
+    const c = 2 * (y * z - w * x);
     let low = -1;
-    let y = Infinity;
-    vertices.forEach((v, i) => {
-      const h = quatRotate(q, v)[1];
-      if (h < y) [low, y] = [i, h];
-    });
-    const flat = Math.abs(quatRotate(q, [0, 1, 0])[1]) > COS_2DEG;
-    if (flat || (f[k * 7 + 1] ?? 0) + y > 0.02) {
+    let h = Infinity;
+    for (let i = 0; i < vertices.length; i++) {
+      const v = vertices[i];
+      const vh = a * (v?.[0] ?? 0) + b * (v?.[1] ?? 0) + c * (v?.[2] ?? 0);
+      if (vh < h) {
+        low = i;
+        h = vh;
+      }
+    }
+    if (flatAt(f, k) || (f[k * 7 + 1] ?? 0) + h > 0.02) {
       last = -1;
       continue;
     }
@@ -107,18 +116,44 @@ export function rimContacts(body: Pick<PlannedBody, 'startStep' | 'frames'>): Fl
   return new Float32Array(steps.flatMap((s, j) => [s, FULL_STRENGTH * (1 - fade * j)]));
 }
 
-/** Rim contacts of every coin (at most 120 per roll), then one soft tap per coin at its last physical frame. */
+/** Whether frame k's cap normal is within 2° of vertical. */
+function flatAt(f: Float32Array, k: number): boolean {
+  const x = f[k * 7 + 3] ?? 0;
+  const z = f[k * 7 + 5] ?? 0;
+  return Math.abs(1 - 2 * (x * x + z * z)) > COS_2DEG;
+}
+
+/**
+ * Rim contacts of every coin, the first 120 per roll by time, and one soft tap per coin at the
+ * frame from which it stays flat and still through its physical frames (the tail's end if never),
+ * always before the settle step.
+ */
 export function coinTaps(
   bodies: readonly Pick<PlannedBody, 'shape' | 'startStep' | 'frames'>[],
   tailSteps: number,
-): Float32Array {
+): { rims: Float32Array; taps: Float32Array } {
   const coins = bodies.filter((b) => b.shape === 'coin');
-  const rims = coins.flatMap((b) => Array.from(rimContacts(b))).slice(0, MAX_RIMS * 2);
-  const taps = coins.flatMap((b) => [
-    b.startStep + b.frames.length / 7 - tailSteps - 1,
-    FULL_STRENGTH,
-  ]);
-  return new Float32Array([...rims, ...taps]);
+  const all = coins.flatMap((b) => {
+    const r = rimContacts(b);
+    return Array.from({ length: r.length / 2 }, (_, j) => [r[j * 2] ?? 0, r[j * 2 + 1] ?? 0]);
+  });
+  // A stable sort keeps body order within a step.
+  all.sort((a, b) => (a[0] ?? 0) - (b[0] ?? 0));
+  const taps = coins.flatMap(({ startStep, frames: f }) => {
+    const n = f.length / 7;
+    let k = n - tailSteps - 1;
+    if (!flatAt(f, k)) k = n - 1;
+    else while (k > 0 && flatAt(f, k - 1) && moved(f, k) < STILL * STILL) k--;
+    return [startStep + Math.min(k, n - 2), FULL_STRENGTH];
+  });
+  return { rims: new Float32Array(all.slice(0, MAX_RIMS).flat()), taps: new Float32Array(taps) };
+}
+
+/** Squared position change from frame k − 1 to frame k. */
+function moved(f: Float32Array, k: number): number {
+  let d = 0;
+  for (let i = 0; i < 3; i++) d += ((f[k * 7 + i] ?? 0) - (f[k * 7 - 7 + i] ?? 0)) ** 2;
+  return d;
 }
 
 /** Adds a damped sine to `out` by the two-term resonator recursion, so there is no sin per sample. */

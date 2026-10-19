@@ -206,25 +206,45 @@ describe('rimContacts', () => {
   });
 });
 
+/** A flat coin at y = 0.1 sliding along x at 1 unit/s until frame `rest`, then still. */
+function sliding(n: number, rest: number) {
+  return { ...body(0, n, (k) => [Math.min(k, rest) * DT, 0.1, 0]), shape: 'coin' as const };
+}
+
 describe('coinTaps', () => {
-  it('caps rim contacts at 120 per roll, then taps each coin once at its last physical frame', () => {
-    // 800 frames are 5 revolutions: 80 contacts per coin; the last physical frame is 800 − 36 − 1.
-    const coin = { ...wobbling(800, 5, 160), shape: 'coin' as const };
-    const d6 = { ...wobbling(800, 5, 160), shape: 'd6' as const };
-    const found = pairs(coinTaps([coin, d6, { ...coin, startStep: 1000 }], 36));
-    expect(found).toHaveLength(122);
-    // Contacts fall within a step of 105 + 10j for the first coin and 1005 + 10j for the last.
-    [
-      [79, 895],
-      [80, 1005],
-      [119, 1395],
-    ].forEach(([i = 0, step = 0]) => {
-      expect(Math.abs((found[i]?.[0] ?? NaN) - step)).toBeLessThanOrEqual(1);
+  it('keeps the first 120 rim contacts by time, so 3 coins with 50 each give 40 each', () => {
+    // 500 frames give contacts at steps 105 + 10j, j < 50, fading by 0.6 · 15 / 49 per contact.
+    const coin = { ...wobbling(500, 5, 160), shape: 'coin' as const };
+    const d6 = { ...coin, shape: 'd6' as const };
+    const { rims } = coinTaps([coin, d6, coin, coin], 36);
+    const found = pairs(rims);
+    expect(found).toHaveLength(120);
+    found.forEach(([step, strength], i) => {
+      const j = Math.floor(i / 3);
+      expect(Math.abs(step - (105 + 10 * j))).toBeLessThanOrEqual(1);
+      expect(strength).toBeCloseTo(15 * (1 - (0.6 * j) / 49), 4);
     });
-    expect(found.slice(120)).toEqual([
-      [863, 15],
-      [1763, 15],
+  });
+
+  it('taps two coins whose tracks end together at the frame each comes to rest', () => {
+    const d6 = { ...sliding(400, 50), shape: 'd6' as const };
+    const { taps } = coinTaps([sliding(400, 100), d6, sliding(400, 250)], 36);
+    expect(pairs(taps)).toEqual([
+      [100, 15],
+      [250, 15],
     ]);
+  });
+
+  it('taps a coin never flat before the tail at the tail frame before settle', () => {
+    // 400 frames from step 100 end at the settle step 499.
+    const { taps } = coinTaps([{ ...wobbling(400, 5, 160), shape: 'coin' as const }], 36);
+    expect(pairs(taps)).toEqual([[498, 15]]);
+  });
+
+  it('taps a coin still sliding at its last frame without a tail before the settle step', () => {
+    // 400 frames from step 0 end at the settle step 399.
+    const { taps } = coinTaps([sliding(400, 399)], 0);
+    expect(pairs(taps)).toEqual([[398, 15]]);
   });
 });
 

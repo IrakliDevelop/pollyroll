@@ -355,12 +355,10 @@ export function createDiceTray(
     coin: ReturnType<typeof coinBank>;
   } | null = null;
   let sources: AudioBufferSourceNode[] = [];
-  // undefined while decoding; each null without its set or when it fails to decode.
-  let decoded: { clacks: Clips | null; clinks: Clips | null } | undefined = {
-    clacks: null,
-    clinks: null,
-  };
-  let decoding: Promise<void> | null = null;
+  let taps: AudioBufferSourceNode[] = []; // coin taps, left to ring out at settle
+  // Each a promise while decoding, then its clips, or null without the set or when it fails to decode.
+  let clackClips: Clips | null | Promise<Clips | null> = null;
+  let clinkClips: Clips | null | Promise<Clips | null> = null;
   const vp = new Float32Array(16);
   const shadowData = new Float32Array(MAX_BODIES * 4);
   const instances = new Map<LabelSet, Float32Array>(); // reused across rolls, one per label set
@@ -657,6 +655,8 @@ export function createDiceTray(
     fadeStart = -1;
     alpha = 1;
     silence();
+    for (const src of taps) src.stop();
+    taps = [];
   }
 
   function silence(): void {
@@ -691,29 +691,39 @@ export function createDiceTray(
         if (r.sound > 0 && audio !== null) {
           const { ctx, noise, coin } = audio;
           const start = ctx.currentTime;
-          const play = (): void => {
-            const { bodies, tailSteps } = r.plan;
-            const list = impacts(bodies, tailSteps);
-            const isCoin = (b: number): boolean => bodies[b]?.shape === 'coin';
-            const dice = impactsOf(list, (b) => !isCoin(b));
-            const hits = impactsOf(list, isCoin);
-            const clips = (c: Clips, at: Float32Array, volume: number) =>
-              playClacks(ctx, c.buffer, c.starts, c, at, start, volume, PLAYBACK);
-            const clinks = decoded?.clinks;
-            sources = [
-              ...(decoded?.clacks
-                ? clips(decoded.clacks, dice, r.sound)
-                : playImpacts(ctx, noise, dice, start, r.sound, PLAYBACK)),
-              ...clips(coin.hit, hits, r.sound),
-              ...clips(coin.rim, coinTaps(bodies, tailSteps), r.sound),
-              ...(clinks ? clips(clinks, hits, r.sound * CLINK) : []),
-            ];
+          const { bodies, tailSteps } = r.plan;
+          const list = impacts(bodies, tailSteps);
+          const isCoin = (b: number): boolean => bodies[b]?.shape === 'coin';
+          const clips = (c: Clips, at: Float32Array, volume: number) =>
+            playClacks(ctx, c.buffer, c.starts, c, at, start, volume, PLAYBACK);
+          const after = (
+            set: Clips | null | Promise<Clips | null>,
+            play: (c: Clips | null) => void,
+          ): void => {
+            if (!(set instanceof Promise)) play(set);
+            else
+              void set.then((c) => {
+                if (roll === r && !r.done && !disposed) play(c);
+              });
           };
-          if (decoded !== undefined) play();
-          else
-            void decoding?.then(() => {
-              if (roll === r && !r.done && !disposed) play();
-            });
+          after(clackClips, (clacks) => {
+            const dice = impactsOf(list, (b) => !isCoin(b));
+            sources.push(
+              ...(clacks
+                ? clips(clacks, dice, r.sound)
+                : playImpacts(ctx, noise, dice, start, r.sound, PLAYBACK)),
+            );
+          });
+          after(clinkClips, (clinks) => {
+            const hits = impactsOf(list, isCoin);
+            const { rims, taps: rests } = coinTaps(bodies, tailSteps);
+            sources.push(
+              ...clips(coin.hit, hits, r.sound),
+              ...clips(coin.rim, rims, r.sound),
+              ...(clinks ? clips(clinks, hits, r.sound * CLINK) : []),
+            );
+            taps = clips(coin.rim, rests, r.sound);
+          });
         }
       }
       const s = ((now - r.t0) * PLAYBACK) / 1000 / DT;
@@ -868,14 +878,8 @@ export function createDiceTray(
         if (audio === null) {
           const ctx = new AudioContext();
           audio = { ctx, noise: noiseBuffer(ctx), coin: coinBank(ctx) };
-          if (clacks !== undefined || coinClinks !== undefined) {
-            decoded = undefined;
-            decoding = Promise.all([decode(ctx, clacks), decode(ctx, coinClinks)]).then(
-              ([a, b]) => {
-                decoded = { clacks: a, clinks: b };
-              },
-            );
-          }
+          clackClips = decode(ctx, clacks)?.then((c) => (clackClips = c)) ?? null;
+          clinkClips = decode(ctx, coinClinks)?.then((c) => (clinkClips = c)) ?? null;
         }
         // Resume inside the caller's gesture; the clacks are scheduled on the first frame.
         if (audio.ctx.state === 'suspended') void audio.ctx.resume();
