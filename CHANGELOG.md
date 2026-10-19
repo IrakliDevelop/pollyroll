@@ -14,6 +14,7 @@ All notable changes to this project are documented here. The format follows
   clacks, slight pitch variation, volume from impact strength) and falls back to the procedural
   sound if the clip cannot be decoded. An invalid clack set throws `RangeError` when the tray is
   created. The demo uses it.
+- Demo: a notation key under the examples lists every modifier with a one-click example.
 
 ## [0.4.0] - Unreleased
 
