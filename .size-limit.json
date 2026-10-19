@@ -29,10 +29,17 @@
     "gzip": true
   },
   {
-    "name": "pollyroll/sounds",
+    "name": "pollyroll/sounds diceClacks",
     "path": "dist/sounds.js",
-    "import": "*",
+    "import": "{ diceClacks }",
     "limit": "1.5 KB",
+    "gzip": true
+  },
+  {
+    "name": "pollyroll/sounds coinClinks",
+    "path": "dist/sounds.js",
+    "import": "{ coinClinks }",
+    "limit": "0.75 KB",
     "gzip": true
   }
 ]

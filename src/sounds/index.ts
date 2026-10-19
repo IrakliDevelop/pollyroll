@@ -13,3 +13,18 @@ export const diceClacks: ClackSet = {
     [361.1, 56],
   ],
 };
+
+/** Eight coin clinks recorded by Kenney (kenney.nl, CC0 1.0): one 16 kHz mono MP3, low-passed at 3 kHz. */
+export const coinClinks: ClackSet = {
+  audio: '//MYxAAC0AGICUEAAhf//////8+IHA+Hlf//v/rd/b/rOr////MYxAsEWAMMAYAQAP/9bP///Ur/////1EPvnA+xv+Iw8BBA//MYxBAHWAMEAYAQAO/nPjhd9n/vKdw5gwNV////////X4Z8//MYxAkE8AMUAYAQAEv7Fdn/+oWAZr5Z//////////////9h//MYxAwH0bcEAYAQAGdERAZ7flEjzAq9nK/9DSzW/UQV//////MYxAMFiAL8AYAQAP9XfqPHjv2HELFToad93kiQqWUq//////MYxAMFEbMIAYAQAP//////Qy//b9TKUSjS/+5C6v////////MYxAUGWY8EAYAoAP/////0MHwAMHjsRg19TRb//+j9Vf////MYxAIFYAcMAYAAAP/pc+pugm6Km2V+nizG/+lgHGkV//////MYxAMFKAJsAcAAAPyp0r+VDYlO/+DSga9TwVHgqkxBTUWq',
+  clacks: [
+    [-1.3, 25],
+    [33.7, 25],
+    [65.7, 25],
+    [100.7, 25],
+    [135.7, 25],
+    [162.7, 25],
+    [197.7, 25],
+    [232.7, 25],
+  ],
+};
