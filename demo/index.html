@@ -30,6 +30,84 @@
         </label>
       </form>
       <div id="examples"></div>
+      <details id="legend">
+        <summary>Notation key</summary>
+        <table>
+          <thead>
+            <tr>
+              <th>Write</th>
+              <th>Means</th>
+              <th>Try</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>NdX</code></td>
+              <td>N dice with X sides (4, 6, 8, 10, 12, 20, 100); N defaults to 1</td>
+              <td><button type="button" data-notation="3d6">3d6</button></td>
+            </tr>
+            <tr>
+              <td><code>d%</code> <code>dF</code></td>
+              <td>Percentile die; Fudge die (−1, 0, +1)</td>
+              <td><button type="button" data-notation="4dF">4dF</button></td>
+            </tr>
+            <tr>
+              <td><code>+</code> <code>-</code> numbers</td>
+              <td>Add or subtract dice and constants</td>
+              <td><button type="button" data-notation="1d20+5">1d20+5</button></td>
+            </tr>
+            <tr>
+              <td><code>khN</code> <code>klN</code></td>
+              <td>Keep the highest or lowest N dice</td>
+              <td><button type="button" data-notation="2d20kh1">2d20kh1</button></td>
+            </tr>
+            <tr>
+              <td><code>dlN</code> <code>dhN</code></td>
+              <td>Drop the lowest or highest N dice</td>
+              <td><button type="button" data-notation="4d6dl1">4d6dl1</button></td>
+            </tr>
+            <tr>
+              <td><code>kN</code> <code>dN</code></td>
+              <td>Short for <code>khN</code> and <code>dlN</code></td>
+              <td><button type="button" data-notation="4d6d1">4d6d1</button></td>
+            </tr>
+            <tr>
+              <td><code>!</code> <code>x</code></td>
+              <td>Explode: roll again on the maximum</td>
+              <td><button type="button" data-notation="3d6!">3d6!</button></td>
+            </tr>
+            <tr>
+              <td><code>!&gt;=5</code> <code>!6</code></td>
+              <td>Explode on a comparison</td>
+              <td><button type="button" data-notation="d6!&gt;=5">d6!&gt;=5</button></td>
+            </tr>
+            <tr>
+              <td><code>r</code> <code>r1</code> <code>r&lt;3</code></td>
+              <td>Reroll matching dice until they stop matching (default: 1s)</td>
+              <td><button type="button" data-notation="4d6r1">4d6r1</button></td>
+            </tr>
+            <tr>
+              <td><code>ro</code> <code>ro1</code></td>
+              <td>Reroll matching dice once</td>
+              <td><button type="button" data-notation="2d20ro1">2d20ro1</button></td>
+            </tr>
+            <tr>
+              <td><code>&gt;=7</code> <code>&lt;3</code> <code>=6</code></td>
+              <td>Count successes among the kept dice</td>
+              <td><button type="button" data-notation="5d10&gt;=7">5d10&gt;=7</button></td>
+            </tr>
+            <tr>
+              <td><code>adv</code> <code>dis</code></td>
+              <td>Advantage and disadvantage: <code>2d20kh1</code>, <code>2d20kl1</code></td>
+              <td><button type="button" data-notation="adv+3">adv+3</button></td>
+            </tr>
+          </tbody>
+        </table>
+        <p>
+          Ability scores: <code>4d6dl1</code> rolls four d6 and drops the lowest (same as
+          <code>4d6kh3</code>). Case and spaces don't matter.
+        </p>
+      </details>
       <pre id="error" class="error" hidden></pre>
       <details id="editor">
         <summary>Customize dice</summary>

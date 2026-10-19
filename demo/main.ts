@@ -137,6 +137,13 @@ for (const notation of [
   examples.append(button);
 }
 
+byId('legend', HTMLDetailsElement).addEventListener('click', (e) => {
+  const notation = e.target instanceof HTMLButtonElement ? e.target.dataset.notation : undefined;
+  if (notation === undefined) return;
+  notationInput.value = notation;
+  roll();
+});
+
 form.addEventListener('submit', (e) => {
   e.preventDefault();
   roll();

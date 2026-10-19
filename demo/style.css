@@ -156,3 +156,31 @@ textarea {
 .io > div {
   flex: 1 1 360px;
 }
+
+#legend {
+  margin-top: 12px;
+}
+
+#legend summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+#legend table {
+  border-collapse: collapse;
+  margin-top: 8px;
+  font-size: 14px;
+}
+
+#legend th,
+#legend td {
+  text-align: left;
+  padding: 4px 12px 4px 0;
+  border-bottom: 1px solid #e3e6ec;
+  vertical-align: top;
+}
+
+#legend p {
+  margin: 8px 0 0;
+  font-size: 14px;
+}
