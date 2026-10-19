@@ -36,7 +36,7 @@ export function evaluate(event: RollEvent): RollSummary {
     });
     if (dice.includes(null)) {
       total = null;
-      return { die, sign, dice, kept: [], dropped: [], subtotal: null, success };
+      return { die, sign, dice, kept: [], dropped: [], rerolled: [], subtotal: null, success };
     }
     let keep = pairs;
     let drop: [number, number][] = [];
@@ -54,7 +54,16 @@ export function evaluate(event: RollEvent): RollSummary {
     }
     if (total !== null) total += subtotal;
     const dropped = ascending([...drop, ...rerolled]);
-    return { die, sign, dice, kept: ascending(keep), dropped, subtotal, success };
+    return {
+      die,
+      sign,
+      dice,
+      kept: ascending(keep),
+      dropped,
+      rerolled: ascending(rerolled),
+      subtotal,
+      success,
+    };
   });
 
   return { total, modifier: event.modifier, groups };

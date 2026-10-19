@@ -51,7 +51,7 @@ absolutely positioned and ignores pointer events; an element with `position: sta
 ```ts
 parse(notation: string): RollAst;            // throws PollyrollSyntaxError { message, index }
 createRoll(notation, opts?): RollEvent;      // opts: { rng?, seed?, skin?, rollerId?, audience? }
-evaluate(event: RollEvent): RollSummary;     // { total | null, modifier, groups: [{ die, sign, dice, kept, dropped, subtotal, success }] }
+evaluate(event: RollEvent): RollSummary;     // { total | null, modifier, groups: [{ die, sign, dice, kept, dropped, rerolled, subtotal, success }] }
 redact(event: RollEvent): RollEvent;         // copy with every value null and wave ≥ 1 dice removed
 isRollEvent(input: unknown): input is RollEvent; // validates untrusted input, including bounds
 ```

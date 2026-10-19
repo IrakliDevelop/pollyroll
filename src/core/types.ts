@@ -52,6 +52,8 @@ export interface RollGroupSummary {
   dice: (number | null)[];
   kept: number[];
   dropped: number[];
+  /** Indexes of dice replaced by a reroll; a subset of `dropped`. */
+  rerolled: number[];
   subtotal: number | null;
   /** Success comparison of the term; when set, `subtotal` is the signed success count. */
   success: Compare | null;

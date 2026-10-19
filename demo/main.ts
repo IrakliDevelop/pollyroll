@@ -30,7 +30,7 @@ function showError(text: string | null): void {
   errorEl.textContent = text ?? '';
 }
 
-/** One results line: total (or "hidden") and kept or success count, plus dropped, per group. */
+/** One results line: total (or "hidden"), kept or success count, rerolled, dropped, per group. */
 function describe(event: RollEvent): string {
   const summary = evaluate(event);
   const parts = [`Total: ${summary.total === null ? 'hidden' : String(summary.total)}`];
@@ -42,7 +42,9 @@ function describe(event: RollEvent): string {
     const pick = (indices: number[]): string => indices.map((k) => String(g.dice[k])).join(', ');
     let text = `#${i + 1} ${g.die}: `;
     text += g.success ? `successes ${g.subtotal}` : `kept [${pick(g.kept)}]`;
-    if (g.dropped.length > 0) text += ` dropped [${pick(g.dropped)}]`;
+    const dropped = g.dropped.filter((k) => !g.rerolled.includes(k));
+    if (g.rerolled.length > 0) text += ` rerolled [${pick(g.rerolled)}]`;
+    if (dropped.length > 0) text += ` dropped [${pick(dropped)}]`;
     parts.push(text);
   });
   if (summary.modifier !== 0)

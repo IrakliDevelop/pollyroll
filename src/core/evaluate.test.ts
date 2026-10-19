@@ -33,6 +33,7 @@ describe('evaluate', () => {
           dice: [7, 15],
           kept: [1],
           dropped: [0],
+          rerolled: [],
           subtotal: 15,
           success: null,
         },
@@ -110,8 +111,28 @@ describe('evaluate', () => {
       dice: [1, 5, 6, 3, 4],
       kept: [3, 4],
       dropped: [0, 1, 2],
+      rerolled: [0],
       subtotal: 7,
       success: null,
+    });
+  });
+
+  it('lists rerolled dice separately from keep/drop drops', () => {
+    expect(
+      evaluate(ev('4d6r1kh3', 'd6', [1, 4, 5, 6, 3], 0, [0, 0, 0, 0, 1])).groups[0],
+    ).toMatchObject({
+      kept: [1, 2, 3],
+      dropped: [0, 4],
+      rerolled: [0],
+      subtotal: 15,
+    });
+  });
+
+  it('lists every die of a reroll chain', () => {
+    expect(evaluate(ev('1d6r1', 'd6', [1, 1, 5], 0, [0, 1, 2])).groups[0]).toMatchObject({
+      kept: [2],
+      dropped: [0, 1],
+      rerolled: [0, 1],
     });
   });
 
@@ -203,6 +224,7 @@ describe('evaluate', () => {
           dice: [null, null],
           kept: [],
           dropped: [],
+          rerolled: [],
           subtotal: null,
           success: null,
         },
