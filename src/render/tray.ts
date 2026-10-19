@@ -1,5 +1,6 @@
 import { evaluate } from '../core/evaluate';
 import type { RollEvent, RollSummary } from '../core/types';
+import { formatRoll } from '../format';
 import { shapeOf } from '../geometry/labels';
 import type { LabelSet } from '../geometry/labels';
 import { getDieMesh, MESH_STRIDE } from '../geometry/mesh';
@@ -34,6 +35,8 @@ export interface TrayOptions {
   labels?: Partial<Record<LabelSet, readonly string[]>>;
   /** Volume 0–1 of procedural impact sounds; default 0 (silent). */
   sound?: number;
+  /** Speak each settled result through a polite live region; default false. */
+  announce?: boolean;
 }
 
 export interface DiceTray {
@@ -102,6 +105,7 @@ interface Roll {
   t0: number;
   step: number;
   done: boolean;
+  text: string;
 }
 
 /**
@@ -248,6 +252,23 @@ export function createDiceTray(
     if (getComputedStyle(target).position === 'static') target.style.position = 'relative';
     canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none';
     target.appendChild(canvas);
+  }
+  canvas.setAttribute('role', 'img');
+  canvas.setAttribute('aria-label', 'Dice tray');
+  let live: HTMLDivElement | null = null;
+  if (opts.announce === true) {
+    live = document.createElement('div');
+    live.setAttribute('role', 'status');
+    live.setAttribute('aria-live', 'polite');
+    live.style.cssText =
+      'position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap';
+    if (own) target.appendChild(live);
+    else canvas.after(live);
+  }
+  /** Labels the canvas with a result and announces it; '' restores the idle label. */
+  function show(text: string): void {
+    canvas.setAttribute('aria-label', text || 'Dice tray');
+    if (live !== null) live.textContent = text;
   }
   const shadows = opts.shadows ?? true;
   const maxDpr = opts.maxDpr ?? 2;
@@ -589,6 +610,7 @@ export function createDiceTray(
     // Impacts end ≥ 25 steps before settle; a suspended context must not play them on resume.
     silence();
     render();
+    show(r.text);
     resolvePending();
     if (fadeAfterMs === null) return;
     fadeTimer = setTimeout(() => {
@@ -690,7 +712,11 @@ export function createDiceTray(
 
     async playRoll(event: RollEvent): Promise<RollSummary> {
       const summary = evaluate(event);
-      if (disposed || gl === null) return summary;
+      if (disposed) return summary;
+      if (gl === null) {
+        show(formatRoll(event, summary));
+        return summary;
+      }
       // Build first: a failing skin shader or invalid event rejects and leaves the current roll alone.
       // While lost the skin compiles on restore, falling back to the tray skin if it fails.
       const skin = skinGpu(resolveSkin(event.skin ?? traySkin));
@@ -737,6 +763,7 @@ export function createDiceTray(
         t0: performance.now(),
         step: 0,
         done: false,
+        text: formatRoll(event, summary),
       };
       roll = r;
       const done = new Promise<RollSummary>((resolve) => {
@@ -795,6 +822,7 @@ export function createDiceTray(
       roll = null;
       resolvePending();
       render();
+      show('');
     },
 
     resize(): void {
@@ -815,6 +843,11 @@ export function createDiceTray(
       observer = null;
       if (gl !== null) dropGpu(gl, !lost && !gl.isContextLost());
       if (own) canvas.remove();
+      else {
+        canvas.removeAttribute('role');
+        canvas.removeAttribute('aria-label');
+      }
+      live?.remove();
       void audio?.ctx.close();
       audio = null;
     },

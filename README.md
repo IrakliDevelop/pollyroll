@@ -141,6 +141,7 @@ const tray = createDiceTray(target, {
   fadeAfterMs: null, // number: fade the dice out after they settle
   labels: { d6: ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'] }, // optional custom labels per die
   sound: 0, // 0–1: volume of procedural impact clacks; 0 (default) never creates an AudioContext
+  announce: false, // true: speak each settled result through a polite aria-live region
 });
 
 tray.playRoll(event); // Promise<RollSummary>; a new roll replaces the previous dice
@@ -175,6 +176,8 @@ The label font is the skin's `font` if it has one, otherwise `labelFont`. If the
 - **Sound:** with `sound` above 0 the tray plays a short procedural clack for each hard impact,
   derived from the dice tracks (no audio files). Browsers start audio only after a user gesture, so a
   roll that does not start from a click may stay silent.
+- **Accessibility:** the canvas has `role="img"` and, once a roll settles, an `aria-label` with the
+  result from `formatRoll`.
 - **Superseded rolls:** if a roll is replaced, cleared, or disposed, its promise still resolves with
   that roll's own summary. It never rejects in these cases.
 - **Dice limit:** at most 30 dice are animated per tray (a d100 counts as two). Dice beyond that

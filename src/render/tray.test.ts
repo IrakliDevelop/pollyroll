@@ -88,6 +88,51 @@ describe('createDiceTray without WebGL2', () => {
     }
     expect(host.querySelector('canvas')).toBeNull();
   });
+
+  it('labels the canvas and updates the label with the result', async () => {
+    noWebGl();
+    const canvas = document.createElement('canvas');
+    const tray = createDiceTray(canvas);
+    expect(canvas.getAttribute('role')).toBe('img');
+    expect(canvas.getAttribute('aria-label')).toBe('Dice tray');
+    await tray.playRoll(event);
+    expect(canvas.getAttribute('aria-label')).toBe('2d6+3: [2, 5] + 3 = 10');
+  });
+
+  it('announces results in a live region only when asked', async () => {
+    noWebGl();
+    const plain = document.createElement('div');
+    document.body.appendChild(plain);
+    await createDiceTray(plain).playRoll(event);
+    expect(plain.querySelector('[aria-live]')).toBeNull();
+
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const tray = createDiceTray(host, { announce: true });
+    const regions = host.querySelectorAll('[role=status][aria-live=polite]');
+    expect(regions).toHaveLength(1);
+    await tray.playRoll(event);
+    expect(regions[0]?.textContent).toBe('2d6+3: [2, 5] + 3 = 10');
+    tray.clear();
+    expect(regions[0]?.textContent).toBe('');
+    expect(host.querySelector('canvas')?.getAttribute('aria-label')).toBe('Dice tray');
+    tray.dispose();
+    expect(host.querySelector('[aria-live]')).toBeNull();
+  });
+
+  it('removes its attributes from a user canvas on dispose', async () => {
+    noWebGl();
+    const box = document.createElement('div');
+    const canvas = document.createElement('canvas');
+    box.appendChild(canvas);
+    const tray = createDiceTray(canvas, { announce: true });
+    expect(canvas.nextElementSibling?.getAttribute('role')).toBe('status');
+    await tray.playRoll(event);
+    tray.dispose();
+    expect(canvas.hasAttribute('role')).toBe(false);
+    expect(canvas.hasAttribute('aria-label')).toBe(false);
+    expect(box.children).toHaveLength(1);
+  });
 });
 
 describe('materialPresets', () => {

@@ -755,3 +755,36 @@ test.describe('sound', () => {
     expect(await page.evaluate(() => window.__audio.constructed)).toBe(0);
   });
 });
+
+test.describe('tray accessibility', () => {
+  test('labels the canvas with the settled result and never with a replaced roll', async ({
+    page,
+  }) => {
+    await page.goto('/smoke.html');
+    await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
+    await needsWebGL2(page);
+    const labels = await page.evaluate(
+      async ([six, event]) => {
+        const canvas = document.getElementById('tray');
+        if (canvas === null) throw new Error('missing #tray');
+        const tray = window.__pollyrollTray;
+        await tray.playRoll(event);
+        const seen: (string | null)[] = [];
+        const record = (ms: MutationRecord[]): void => {
+          for (const m of ms) seen.push(m.oldValue);
+        };
+        const observer = new MutationObserver(record);
+        observer.observe(canvas, { attributeFilter: ['aria-label'], attributeOldValue: true });
+        await Promise.all([tray.playRoll(six), tray.playRoll(event)]);
+        record(observer.takeRecords());
+        observer.disconnect();
+        const final = canvas.getAttribute('aria-label');
+        return { seen: [...seen, final], final };
+      },
+      [SIX, EVENT] as const,
+    );
+    expect(labels.final).toBe('2d6+3: [2, 5] + 3 = 10');
+    expect(labels.seen).not.toContain('6d6: [1, 2, 3, 4, 5, 6] = 21');
+    expect(labels.seen[0]).toBe('2d6+3: [2, 5] + 3 = 10');
+  });
+});
