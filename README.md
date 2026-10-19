@@ -319,25 +319,27 @@ hidden bug.
   approximate contact, so a die can glance off at a slightly wrong angle, and an impact can overlap
   a neighbour for one 1/120 s step (usually under 0.1 die units, at most about 0.3).
 - **The final settle is animated, not simulated.** For the last 0.3 s, dice still tilted against a
-  wall or a neighbour topple flat and dice that ended too close slide apart. Dice no longer end on
-  top of each other (a roll that does is simulated again), so the lift over a neighbour is rare;
-  when it happens a die can still clip that neighbour for about 0.1 s (1 to 7 of 40 crowded rolls
-  in 0.2.0).
+  wall or a neighbour topple flat and dice that ended too close slide apart. A roll that ends with a die
+  on top of another is simulated again (up to 4 attempts; none of 9,000 measured rolls still ended
+  stacked), so the lift over a neighbour is rare; when it happens a die can clip that neighbour for
+  about 0.1 s (1 to 7 of 40 crowded rolls, measured in 0.2.0).
 - **Large rolls get smaller dice.** Auto-fit shrinks a roll until its dice fit the tray (5 square
   die-units per die) and every die spawns side by side, so rolls of 4 or more dice are drawn
   smaller than `dieScale`. With many dice in a small canvas the dice get small, down to a floor of
   0.5 × `dieScale`. Dice beyond 30 animated bodies are counted in the summary but not shown; a d100
   counts as two bodies.
-- **Crowded rolls can take longer.** About 2 in 1,200 crowded rolls (20–30 dice) jitter in a pile
-  until the 6 s step cap before the settle tail flattens them.
-- **Motion matches only between same-shape trays.** Two clients see identical motion when their
-  trays have the same aspect ratio and the same `dieScale`. The values always match, because the
+- **Crowded rolls can take longer.** About 2 in 1,200 crowded rolls (20–30 dice, measured in 0.2.0)
+  jitter in a pile until the 6 s step cap before the settle tail flattens them.
+- **Motion matches only between same-shape trays and versions.** Two clients see identical motion
+  when their trays have the same aspect ratio and the same `dieScale` and they run the same minor
+  version of pollyroll (0.4.0 changed the physics). The values always match, because the
   remap runs on each client.
 - **Explosion and reroll waves add time.** Each wave is thrown after the previous one settles, so
   long chains (up to 10 waves) take several seconds.
 - **The simulation runs before the first frame.** `playRoll` simulates the whole roll on the main
   thread first: about 5 ms for 10 dice and 15 ms for 30 dice on a desktop CPU, several times that on
-  slow phones.
+  slow phones. A roll that ends stacked is simulated again (about 1 in 1,000 rolls), multiplying that
+  cost by the attempts.
 
 **Rendering**
 
