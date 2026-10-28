@@ -321,6 +321,7 @@ test.describe('tray label font', () => {
     page,
   }) => {
     await open(page, '?reduced');
+    await page.waitForTimeout(400); // the reduced-motion fade-in holds a frame until it ends
     expect(await drawn(page)).toEqual(['sans-serif']);
     const classic: Skin = {
       material: 'plastic',
@@ -484,6 +485,7 @@ test.describe('tray robustness', () => {
             ...event,
             skin: { material: 'plastic', color: c, labelColor: '#000' },
           });
+          await new Promise((r) => setTimeout(r, 400)); // let the reduced-motion fade-in end
         },
         [EVENT, color] as const,
       );
@@ -501,6 +503,7 @@ test.describe('tray robustness', () => {
           ...event,
           skin: { material: 'plastic', color: '#ff7f50', labelColor: '#000' },
         });
+        await new Promise((r) => setTimeout(r, 400)); // let the reduced-motion fade-in end
         CanvasRenderingContext2D.prototype.getImageData = window.__getImageData;
       }, EVENT);
       return (await coverage(p)).mean;
@@ -679,6 +682,7 @@ test.describe('dropped dice', () => {
   test('fades the dropped die after settle and leaves kept dice unchanged', async ({ page }) => {
     const shot = async (query: string): Promise<string> => {
       await open(page, `?reduced&event=${query}`);
+      await page.waitForTimeout(400); // let the reduced-motion fade-in end
       return (await page.locator('#tray').screenshot()).toString('base64');
     };
     const all = await shot('all');
