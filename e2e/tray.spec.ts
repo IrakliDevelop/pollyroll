@@ -116,12 +116,22 @@ async function needsWebGL2(page: Page): Promise<void> {
   test.skip(!ok, 'needs WebGL2');
 }
 
+/** Waits until a reduced-motion fade-in has ended and the tray's frame loop has stopped. */
+async function fadedIn(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    await new Promise((r) => setTimeout(r, 300));
+    // The tray's tick, registered earlier, runs first: one frame sets alpha 1, the next stops the loop.
+    for (let i = 0; i < 2; i++) await new Promise((r) => requestAnimationFrame(r));
+  });
+}
+
 /** Opens the smoke page, waits for its roll to settle, and collects page errors. */
 async function open(page: Page, query: string): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(`/smoke.html${query}`);
   await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
+  await fadedIn(page);
   await page.evaluate(() => {
     const canvas = document.getElementById('tray');
     const ext =
@@ -321,7 +331,6 @@ test.describe('tray label font', () => {
     page,
   }) => {
     await open(page, '?reduced');
-    await page.waitForTimeout(400); // the reduced-motion fade-in holds a frame until it ends
     expect(await drawn(page)).toEqual(['sans-serif']);
     const classic: Skin = {
       material: 'plastic',
@@ -485,10 +494,10 @@ test.describe('tray robustness', () => {
             ...event,
             skin: { material: 'plastic', color: c, labelColor: '#000' },
           });
-          await new Promise((r) => setTimeout(r, 400)); // let the reduced-motion fade-in end
         },
         [EVENT, color] as const,
       );
+      await fadedIn(page);
       return (await coverage(page)).mean;
     };
     const hex = await mean('#ff7f50');
@@ -503,9 +512,11 @@ test.describe('tray robustness', () => {
           ...event,
           skin: { material: 'plastic', color: '#ff7f50', labelColor: '#000' },
         });
-        await new Promise((r) => setTimeout(r, 400)); // let the reduced-motion fade-in end
-        CanvasRenderingContext2D.prototype.getImageData = window.__getImageData;
       }, EVENT);
+      await fadedIn(p);
+      await p.evaluate(() => {
+        CanvasRenderingContext2D.prototype.getImageData = window.__getImageData;
+      });
       return (await coverage(p)).mean;
     };
     const blocked = await context.newPage();
@@ -682,7 +693,6 @@ test.describe('dropped dice', () => {
   test('fades the dropped die after settle and leaves kept dice unchanged', async ({ page }) => {
     const shot = async (query: string): Promise<string> => {
       await open(page, `?reduced&event=${query}`);
-      await page.waitForTimeout(400); // let the reduced-motion fade-in end
       return (await page.locator('#tray').screenshot()).toString('base64');
     };
     const all = await shot('all');
