@@ -614,6 +614,41 @@ test('plays the track at 1.5× real time, clocked from the first drawn frame', a
   expect(Math.abs(ms / 1000 - (totalSteps * DT) / PLAYBACK)).toBeLessThan(0.15);
 });
 
+test.describe('reduced motion auto', () => {
+  test('animates a roll when the user has no motion preference', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await page.goto('/smoke.html?motion=auto');
+    await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
+    await needsWebGL2(page);
+    const radii = slots(EVENT).map((b) => getPolyhedron(shapeOf(b.labelSet)).radius);
+    const { totalSteps } = planRoll(EVENT, trayBounds(4 / 3, fitScale(2, radii, 4 / 3)));
+    expect((totalSteps * DT) / PLAYBACK).toBeGreaterThan(0.5);
+    const ms = await page.evaluate(async (event) => {
+      const done = window.__pollyrollTray.playRoll(event);
+      const first = await new Promise<number>(requestAnimationFrame);
+      await done;
+      return performance.now() - first;
+    }, EVENT);
+    expect(Math.abs(ms / 1000 - (totalSteps * DT) / PLAYBACK)).toBeLessThan(0.15);
+  });
+
+  test('resolves at once with the summary when the user prefers reduced motion', async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto('/smoke.html?motion=auto');
+    await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
+    await needsWebGL2(page);
+    const result = await page.evaluate(async (event) => {
+      const t0 = performance.now();
+      const { total } = await window.__pollyrollTray.playRoll(event);
+      return { total, ms: performance.now() - t0 };
+    }, EVENT);
+    expect(result.total).toBe(10);
+    expect(result.ms).toBeLessThan(100);
+  });
+});
+
 test('settles a roll received in a hidden tab without any frame', async ({ page }) => {
   await page.clock.install({ time: 0 });
   await page.goto('/smoke.html');

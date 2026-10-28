@@ -77,7 +77,7 @@ const params = new URLSearchParams(location.search);
 const reduced = params.has('reduced');
 const tray = createDiceTray(canvas, {
   labelFont: 'sans-serif',
-  reducedMotion: reduced ? 'always' : 'never',
+  reducedMotion: reduced ? 'always' : params.get('motion') === 'auto' ? 'auto' : 'never',
   skin: params.get('skin') ?? 'classic',
   sound: params.has('sound') ? 1 : 0,
   ...(params.get('labels') === 'custom' ? { labels: { d6: ['A', 'B', 'C', 'D', 'E', 'F'] } } : {}),
