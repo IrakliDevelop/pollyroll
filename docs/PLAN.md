@@ -4,7 +4,7 @@ Approved specification for the initial build. Decisions here are fixed; an agent
 genuine gap records its choice in [DECISIONS.md](DECISIONS.md) and continues (see
 [agents/delegation.md](agents/delegation.md) § Autonomous run).
 
-> **Amended 2026-10-06 by the owner after the 0.1.0 build, 2026-10-19 for 0.2.0, 2026-10-19 for 0.3.0, 2026-10-19 for 0.4.0, 2026-10-19 for 0.5.0, and 2026-10-19 for 0.6.0.** Sections below describe the shipped
+> **Amended 2026-10-06 by the owner after the 0.1.0 build, 2026-10-19 for 0.2.0, 2026-10-19 for 0.3.0, 2026-10-19 for 0.4.0, 2026-10-19 for 0.5.0, 2026-10-19 for 0.6.0, and 2026-10-28 for 0.6.1.** Sections below describe the shipped
 > behavior; lines marked _(amended)_ replace the original text, and the reason for each is in
 > [DECISIONS.md](DECISIONS.md). § 12 separates what is verified from what was decided and what is
 > still unverified.
@@ -26,7 +26,7 @@ built for shared (multiplayer) rolls from day one. Independent of Fieldnotes and
 | Remap     | Simulate headless, read the settled up-face, then post-multiply the die's orientation for the whole trajectory by a **rotation symmetry** of its polyhedron that moves the chosen value's face to the settled up-face. Geometry is invariant, so the motion is unchanged and the real-die label layout is preserved. |
 | Assets    | None. Geometry generated in code; labels from a runtime Canvas2D glyph atlas; patterns procedural in GLSL; environment lighting analytic. _(amended, 0.5.0)_ `pollyroll/sounds` embeds 7 CC0 clacks (Kenney) as one base64 MP3.                                                                                      |
 | Transport | The library never touches the network. It creates and plays plain `RollEvent` objects.                                                                                                                                                                                                                               |
-| Fallback  | No WebGL2, or reduced motion → `playRoll` resolves immediately with the summary, no animation.                                                                                                                                                                                                                       |
+| Fallback  | No WebGL2, or reduced motion → `playRoll` resolves immediately with the summary, no animation; _(amended, 0.6.1)_ under reduced motion the settled dice fade in over 0.3 s.                                                                                                                                          |
 | Package   | Single package at the repo root with subpath exports: `pollyroll` (core, DOM-free), `pollyroll/render`, `pollyroll/react`; _(amended, 0.3.0)_ `pollyroll/format` (DOM-free); _(amended, 0.5.0)_ `pollyroll/sounds` (opt-in clack data).                                                                              |
 | Tooling   | pnpm 10, Node ≥ 20.19, TypeScript strict (`tsconfig.base.json`), tsup (ESM + CJS + DTS), Vitest, Playwright, size-limit (`@size-limit/preset-small-lib`), fast-check (property tests), ESLint + Prettier (configs at repo root), husky + lint-staged.                                                                |
 
