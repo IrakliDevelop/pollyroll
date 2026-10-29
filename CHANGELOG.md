@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.6.1] - 2026-10-28
+
+### Changed
+
+- Reduced motion: the settled dice fade in over 0.3 s instead of appearing at once, so a roll no
+  longer looks like it did nothing. `playRoll` still resolves immediately with the summary.
+- Demo: a note says when the system asks for reduced motion, which is why the dice do not roll.
+
+### Fixed
+
+- Tests: `reducedMotion: 'auto'` is tested against the `prefers-reduced-motion` media query in
+  Chromium and WebKit (CI's headless Firefox has no WebGL2, so Firefox still skips WebGL tests);
+  CI logs list every test and why it skipped; flaky fake-clock and wall-clock tests made
+  deterministic.
+
 ## [0.6.0] - 2026-10-19
 
 ### Added

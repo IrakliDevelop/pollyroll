@@ -116,12 +116,28 @@ async function needsWebGL2(page: Page): Promise<void> {
   test.skip(!ok, 'needs WebGL2');
 }
 
+/** Waits until a reduced-motion fade-in has ended and the tray's frame loop has stopped. */
+async function fadedIn(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    await new Promise((r) => setTimeout(r, 300));
+    // The tray's tick, registered earlier, runs first: one frame sets alpha 1, the next stops the loop.
+    for (let i = 0; i < 2; i++) await new Promise((r) => requestAnimationFrame(r));
+  });
+}
+
 /** Opens the smoke page, waits for its roll to settle, and collects page errors. */
 async function open(page: Page, query: string): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(`/smoke.html${query}`);
   await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
+  await fadedIn(page);
+  await keepLoseContext(page);
+  return errors;
+}
+
+/** Stores the #tray WEBGL_lose_context extension on window for setLost. */
+async function keepLoseContext(page: Page): Promise<void> {
   await page.evaluate(() => {
     const canvas = document.getElementById('tray');
     const ext =
@@ -131,7 +147,6 @@ async function open(page: Page, query: string): Promise<string[]> {
     if (ext === undefined || ext === null) throw new Error('WEBGL_lose_context unavailable');
     window.__loseContext = ext;
   });
-  return errors;
 }
 
 /** Loses or restores the #tray context and waits until the matching event has been handled. */
@@ -184,9 +199,12 @@ test.describe('tray context loss', () => {
     page,
   }) => {
     await page.clock.install({ time: 0 });
-    await open(page, '');
-    await needsWebGL2(page);
+    // Pause before load: a running clock's real-time timer loop can rewind it after pauseAt.
     await page.clock.pauseAt(20_000);
+    await page.goto('/smoke.html');
+    await page.waitForFunction(() => window.__pollyroll.ready);
+    await needsWebGL2(page);
+    await keepLoseContext(page);
     await page.evaluate((event) => void window.__pollyrollTray.playRoll(event), EVENT);
     await setLost(page, true);
     await setLost(page, false);
@@ -487,6 +505,7 @@ test.describe('tray robustness', () => {
         },
         [EVENT, color] as const,
       );
+      await fadedIn(page);
       return (await coverage(page)).mean;
     };
     const hex = await mean('#ff7f50');
@@ -501,8 +520,11 @@ test.describe('tray robustness', () => {
           ...event,
           skin: { material: 'plastic', color: '#ff7f50', labelColor: '#000' },
         });
-        CanvasRenderingContext2D.prototype.getImageData = window.__getImageData;
       }, EVENT);
+      await fadedIn(p);
+      await p.evaluate(() => {
+        CanvasRenderingContext2D.prototype.getImageData = window.__getImageData;
+      });
       return (await coverage(p)).mean;
     };
     const blocked = await context.newPage();
@@ -614,12 +636,48 @@ test('plays the track at 1.5× real time, clocked from the first drawn frame', a
   expect(Math.abs(ms / 1000 - (totalSteps * DT) / PLAYBACK)).toBeLessThan(0.15);
 });
 
+test.describe('reduced motion auto', () => {
+  test('animates a roll when the user has no motion preference', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await page.goto('/smoke.html?motion=auto');
+    await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
+    await needsWebGL2(page);
+    const radii = slots(EVENT).map((b) => getPolyhedron(shapeOf(b.labelSet)).radius);
+    const { totalSteps } = planRoll(EVENT, trayBounds(4 / 3, fitScale(2, radii, 4 / 3)));
+    expect((totalSteps * DT) / PLAYBACK).toBeGreaterThan(0.5);
+    const ms = await page.evaluate(async (event) => {
+      const done = window.__pollyrollTray.playRoll(event);
+      const first = await new Promise<number>(requestAnimationFrame);
+      await done;
+      return performance.now() - first;
+    }, EVENT);
+    expect(Math.abs(ms / 1000 - (totalSteps * DT) / PLAYBACK)).toBeLessThan(0.15);
+  });
+
+  test('resolves at once with the summary when the user prefers reduced motion', async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto('/smoke.html?motion=auto');
+    await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
+    await needsWebGL2(page);
+    const result = await page.evaluate(async (event) => {
+      const frame = new Promise<'frame'>((r) => requestAnimationFrame(() => r('frame')));
+      const done = window.__pollyrollTray.playRoll(event);
+      const first = await Promise.race([done.then(() => 'resolved'), frame]);
+      return { total: (await done).total, first };
+    }, EVENT);
+    expect(result).toEqual({ total: 10, first: 'resolved' });
+  });
+});
+
 test('settles a roll received in a hidden tab without any frame', async ({ page }) => {
   await page.clock.install({ time: 0 });
-  await page.goto('/smoke.html');
-  await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
-  await needsWebGL2(page);
+  // Pause before load: a running clock's real-time timer loop can rewind it after pauseAt.
   await page.clock.pauseAt(20_000);
+  await page.goto('/smoke.html');
+  await page.waitForFunction(() => window.__pollyroll.ready);
+  await needsWebGL2(page);
   const result = await page.evaluate(async (event) => {
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
     // MessageChannel is not faked by page.clock, so this macrotask runs while rAF stays paused.
@@ -712,17 +770,18 @@ test.describe('dropped dice', () => {
     const radii = slots(reroll).map((b) => getPolyhedron(shapeOf(b.labelSet)).radius);
     const plan = planRoll(reroll, trayBounds(4 / 3, fitScale(2, radii, 4 / 3)));
     const start = plan.bodies[1]?.startStep ?? NaN;
-    // Fake rAF fires on a 16 ms grid, so a multiple of 16 lands both shots on the same step; the
-    // clock starts at the first frame, 16 ms after playRoll.
+    // Fake rAF fires on a 16 ms grid, so a multiple of 16 lands both shots on the same step: the
+    // track clock starts at the first frame, and the last frame comes atMs - 16 later.
     const atMs = 16 * Math.round((((start + plan.totalSteps) / 2) * DT * 1000) / PLAYBACK / 16);
     const atStep = ((atMs - 16) * PLAYBACK) / 1000 / DT;
     expect(atStep).toBeGreaterThan(start);
     expect(atStep).toBeLessThan(plan.totalSteps);
     await page.clock.install({ time: 0 });
+    // Pause before load: a running clock's real-time timer loop can rewind it after pauseAt.
+    await page.clock.pauseAt(20_000);
     await page.goto('/smoke.html');
     await page.waitForFunction(() => window.__pollyroll.ready);
     await needsWebGL2(page);
-    await page.clock.pauseAt(20_000);
     const shot = async (event: RollEvent): Promise<string> => {
       await page.evaluate((e) => void window.__pollyrollTray.playRoll(e), event);
       await page.clock.runFor(atMs);
