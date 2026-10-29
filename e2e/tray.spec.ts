@@ -132,6 +132,12 @@ async function open(page: Page, query: string): Promise<string[]> {
   await page.goto(`/smoke.html${query}`);
   await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
   await fadedIn(page);
+  await keepLoseContext(page);
+  return errors;
+}
+
+/** Stores the #tray WEBGL_lose_context extension on window for setLost. */
+async function keepLoseContext(page: Page): Promise<void> {
   await page.evaluate(() => {
     const canvas = document.getElementById('tray');
     const ext =
@@ -141,7 +147,6 @@ async function open(page: Page, query: string): Promise<string[]> {
     if (ext === undefined || ext === null) throw new Error('WEBGL_lose_context unavailable');
     window.__loseContext = ext;
   });
-  return errors;
 }
 
 /** Loses or restores the #tray context and waits until the matching event has been handled. */
@@ -194,9 +199,12 @@ test.describe('tray context loss', () => {
     page,
   }) => {
     await page.clock.install({ time: 0 });
-    await open(page, '');
-    await needsWebGL2(page);
+    // Pause before load: a running clock's real-time timer loop can rewind it after pauseAt.
     await page.clock.pauseAt(20_000);
+    await page.goto('/smoke.html');
+    await page.waitForFunction(() => window.__pollyroll.ready);
+    await needsWebGL2(page);
+    await keepLoseContext(page);
     await page.evaluate((event) => void window.__pollyrollTray.playRoll(event), EVENT);
     await setLost(page, true);
     await setLost(page, false);
@@ -654,21 +662,22 @@ test.describe('reduced motion auto', () => {
     await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
     await needsWebGL2(page);
     const result = await page.evaluate(async (event) => {
-      const t0 = performance.now();
-      const { total } = await window.__pollyrollTray.playRoll(event);
-      return { total, ms: performance.now() - t0 };
+      const frame = new Promise<'frame'>((r) => requestAnimationFrame(() => r('frame')));
+      const done = window.__pollyrollTray.playRoll(event);
+      const first = await Promise.race([done.then(() => 'resolved'), frame]);
+      return { total: (await done).total, first };
     }, EVENT);
-    expect(result.total).toBe(10);
-    expect(result.ms).toBeLessThan(100);
+    expect(result).toEqual({ total: 10, first: 'resolved' });
   });
 });
 
 test('settles a roll received in a hidden tab without any frame', async ({ page }) => {
   await page.clock.install({ time: 0 });
-  await page.goto('/smoke.html');
-  await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 20_000 });
-  await needsWebGL2(page);
+  // Pause before load: a running clock's real-time timer loop can rewind it after pauseAt.
   await page.clock.pauseAt(20_000);
+  await page.goto('/smoke.html');
+  await page.waitForFunction(() => window.__pollyroll.ready);
+  await needsWebGL2(page);
   const result = await page.evaluate(async (event) => {
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
     // MessageChannel is not faked by page.clock, so this macrotask runs while rAF stays paused.
