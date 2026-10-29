@@ -33,12 +33,7 @@ export default defineConfig({
     },
     {
       name: 'firefox',
-      use: {
-        ...devices['Desktop Firefox'],
-        viewport,
-        deviceScaleFactor: 1,
-        launchOptions: { firefoxUserPrefs: { 'webgl.force-enabled': true } },
-      },
+      use: { ...devices['Desktop Firefox'], viewport, deviceScaleFactor: 1 },
     },
     {
       name: 'webkit',

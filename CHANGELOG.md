@@ -14,9 +14,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
-- Tests: the WebGL e2e tests now run in Firefox (WebGL forced on in headless Firefox), and
-  `reducedMotion: 'auto'` is tested against the `prefers-reduced-motion` media query in Chromium,
-  Firefox and WebKit.
+- Tests: `reducedMotion: 'auto'` is tested against the `prefers-reduced-motion` media query in
+  Chromium and WebKit (CI's headless Firefox has no WebGL2, so Firefox still skips WebGL tests);
+  CI logs list every test and why it skipped; flaky fake-clock and wall-clock tests made
+  deterministic.
 
 ## [0.6.0] - 2026-10-19
 
