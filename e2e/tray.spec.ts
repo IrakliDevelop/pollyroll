@@ -761,17 +761,18 @@ test.describe('dropped dice', () => {
     const radii = slots(reroll).map((b) => getPolyhedron(shapeOf(b.labelSet)).radius);
     const plan = planRoll(reroll, trayBounds(4 / 3, fitScale(2, radii, 4 / 3)));
     const start = plan.bodies[1]?.startStep ?? NaN;
-    // Fake rAF fires on a 16 ms grid, so a multiple of 16 lands both shots on the same step; the
-    // clock starts at the first frame, 16 ms after playRoll.
+    // Fake rAF fires on a 16 ms grid, so a multiple of 16 lands both shots on the same step: the
+    // track clock starts at the first frame, and the last frame comes atMs - 16 later.
     const atMs = 16 * Math.round((((start + plan.totalSteps) / 2) * DT * 1000) / PLAYBACK / 16);
     const atStep = ((atMs - 16) * PLAYBACK) / 1000 / DT;
     expect(atStep).toBeGreaterThan(start);
     expect(atStep).toBeLessThan(plan.totalSteps);
     await page.clock.install({ time: 0 });
+    // Pause before load: a running clock's real-time timer loop can rewind it after pauseAt.
+    await page.clock.pauseAt(20_000);
     await page.goto('/smoke.html');
     await page.waitForFunction(() => window.__pollyroll.ready);
     await needsWebGL2(page);
-    await page.clock.pauseAt(20_000);
     const shot = async (event: RollEvent): Promise<string> => {
       await page.evaluate((e) => void window.__pollyrollTray.playRoll(e), event);
       await page.clock.runFor(atMs);
