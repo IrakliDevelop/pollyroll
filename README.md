@@ -335,7 +335,7 @@ that Chromium, Firefox, and WebKit compute the same trajectory hash as Node.
 
 ## Known limits
 
-These describe 0.6.1. Each one is a deliberate trade-off or a measured edge case, not a
+These describe 0.6.2. Each one is a deliberate trade-off or a measured edge case, not a
 hidden bug.
 
 **Physics and layout**
@@ -380,6 +380,8 @@ hidden bug.
   to read.
 - **No images:** there are no image textures, and lighting is analytic.
 - **Shadows:** these are soft blobs, not shadow maps.
+- **Edge highlights on glass and gems:** the key light is a single direction, so a shiny rounded
+  edge can still show a thin bright line where it catches that light.
 - **What has been tested:** screenshot baselines come from SwiftShader in headless Chromium. 60 fps
   was measured on a desktop GPU (also under 4× CPU throttling); mobile GPUs have not been measured.
 - **WebGL2 is required:** without it, `playRoll` resolves with the summary and draws nothing.
