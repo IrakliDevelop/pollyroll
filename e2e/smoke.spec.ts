@@ -45,9 +45,48 @@ test.describe('render smoke', () => {
     await expect(page.locator('#tray')).toHaveScreenshot('smoke.png');
   });
 
-  test('reduced motion resolves immediately with static settled dice', async ({ page }) => {
+  test('reduced motion resolves immediately, then fades the settled dice in', async ({ page }) => {
     await page.goto('/smoke.html?reduced');
     await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 10_000 });
+    const { first, ink } = await page.evaluate(async () => {
+      const frame = new Promise<'frame'>((r) => requestAnimationFrame(() => r('frame')));
+      const done = window.__pollyrollTray.playRoll({
+        v: 1,
+        id: 'reduced-fade',
+        notation: '1d20',
+        dice: [{ type: 'd20', value: 7, group: 0, wave: 0 }],
+        modifier: 0,
+        seed: '0123456789abcdef0123456789abcdef',
+        createdAt: 0,
+      });
+      const first = await Promise.race([done.then(() => 'resolved'), frame]);
+      // Same task as the resolve, so the drawing buffer still holds the frame settle() drew.
+      const tray = document.getElementById('tray');
+      if (!(tray instanceof HTMLCanvasElement)) return { first, ink: -1 };
+      const c = document.createElement('canvas');
+      c.width = tray.width;
+      c.height = tray.height;
+      const ctx = c.getContext('2d');
+      if (ctx === null) return { first, ink: -1 };
+      ctx.fillStyle = '#fff'; // the page background behind the transparent tray
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(tray, 0, 0);
+      const { data } = ctx.getImageData(0, 0, c.width, c.height);
+      let ink = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const sum = (data[i] ?? 255) + (data[i + 1] ?? 255) + (data[i + 2] ?? 255);
+        if (sum < 3 * 235) ink++;
+      }
+      return { first, ink };
+    });
+    expect(first).toBe('resolved');
+    expect(ink).toBe(0);
+  });
+
+  test('reduced motion ends its fade on the settled frame', async ({ page }) => {
+    await page.goto('/smoke.html?reduced');
+    await page.waitForFunction(() => window.__pollyroll.settled, undefined, { timeout: 10_000 });
+    await page.waitForTimeout(500);
     const state = await page.evaluate(() => window.__pollyroll);
     expect(state.supported).toBe(true);
     expect(state.summary?.total).toBe(TOTAL);

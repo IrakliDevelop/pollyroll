@@ -315,6 +315,7 @@ export function createDiceTray(
   let frame = 0;
   let fadeTimer: ReturnType<typeof setTimeout> | undefined;
   let fadeStart = -1;
+  let fadeInStart = -1;
   let alpha = 1;
   let aspect = 1;
   let sound = 0;
@@ -617,6 +618,7 @@ export function createDiceTray(
     clearTimeout(fadeTimer);
     fadeTimer = undefined;
     fadeStart = -1;
+    fadeInStart = -1;
     alpha = 1;
     silence();
   }
@@ -638,6 +640,7 @@ export function createDiceTray(
     if (fadeAfterMs === null) return;
     fadeTimer = setTimeout(() => {
       fadeTimer = undefined;
+      fadeInStart = -1;
       fadeStart = performance.now();
       loop();
     }, fadeAfterMs);
@@ -688,6 +691,9 @@ export function createDiceTray(
         tray.clear();
         return;
       }
+    } else if (fadeInStart >= 0) {
+      alpha = Math.min(1, (performance.now() - fadeInStart) / FADE_MS);
+      if (alpha === 1) fadeInStart = -1;
     } else {
       return;
     }
@@ -732,6 +738,8 @@ export function createDiceTray(
     if (frame !== 0) cancelAnimationFrame(frame);
     frame = 0;
     if (gl !== null) dropGpu(gl, false);
+    fadeInStart = -1;
+    alpha = 1;
     // Without a drawn frame there is no clock to resume, so restore shows the final frame.
     if (roll !== null && !roll.done && roll.t0 < 0) settle(roll);
     // The outcome is known; the dice redraw when the context is restored.
@@ -819,8 +827,15 @@ export function createDiceTray(
       });
       // While lost the outcome resolves now; the dice draw on restore if this roll is still current.
       // A hidden tab runs no frames, so the roll would otherwise replay in full on return.
-      if (reduced() || lost || document.hidden) {
+      if (lost || document.hidden) {
         settle(r);
+        return done;
+      }
+      if (reduced()) {
+        alpha = 0;
+        settle(r);
+        fadeInStart = performance.now();
+        loop();
         return done;
       }
       loop();

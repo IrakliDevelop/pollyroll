@@ -14,6 +14,7 @@ const soundBox = byId('sound', HTMLInputElement);
 const examples = byId('examples', HTMLDivElement);
 const errorEl = byId('error', HTMLPreElement);
 const noticeEl = byId('notice', HTMLParagraphElement);
+const motionNote = byId('motion-note', HTMLParagraphElement);
 const resultA = byId('result-a', HTMLParagraphElement);
 const resultB = byId('result-b', HTMLParagraphElement);
 
@@ -21,6 +22,12 @@ const dieScale = Number(sizeInput.value);
 const trayA = createDiceTray(byId('tray-a', HTMLDivElement), { dieScale, clacks: diceClacks });
 const trayB = createDiceTray(byId('tray-b', HTMLDivElement), { dieScale });
 noticeEl.hidden = trayA.supported && trayB.supported;
+const motionQuery = matchMedia('(prefers-reduced-motion: reduce)');
+const showMotionNote = (): void => {
+  motionNote.hidden = !(motionQuery.matches && trayA.supported && trayB.supported);
+};
+showMotionNote();
+motionQuery.addEventListener('change', showMotionNote);
 
 let rollId = 0;
 let skin: Skin = classic;

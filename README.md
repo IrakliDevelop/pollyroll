@@ -191,8 +191,10 @@ die's natural order:
 The label font is the skin's `font` if it has one, otherwise `labelFont`. If the browser can't parse that font, the label falls back to `labelFont`, then `system-ui`.
 
 - **No WebGL2:** `playRoll` resolves immediately with the summary and draws nothing.
-- **Reduced motion:** the tray draws the settled dice without animating them and resolves
-  immediately.
+- **Reduced motion:** the tray resolves immediately and fades the settled dice in over 0.3 s,
+  without moving them. With the default `'auto'`, this follows the operating system's setting
+  (Firefox reads it from the OS animation setting), so a roll can look static on one machine and
+  animated on another; pass `reducedMotion: 'never'` only if your app offers its own motion toggle.
 - **Die size:** `dieScale` (default 2) is the largest size a die is drawn at. A roll with many dice
   shrinks in 0.05 steps until its dice fit the tray and spawn side by side, so a single d20 shows at
   full size while 20d6 stays readable without overlapping. The size sets the walls as well as the drawing, so both sides
@@ -333,7 +335,7 @@ that Chromium, Firefox, and WebKit compute the same trajectory hash as Node.
 
 ## Known limits
 
-These describe 0.6.0. Each one is a deliberate trade-off or a measured edge case, not a
+These describe 0.6.1. Each one is a deliberate trade-off or a measured edge case, not a
 hidden bug.
 
 **Physics and layout**
