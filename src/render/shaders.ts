@@ -74,9 +74,9 @@ const GLASS = `float x = min((0.8 - uGlass.x) * 2.5, 1.5);
     vec3 h = hash3(floor(vObj * 10.0));
     vec3 Rj = reflect(-V, normalize(N + (h - 0.5) * 0.8));
     vec3 nO = normalize(vObjN);
-    vec3 q = fract(vObj * 10.0) - 0.5 - (h.zxy - 0.5) * 0.5;
+    vec3 q = fract(vObj * 10.0) - 0.5 - (h.zxy - 0.5) * 0.3;
     q -= dot(q, nO) * nO;
-    float spot = 1.0 - smoothstep(0.06, 0.18, length(q));
+    float spot = 1.0 - smoothstep(0.12, 0.34, length(q));
     hl += uGlass.z * step(0.8, h.x) * spot * pow(max(dot(Rj, LIGHT_DIR), 0.0), 12.0) * 4.0;
     g += hl;
     al = max(mix(mix(0.12, 0.35, x), mix(0.85, 0.9, x), path), clamp(dot(hl, vec3(0.5)), 0.0, 1.0));
@@ -149,7 +149,7 @@ void main() {
   vec3 dnx = dFdx(vN);
   vec3 dny = dFdy(vN);
   // Kaplanyan/Tokuyoshi normal filtering: widen GGX where the normal varies within a pixel (bevels).
-  specAA = min(0.3 * (dot(dnx, dnx) + dot(dny, dny)), 0.2);
+  specAA = min(2.0 * (dot(dnx, dnx) + dot(dny, dny)), 0.4);
   vec2 uv = clamp(vUV, 0.0, 1.0);
   vec2 cell = max(vCell, 0.0);
   float a = texture(uAtlas, vec2((cell.x + uv.x) / ${ATLAS_COLUMNS}.0, (cell.y + 1.0 - uv.y) / ${ATLAS_ROWS}.0)).r;
