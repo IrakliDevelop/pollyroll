@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.6.2] - 2026-11-08
+
+### Fixed
+
+- Rendering: gem sparkle draws small soft glints instead of hard white shards, and highlights on
+  rounded die edges are filtered so they no longer render as thin, aliased lines. Flat faces look
+  the same as before.
+
 ## [0.6.1] - 2026-10-28
 
 ### Changed
